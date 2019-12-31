@@ -1,0 +1,45 @@
+#ifndef _SIP_TRANS_MGR_H
+#define _SIP_TRANS_MGR_H
+
+
+#include "osMBuf.h"
+
+#include "sipMsgRequest.h"
+#include "sipMsgFirstLine.h"
+#include "sipTransaction.h"
+#include "sipTransCommon.h"
+
+#if 0
+typedef enum {
+	SIP_TRANS_MSG_TYPE_TIMEOUT,		//timeout
+	SIP_TRANS_MSG_TYPE_PEER,		//received msg from peer
+	SIP_TRANS_MSG_TYPE_TU,			//received msg from TU
+	SIP_TRANS_MSG_TYPE_TX_FAILED,	//msg transmission failure
+	SIP_TRANS_MSG_TYPE_INTERNAL_ERROR,	//internal error, like memory can not be allocated, timer can not be started, etc.
+} sipTransMsgType_e;
+#endif
+
+typedef enum {
+	SIP_TRANS_SIPMSG_REQUEST,
+	SIP_TRANS_SIPMSG_RESPONSE,
+	SIP_TRANS_SIPMSG_ACK,
+} sipTransSipMsgType_e;
+
+
+//only used when TU or transport sends a msg to transaction state machine.  For transaction state machine -> TU, directly send sipTransaction_t
+typedef struct sipTransMsg2SM {
+	sipTransSipMsgType_e sipMsgType;
+	osMBuf_t* pSipMsg;
+	sipTransInfo_t* pTransInfo;	
+	sipTransaction_t* pTrans;
+} sipTransMsg2SM_t;
+
+
+//typedef osStatus_e (*sipTransSMOnMsg_h)(sipTransMsgType_e msgType, void* pMsg, uint64_t timerId);
+
+osStatus_e sipTransInit(uint32_t bucketSize);
+osStatus_e sipTrans_onMsg(sipTransMsgType_e msgType, void* pData, uint64_t timerId);
+uint64_t sipTransStartTimer(time_t msec, void* pData);
+
+
+#endif
