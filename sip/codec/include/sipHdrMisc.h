@@ -26,6 +26,8 @@ osStatus_e sipHdrPL_encode(osMBuf_t* pSipBuf, void* pl, void* other);
 //otherwise, pExtraInfo is a null terminated string
 osStatus_e sipHdrPL_create(void* pl, void* pHdrInDecoded, void* pExtraInfo);
 osStatus_e sipHdrCallId_createCallId(osPointerLen_t* pl);
+//if pCallId=NULL, after adding call-id to the pSipBuf, the call-id memory will be deleted, otherwise, call-id will be stored in pCallId->p for user to use
+osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, osPointerLen_t* pCallId);
 
 
 #endif

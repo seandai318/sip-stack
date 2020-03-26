@@ -8,6 +8,10 @@
 #include "osMBuf.h"
 
 #include "sipHdrTypes.h"
+#include "sipUriparam.h"
+#include "sipMsgRequest.h"
+
+
 
 #if 0	
 typedef struct sipHdrViaElement {
@@ -36,6 +40,10 @@ osStatus_e sipHdrVia_createEncode(osMBuf_t* pSipBuf, osPointerLen_t* pBranchId, 
 osStatus_e sipHdrVia_generateBranchId(osPointerLen_t* pBranch, char* pExtraInfo);
 //sipHdrViaElement_t* sipHdrVia_getTopBottomVia(sipHdrVia_t* pHdrViaList, bool isTop);
 osPointerLen_t* sipHdrVia_getTopBranchId(sipHdrMultiVia_t* pHdrVia);
+//extract the peer IP and port from a via header.  If there is received, ip in the received will be used
+osStatus_e sipHdrVia_getPeerTransport(sipHdrViaDecoded_t* pVia, sipHostport_t* pHostPort, sipTransport_e* pTransportProtocol);
+//this is to encode via for a response, instead of copying all rawVia, add received and rport for the top via if the received top via has rport
+osStatus_e sipHdrVia_rspEncode(osMBuf_t* pSipBuf, sipHdrMultiVia_t* pTopMultiVia, sipMsgDecodedRawHdr_t* pRawVia, sipHostport_t* pPeer);
 
 void* sipHdrMultiVia_alloc();
 

@@ -64,7 +64,8 @@ typedef struct sipTransaction {
     sipMsgBuf_t req;	//contains the original request.  The branchId that is used to identify a transaction always points to this message via osPointerLen_t.  This implies this message shall not be changed and not be freed until the transaction is removed
     sipMsgBuf_t resp;	//will be updated each time a new response is received
 	sipMsgBuf_t ack;
-	sipTransId_t transId;	//content is based on pReq	
+	sipTransId_t transId;	//content is based on pReq
+	sipTransportInfo_t tpInfo;	//ctrl;		
 	union {
 		sipTransICTimer_t sipTransICTimer;
 		sipTransNICTimer_t sipTransNICTimer;
@@ -72,7 +73,7 @@ typedef struct sipTransaction {
 		sipTransNISTimer_t sipTransNISTimer;
 	};
 	uint32_t timerAEGValue;		//the timer A/E/G timeout value
-	bool isUDP;
+//	bool isUDP;
 	osListElement_t* pTransHashLE;
 	void* pTUId;
 	sipTransSMOnMsg_h smOnMsg;

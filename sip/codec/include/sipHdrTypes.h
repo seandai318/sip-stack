@@ -152,7 +152,7 @@ typedef struct sipHdrViaDecoded {
 
 typedef struct sipHdrMultiVia {
 	uint8_t viaNum;
-	sipHdrViaDecoded_t* pVia;
+	sipHdrViaDecoded_t* pVia;	//stores the first via hdr.  if a via hdr name has more than 1 value, starting from the 2nd one, stored in viaList
     osList_t viaList;   //stores the 2nd and forward hdr values for a header entry, each element contains a pDecodedVia
 } sipHdrMultiVia_t;
 

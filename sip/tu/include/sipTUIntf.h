@@ -4,19 +4,24 @@
 
 #include "osList.h"
 #include "sipMsgRequest.h"
-#include "sipMsgFirstLine.h" 
+#include "sipMsgFirstLine.h"
+
+#include "sipTransport.h" 
 
 
 
 typedef enum {
 	SIP_TU_MSG_TYPE_MESSAGE,
+	SIP_TU_MSG_TYPE_NETWORK_ERROR,
     SIP_TU_MSG_TYPE_TRANSACTION_ERROR,
 } sipTUMsgType_e;
 
 
 typedef struct sipTUMsg {
     sipMsgType_e sipMsgType;
+    sipTransportIpPort_t* pPeer;
     sipMsgBuf_t* pSipMsgBuf;		//contains raw sip buffer
+//	int tcpFd;						//tcp fd of the received message when > 0
 	void* pTransId;
 	void* pTUId;
 #if 0

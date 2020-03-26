@@ -25,7 +25,7 @@ typedef enum {
     SIP_TRANSPORT_TYPE_TCP,
     SIP_TRANSPORT_TYPE_SCTP,
     SIP_TRANSPORT_TYPE_TLS,
-    SIP_TRANSPORT_TYPE_OTHER,
+    SIP_TRANSPORT_TYPE_ANY,		//unknown transport type
 } sipTransport_e;
 
 

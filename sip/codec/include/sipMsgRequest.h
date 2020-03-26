@@ -45,6 +45,7 @@ typedef struct sipMsgBuf {
     osMBuf_t* pSipMsg;  //the original sip message
     size_t hdrStartPos; //the beginning of the 1st header in a sip message, right after the 1st line.
 	sipRequest_e reqCode;
+	sipResponse_e rspCode;
 	bool isRequest;
 } sipMsgBuf_t;
 
@@ -55,14 +56,17 @@ typedef struct sipMsgDecodedRawHdr {
     size_t hdrNum;
     sipMsgBuf_t sipMsgBuf;
     sipRawHdrList_t* msgHdrList[SIP_HDR_COUNT];
-	osMBuf_t msgContent;
+	osMBuf_t msgContent;	//the content part of a sip message
 } sipMsgDecodedRawHdr_t;
 
 
 
 osStatus_e sipMsgAddHdr(osMBuf_t* pSipBuf, sipHdrName_e hdrName, void* pHdr, void* pExtraInfo, sipHdrAddCtrl_t ctrl);
+//insert a new hdr at the bottom of the current sip message under construction, if hdrValue==NULL, hdrNumValuewill be used
+osStatus_e sipMsgAppendHdrStr(osMBuf_t* pSipBuf, char* hdrName, osPointerLen_t* hdrValue, size_t hdrNumValue);
 //insert a namevalue pair to the end of the current hdr that is ended by pSipBuf->pos.  The hdr shall already have \r\n added
 osStatus_e sipMsgHdrAppend(osMBuf_t* pSipBuf, sipParamNameValue_t* paramPair, char seperator);
+osStatus_e sipMsgAppendContent(osMBuf_t* pSipBuf, osPointerLen_t* content, bool isProceedNewline);
 sipMsgRequest_t* sipMsgCreateReq(sipRequest_e reqType, sipUri_t* pReqUri);
 sipMsgRequest_t* sipMsgCreateProxyReq(sipMsgDecoded_t* sipMsgInDecoded, sipHdrNmT_t nmt[], int n);
 sipMsgResponse_t* sipMsgCreateResponse(sipMsgDecoded_t* sipMsgInDecoded, sipResponse_e rspCode, sipHdrName_e addHdrList[], int n);

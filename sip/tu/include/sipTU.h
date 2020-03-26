@@ -26,12 +26,17 @@ typedef struct sipHdrRawValueId {
 
 
 
+//create a UAC request with req line, via, from, to, callId and max forward.  Other headers needs to be added by user as needed
+//be noted this function does not include the extra "\r\n" at the last of header, user needs to add it when completing the creation of a SIP message
+osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipUri_t* pReqlineUri, osPointerLen_t* called, osPointerLen_t* caller, sipTransViaInfo_t* pTransViaId, size_t* pViaProtocolPos);
+
+
 /* build a proxy request based on the received SIP reuest
  * add a via, remove top Route if there is lr, decrease Max-Forwarded by 1
  * can also add/delete extra hdrs.
+ * if isProxy=true, all received via headers will be included, otherwise, they will be removed
  */
-osMBuf_t* sipTU_buildProxyRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId);
-
+osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipUri_t* pReqlineUri, size_t* pProtocolViaPos);
 
 /* build a proxy response based on the received SIP response
  * remove top via, and hdr in delHdrList, and add hdr in addHdrList
@@ -81,9 +86,11 @@ osStatus_e sipTU_addMsgHdr(osMBuf_t* pSipBuf, sipHdrName_e hdrCode, void* pDecod
  */
 osStatus_e sipTU_addContactHdr(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t regExpire);
 
+//based on parameter's in the p-served-user or top route, if not find, assume it is orig
+osStatus_e sipTU_asGetSescase(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool* isOrig);
 
 /* extract the AS user from the received SIP message */
-osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* sipUser, bool* isOrig);
+osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* sipUser, bool isOrigUser, bool isOrigAS);
 
 
 /*
@@ -91,9 +98,12 @@ osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t
  * pParamList: list of sipHdrParamNameValue_t, like: sipHdrParamNameValue_t param1={{"comp", 4}, {"sigcomp", 7}};
  * pParamList: a list of header parameters other than branchId.
  */
-osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pParamList, osPointerLen_t* pBranchId, osPointerLen_t* pHost, uint32_t* pPort);
+osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pParamList, osPointerLen_t* pBranchId, osPointerLen_t* pHost, uint32_t* pPort, size_t* pProtocolViaPos);
 
-
+/* end the building of a sip message.  This shall be always called as the last method of a sip message building, except when isAddNullContent=true in sipTU_buildUasResponse and sipTU_buildUasRequest
+ * isExistContent: true, there is content in the sip message, false: no content in the sip message
+ */
+osStatus_e sipTU_msgBuildEnd(osMBuf_t* pSipMsg, bool isExistContent);
 
 
 #endif

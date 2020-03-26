@@ -32,9 +32,16 @@ typedef union sipHdrDecoded_u {
 //The reason osList_t is used because many headers may have multiple values, each has its own header name/entry, like  hdr-a: aa\r\nhdr-a: bb.
 typedef struct sipRawHdrList {
 	uint8_t rawHdrNum;
-    sipRawHdr_t* pRawHdr;       //for the 1st hdr name, use this one.  Only if more than one hdr name, starting from the 2nd one, use rawHdrListrawHdrList
+    sipRawHdr_t* pRawHdr;       //for the 1st hdr name, use this one.  Only if more than one hdr name, starting from the 2nd one, use rawHdrList, if more than one hdr values share the first hdr name, all these values for the 1st hdr name are included in this parameter.  The 2nd hdr name will go to rawHdrList
     osList_t rawHdrList;    //each element contains sipRawHdr_t.  if multiple hdr values shares one hdr name, like hdr-a: a,b,c, all these values share one entry in rawHdrList.
 } sipRawHdrList_t;
+
+
+//a data structure includes both the rawHdrList and the associated hdr content, the hdr content is standalone, copied from a sip message.  When delete this date structure, the pRawHdrContent shall have been deleted too.
+typedef struct sipRawHdrListSA{
+    char* pRawHdrContent;
+    sipRawHdrList_t rawHdr;
+} sipRawHdrListSA_t;
 
 
 typedef struct sipDecodedHdrList {
@@ -64,7 +71,7 @@ typedef struct sipMsgDecoded {
 	sipFirstline_t sipMsgFirstLine;
 	size_t hdrNum;
 	sipHdrInfo_t* msgHdrList[SIP_HDR_COUNT];
-	osMBuf_t msgContent;
+	osMBuf_t msgContent;	//points to the content of sip message, like SDP, etc.
 } sipMsgDecoded_t;
 
 
@@ -144,6 +151,13 @@ osStatus_e sipHdrGetRawHdrPos(sipRawHdr_t* pRawHdr, size_t* pPos, size_t* pLen);
 bool sipHdr_isAllowMultiValue(sipHdrName_e hdrCode);
 uint8_t sipHdr_getHdrValueNum(sipHdrDecoded_t* pSipHdrDecoded);
 osStatus_e sipHdr_getFirstHdrValuePosInfo(sipHdrDecoded_t* pSipHdrDecoded, sipHdr_posInfo_t* pTopHdrValuePos);
+
+//duplicate a specific raw header, the hdr content/text is also copied
+osStatus_e sipRawHdr_dup(sipRawHdrList_t* pRawHdrList, sipRawHdrListSA_t* pHdrSA);
+//only delete the memory for th parameters of sipRawHdrListSA_t, sipRawHdrListSA_t itself is not deleted, user needs to explicitly delete it
+void sipRawHdrListSA_cleanup(void* pHdrSA);
+//clean up for data structure sipHdrDecoded_t
+void sipHdrDecoded_cleanup(void* pHdrDecoded);
 
 
 #endif
