@@ -1,6 +1,9 @@
+#include <arpa/inet.h>
+
 #include "osHash.h"
 #include "osList.h"
 #include "osTimer.h"
+#include "osPreMemory.h"
 
 #include "sipHeader.h"
 #include "sipTransIntf.h"
@@ -10,6 +13,7 @@
 #include "sipHdrVia.h"
 #include "sipHdrMisc.h"
 #include "sipTUIntf.h"
+#include "sipTransportIntf.h"
 
 
 extern osStatus_e sipTransNoInviteClient_onMsg(sipTransMsgType_e msgType, void* pMsg, uint64_t timerId);
@@ -22,16 +26,17 @@ typedef struct sipTrans_transIdCmp {
 	sipTransId_t* pTransId;
 } sipTrans_transIdCmp_t;
 
-static osStatus_e sipTrans_onPeerMsg(osMBuf_t* sipBuf);
+static osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf);
 static osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg);
-static sipTransaction_t* sipTransHashLookup(osHash_t* sipTransHash, sipTransId_t* pTransId, uint32_t* pKey, osStatus_e* pStatus);
+static sipTransaction_t* sipTransHashLookup(osHash_t* sipTransHash, sipTransInfo_t* pTransInfo, uint32_t* pKey, osStatus_e* pStatus);
 static void sipTransTimerFunc(uint64_t timerId, void* ptr);
 static bool sipTrans_transIdCmp(osListElement_t *le, void *data);
 static osStatus_e sipDecodeTransInfo(sipMsgBuf_t* pSipMsgBuf, sipTransInfo_t* pTransId);
 static void sipTrans_delete(void* pData);
 static void sipTransHashData_delete(void* pData);
 
-static osHash_t* sipTransHash;
+//to-do, shall we add __thread?
+static __thread osHash_t* sipTransHash;
 
 
 osStatus_e sipTransInit(uint32_t bucketSize)
@@ -53,6 +58,8 @@ EXIT:
 
 osStatus_e sipTrans_onMsg(sipTransMsgType_e msgType, void* pData, uint64_t timerId)
 {
+	DEBUG_BEGIN
+
     osStatus_e status = OS_STATUS_OK;
 
 	if(!pData)
@@ -65,7 +72,7 @@ osStatus_e sipTrans_onMsg(sipTransMsgType_e msgType, void* pData, uint64_t timer
 	switch(msgType)
 	{
 		case SIP_TRANS_MSG_TYPE_PEER:
-			status = sipTrans_onPeerMsg((osMBuf_t*)pData);
+			status = sipTrans_onPeerMsg((sipTransportMsgBuf_t*)pData);
 			goto EXIT;
 			break;
         case SIP_TRANS_MSG_TYPE_TU:
@@ -84,24 +91,31 @@ osStatus_e sipTrans_onMsg(sipTransMsgType_e msgType, void* pData, uint64_t timer
 			break;
 		}
         case SIP_TRANS_MSG_TYPE_TX_FAILED:
-			((sipTransaction_t*)pData)->smOnMsg(SIP_TRANS_MSG_TYPE_TX_FAILED, (sipTransaction_t*)pData, 0);
+        case SIP_TRANS_MSG_TYPE_TX_TCP_READY:
+		{
+			sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*)pData)->pTransId;
+logError("to-remove, TCM, pTrans=%p", pTrans);
+			pTrans->smOnMsg(msgType, (sipTransportStatusMsg_t*)pData, 0);
 			break;
+		}
         default:
 			logError("unexpected msgType (%d), ignore.", msgType);
 			break;
 	}
+
 EXIT:
+	DEBUG_END
     return status;
 }
 
 
-osStatus_e sipTrans_onPeerMsg(osMBuf_t* sipBuf)
+osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
 {
 	DEBUG_BEGIN
     osStatus_e status = OS_STATUS_OK;
 
 	sipTransInfo_t sipTransInfo;
-	sipMsgBuf_t sipMsgBuf = {sipBuf, 0, 0, 0};
+	sipMsgBuf_t sipMsgBuf = {sipBuf->pSipBuf, 0, 0, 0};
 
 	status = sipDecodeTransInfo(&sipMsgBuf, &sipTransInfo);
 	if(status != OS_STATUS_OK)
@@ -114,7 +128,7 @@ osStatus_e sipTrans_onPeerMsg(osMBuf_t* sipBuf)
 	if(sipTransInfo.isRequest && sipTransInfo.transId.reqCode == SIP_METHOD_ACK)
 	{
 		sipTUMsg_t ackMsg2TU={};
-		ackMsg2TU.sipMsgType = SIP_MSG_ACK;
+		ackMsg2TU.sipMsgType = SIP_TRANS_MSG_CONTENT_ACK;
 		ackMsg2TU.pSipMsgBuf = &sipMsgBuf;
 				
 		sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &ackMsg2TU);
@@ -122,7 +136,7 @@ osStatus_e sipTrans_onPeerMsg(osMBuf_t* sipBuf)
 	}
 
 	uint32_t hashKey;
-	sipTransaction_t* pTrans = sipTransHashLookup(sipTransHash, &sipTransInfo.transId, &hashKey, &status);
+	sipTransaction_t* pTrans = sipTransHashLookup(sipTransHash, &sipTransInfo, &hashKey, &status);
 	if(status != OS_STATUS_OK)
 	{
 		logError("fails to sipTransHashLookup.");
@@ -138,7 +152,7 @@ osStatus_e sipTrans_onPeerMsg(osMBuf_t* sipBuf)
 			{
 				logError("fails to allocate pHashData.");
 				status = OS_ERROR_MEMORY_ALLOC_FAILURE;
-				osMBuf_dealloc(sipBuf);
+				osMem_deref(sipBuf);
 				goto EXIT;
 			}
 
@@ -147,6 +161,15 @@ osStatus_e sipTrans_onPeerMsg(osMBuf_t* sipBuf)
 			pHashData->pData = pTrans;
 			pTrans->req = sipMsgBuf;
 			pTrans->transId = sipTransInfo.transId;
+            pTrans->tpInfo.tcpFd = ((sipTransportMsgBuf_t*) sipBuf)->tcpFd;
+			pTrans->tpInfo.tpType = pTrans->tpInfo.tcpFd == -1 ? SIP_TRANSPORT_TYPE_ANY : SIP_TRANSPORT_TYPE_TCP; 
+			pTrans->tpInfo.isServer = ((sipTransportMsgBuf_t*) sipBuf)->isServer;
+			char* ipaddr = osMem_zalloc(INET_ADDRSTRLEN, NULL);
+			inet_ntop(AF_INET, &((sipTransportMsgBuf_t*) sipBuf)->peer.sin_addr, ipaddr, INET_ADDRSTRLEN);
+			osPL_setStr(&pTrans->tpInfo.peer.ip, ipaddr, 0);
+			pTrans->tpInfo.peer.port = ntohs(((sipTransportMsgBuf_t*) sipBuf)->peer.sin_port);
+            debug("to-remove, pTrans=%p, received (sipTransportMsgBuf_t*) sipBuf=%p, tcpFd=%d, isServer=%d, pTrans->tpInfo.tcpFd=%d, pTrans->tpInfo.tpType=%d.", pTrans, sipBuf, ((sipTransportMsgBuf_t*) sipBuf)->tcpFd, ((sipTransportMsgBuf_t*) sipBuf)->isServer, pTrans->tpInfo.tcpFd, pTrans->tpInfo.tpType);
+logError("to-remove, PEER, ip=%r, port=%d, ipaddr=%s", &pTrans->tpInfo.peer.ip, pTrans->tpInfo.peer.port, ipaddr);
 
             pHashData->hashKeyType = OSHASHKEY_INT;
             pHashData->hashKeyInt = hashKey;
@@ -155,9 +178,9 @@ osStatus_e sipTrans_onPeerMsg(osMBuf_t* sipBuf)
 
 			//forward to transaction state handler
 			sipTransMsg_t msg2SM;
-			msg2SM.sipMsgType = SIP_MSG_REQUEST;
-			msg2SM.sipMsgBuf = sipMsgBuf;
-			msg2SM.pTransInfo = &sipTransInfo;
+			msg2SM.sipMsgType = SIP_TRANS_MSG_CONTENT_REQUEST;
+			msg2SM.request.sipTrMsgBuf.sipMsgBuf = sipMsgBuf;
+			msg2SM.request.pTransInfo = &sipTransInfo;
 			msg2SM.pTransId = pTrans;
 			if(sipTransInfo.transId.reqCode == SIP_METHOD_INVITE)
 			{
@@ -167,6 +190,7 @@ osStatus_e sipTrans_onPeerMsg(osMBuf_t* sipBuf)
 			{
 				pTrans->smOnMsg = sipTransNoInviteServer_onMsg;
 			}
+
 			pTrans->smOnMsg(SIP_TRANS_MSG_TYPE_PEER, &msg2SM, 0); 
 			
 			goto EXIT;
@@ -174,26 +198,25 @@ osStatus_e sipTrans_onPeerMsg(osMBuf_t* sipBuf)
 		else
 		{
 			logInfo("receive a unknown SIP response.");
-			osMBuf_dealloc(sipBuf);
+			osMem_deref(sipBuf);
 			goto EXIT;
 		}
 	}
 
-#if 0
-	//the dellocation and reassignment is done in the transaction state machine	
-	if(!sipTransInfo.isRequest)
-	{
-		osMBuf_dealloc(pTrans->resp.pSipMsg);
-		pTrans->resp = *sipMsgBuf;
-	}
-#endif
-
 	//forward to transaction state handler
    	sipTransMsg_t msg2SM;
-    msg2SM.sipMsgType = sipTransInfo.isRequest ? SIP_MSG_REQUEST : SIP_MSG_RESPONSE;
-    msg2SM.sipMsgBuf = sipMsgBuf;
+    msg2SM.sipMsgType = sipTransInfo.isRequest ?  SIP_TRANS_MSG_CONTENT_REQUEST: SIP_TRANS_MSG_CONTENT_RESPONSE;
+	if(msg2SM.sipMsgType == SIP_TRANS_MSG_CONTENT_REQUEST)
+	{
+    	msg2SM.request.sipTrMsgBuf.sipMsgBuf = sipMsgBuf;
+	    msg2SM.request.pTransInfo = &sipTransInfo;
+	}
+	else
+	{
+		msg2SM.response.sipTrMsgBuf.sipMsgBuf = sipMsgBuf;
+		msg2SM.response.rspCode = sipTransInfo.rspCode;
+	}
     msg2SM.pTransId = pTrans;
-	msg2SM.pTransInfo = &sipTransInfo;
 	pTrans->smOnMsg(SIP_TRANS_MSG_TYPE_PEER, &msg2SM, 0);
 
 EXIT:
@@ -204,12 +227,14 @@ EXIT:
 
 osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
 {
+	DEBUG_BEGIN
+
     osStatus_e status = OS_STATUS_OK;
 
     sipTransaction_t* pTrans = pSipTUMsg->pTransId;
     if(pTrans == NULL)
     {
-        if(pSipTUMsg->sipMsgType == SIP_MSG_REQUEST)
+        if(pSipTUMsg->sipMsgType == SIP_TRANS_MSG_CONTENT_REQUEST)
         {
             //start a new transaction.
             osHashData_t* pHashData = osMem_zalloc(sizeof(osHashData_t), sipTransHashData_delete);
@@ -223,14 +248,18 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
             sipTransaction_t* pTrans = osMem_zalloc(sizeof(sipTransaction_t), sipTrans_delete);
             pHashData->pData = pTrans;
             pTrans->state = SIP_TRANS_STATE_NONE;
-            pTrans->req.pSipMsg = osMem_ref(pSipTUMsg->sipMsgBuf.pSipMsg);
-			pTrans->transId = pSipTUMsg->pTransInfo->transId;
+            pTrans->req.pSipMsg = osMem_ref(pSipTUMsg->request.sipTrMsgBuf.sipMsgBuf.pSipMsg);
+			pTrans->transId = pSipTUMsg->request.pTransInfo->transId;
+
+            pHashData->hashKeyType = OSHASHKEY_INT;
+            pHashData->hashKeyInt = osHash_getKeyPL(&pSipTUMsg->request.pTransInfo->transId.viaId.branchId, true);
+            pHashData->pData = pTrans;
             pTrans->pTransHashLE = osHash_add(sipTransHash, pHashData);
 
             //forward to transaction state handler
             pSipTUMsg->pTransId = pTrans;
 
-			if(pSipTUMsg->pTransInfo->transId.reqCode == SIP_METHOD_INVITE)
+			if(pSipTUMsg->request.pTransInfo->transId.reqCode == SIP_METHOD_INVITE)
 			{
 				pTrans->smOnMsg = sipTransInviteClient_onMsg;
             }
@@ -249,10 +278,10 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
         }
     }
 
-	if(pSipTUMsg->sipMsgType == SIP_MSG_ACK)
+	if(pSipTUMsg->sipMsgType == SIP_TRANS_MSG_CONTENT_ACK)
 	{
 //to-do, shall we dealloc?        osMBuf_dealloc(pTrans->pACK);
-		pTrans->ack = pSipTUMsg->sipMsgBuf;
+		pTrans->ack = pSipTUMsg->ack.sipTrMsgBuf.sipMsgBuf;
 
 		pTrans->smOnMsg(SIP_TRANS_MSG_TYPE_PEER, pSipTUMsg, 0);
 		goto EXIT;
@@ -261,25 +290,29 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
 	pTrans->smOnMsg(SIP_TRANS_MSG_TYPE_TU, pSipTUMsg, 0);
 
 EXIT:
+	DEBUG_END
     return status;
 }
 
 
-sipTransaction_t* sipTransHashLookup(osHash_t* sipTransHash, sipTransId_t* pTransId, uint32_t* pKey, osStatus_e *status)
+sipTransaction_t* sipTransHashLookup(osHash_t* sipTransHash, sipTransInfo_t* pTransInfo, uint32_t* pKey, osStatus_e *status)
 {
 	*status = OS_STATUS_OK;
 	sipTransaction_t* pTrans = NULL;
 
-	if(!sipTransHash || !pTransId || !pKey)
+	if(!sipTransHash || !pTransInfo || !pKey)
 	{
-		logError("null pointer, sipTransHash=%p, pTransId=%p, pKey=%p.", sipTransHash, pTransId, pKey);
+		logError("null pointer, sipTransHash=%p, pTransInfo=%p, pKey=%p.", sipTransHash, pTransInfo, pKey);
 		*status = OS_ERROR_NULL_POINTER;
 		goto EXIT;
 	}
 
-	//now we have transactionId, we can search hash
-	*pKey = osHash_getKeyPL(&pTransId->viaId.branchId, true);
-	osListElement_t* pHashLE = osHash_lookup(sipTransHash, *pKey, sipTrans_transIdCmp, pTransId);
+	//now we have transactionInfo, we can search hash
+	sipTrans_transIdCmp_t transIdCmp;
+	transIdCmp.isReq = pTransInfo->isRequest;
+	transIdCmp.pTransId = &pTransInfo->transId;
+	*pKey = osHash_getKeyPL(&pTransInfo->transId.viaId.branchId, true);
+	osListElement_t* pHashLE = osHash_lookup1(sipTransHash, *pKey, sipTrans_transIdCmp, &transIdCmp);
 	if(!pHashLE)
 	{
 		goto EXIT;
@@ -300,7 +333,8 @@ EXIT:
 
 uint64_t sipTransStartTimer(time_t msec, void* pData)
 {
-	return osStartTimer(msec, sipTransTimerFunc, pData);
+	uint64_t timerId = osStartTimer(msec, sipTransTimerFunc, pData);
+	return timerId;
 }
 
 static void sipTransTimerFunc(uint64_t timerId, void* ptr)
@@ -388,6 +422,7 @@ static osStatus_e sipDecodeTransInfo(sipMsgBuf_t* pSipMsgBuf, sipTransInfo_t* pT
     }
 	pTransInfo->isRequest = firstLine.isReqLine;
 	pTransInfo->rspCode = pTransInfo->isRequest ? SIP_RESPONSE_INVALID : firstLine.u.sipStatusLine.sipStatusCode;
+	pSipMsgBuf->rspCode = pTransInfo->rspCode;
 	pSipMsgBuf->hdrStartPos = pSipMsg->pos; 
 
     sipRawHdr_t sipHdr;
@@ -411,6 +446,7 @@ static osStatus_e sipDecodeTransInfo(sipMsgBuf_t* pSipMsgBuf, sipTransInfo_t* pT
 
             //decode via
 			pDecodedViaHdr = sipHdrParse(pSipMsg, SIP_HDR_VIA, sipHdr.valuePos, sipHdr.value.l);
+
 #if 0
             osMBuf_t pSipMsgHdr;
             osMBuf_allocRef1(&pSipMsgHdr, pSipMsg, sipHdr.valuePos, sipHdr.value.l);
@@ -501,6 +537,8 @@ static void sipTrans_delete(void* pData)
 	osMBuf_dealloc(pTrans->resp.pSipMsg);
 	osMBuf_dealloc(pTrans->ack.pSipMsg);
 
+	osDPL_dealloc((osDPointerLen_t*)&pTrans->tpInfo.peer.ip);
+	osDPL_dealloc((osDPointerLen_t*)&pTrans->tpInfo.local.ip);
 	//to-do, shall we also stop the timers?
 	//no need to free pTransHashLE as it is freed as part of delete a hash entry.  as a matter of fact, sipTrans is freed inside pTransHashLE free
 }

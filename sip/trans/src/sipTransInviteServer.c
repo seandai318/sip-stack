@@ -1,12 +1,13 @@
 #include "osMisc.h"
 #include "osTimer.h"
 #include "osHash.h"
+#include "osPreMemory.h"
 
 #include "sipMsgRequest.h"
 #include "sipTransIntf.h"
 #include "sipTransMgr.h"
 #include "sipTUIntf.h"
-#include "sipTransport.h"
+#include "sipTransportIntf.h"
 #include "sipConfig.h"
 
 
@@ -86,32 +87,73 @@ osStatus_e sipTransISStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uint
         goto EXIT;
     }
 
-    if(msgType != SIP_TRANS_MSG_TYPE_PEER)
+    switch(msgType)
     {
-        logError("receive unexpected msgType (%d) in ISStateNone.", msgType);
-        status = OS_ERROR_INVALID_VALUE;
-        goto EXIT;
-    }
+        case SIP_TRANS_MSG_TYPE_PEER:
+		{
+    		sipTransaction_t* pTrans = ((sipTransMsg_t*) pMsg)->pTransId;
+    		if(!pTrans)
+    		{
+        		logError("null pointer, pTrans, for msgType (%d).", msgType);
+        		status = OS_ERROR_INVALID_VALUE;
+        		goto EXIT;
+    		}
 
-    sipTransaction_t* pTrans = ((sipTransMsg_t*) pMsg)->pTransId;
-    if(!pTrans)
-    {
-        logError("null pointer, pTrans, for msgType (%d).", msgType);
-        status = OS_ERROR_INVALID_VALUE;
-        goto EXIT;
-    }
+			if(((sipTransMsg_t*) pMsg)->sipMsgType != SIP_MSG_REQUEST)
+			{
+				logError("received a unexpected response.");
+				status = OS_ERROR_INVALID_VALUE;
+				goto EXIT;
+			}
 
-	if(((sipTransMsg_t*) pMsg)->sipMsgType != SIP_MSG_REQUEST)
-	{
-		logError("received a unexpected response.");
-		status = OS_ERROR_INVALID_VALUE;
-		goto EXIT;
-	}
+//    		pTrans->tpInfo.pTrId = pTrans;
+			pTrans->tpInfo = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo;
 
-//    sipTransport_send(pTrans->pReq, pTrans);
+    		//build a 100 TRYING and send
+    		status = sipTransIS_build100Trying(&pTrans->req, &pTrans->resp);
 
-    sipTransISEnterState(SIP_TRANS_STATE_PROCEEDING, msgType, pTrans);
-	
+    		sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
+			if(tpStatus == SIP_TRANSPORT_STATUS_UDP || tpStatus == SIP_TRANSPORT_STATUS_TCP_OK)
+			{
+				pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+    			sipTransISEnterState(SIP_TRANS_STATE_PROCEEDING, msgType, pTrans);
+			}
+    		else if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+    		{
+        		sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
+    		}
+
+			break;
+		}
+		case SIP_TRANS_MSG_TYPE_TX_TCP_READY:
+		{
+            sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*) pMsg)->pTransId;
+            if(!pTrans)
+            {
+                logError("null pointer, pTrans, for msgType (%d).", msgType);
+                status = OS_ERROR_INVALID_VALUE;
+                goto EXIT;
+            }
+			pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+			pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*) pMsg)->tcpFd;
+            sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
+            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_OK)
+            {
+				pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+                sipTransISEnterState(SIP_TRANS_STATE_PROCEEDING, msgType, pTrans);
+            }
+            else if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+            {
+                sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
+            }
+            break;
+		}
+		default:
+        	logError("receive unexpected msgType (%d) in ISStateNone.", msgType);
+        	status = OS_ERROR_INVALID_VALUE;
+        	break;
+	}	
+
 EXIT:
 	DEBUG_END
 	return status;
@@ -135,7 +177,22 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 		case SIP_TRANS_MSG_TYPE_PEER:
 		{
 			sipTransaction_t* pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
-			sipTransport_send(SIP_MSG_RESPONSE, pTrans);
+
+            sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
+            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+            {
+                //notify TU
+                sipTUMsg_t sipTUMsg;
+                sipTUMsg.pTransId = pMsg;
+                sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+                sipTU_onMsg(SIP_TU_MSG_TYPE_NETWORK_ERROR, &sipTUMsg);
+
+                sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
+                goto EXIT;
+            }
+
+            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+	
 			break;
 		}
 		case SIP_TRANS_MSG_TYPE_TU:
@@ -148,33 +205,96 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 
             sipTransaction_t* pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
 			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
-            sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->pTransInfo->rspCode;
+            sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
 			osMem_deref(pTrans->resp.pSipMsg);
-			pTrans->resp.pSipMsg = osMem_ref(((sipTransMsg_t*)pMsg)->sipMsgBuf.pSipMsg);
+			pTrans->resp.pSipMsg = osMem_ref(((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
+
+            sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
+            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+            {
+                //notify TU
+                sipTUMsg_t sipTUMsg;
+                sipTUMsg.pTransId = pMsg;
+                sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+                sipTU_onMsg(SIP_TU_MSG_TYPE_NETWORK_ERROR, &sipTUMsg);
+
+                sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
+                goto EXIT;
+            }
+            else if(tpStatus == SIP_TRANSPORT_STATUS_TCP_CONN)
+            {
+				pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+                goto EXIT;
+            }
+
+            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+
             if(rspCode >= 100 && rspCode < 200)
             {
-                sipTransport_send(SIP_MSG_RESPONSE, pTrans);
+				//stay in the same state
             }
             else if(rspCode >= 200 && rspCode < 300)
             {
-				sipTransport_send(SIP_MSG_RESPONSE, pTrans);
                 sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
             }
 			else
 			{
-                sipTransport_send(SIP_MSG_RESPONSE, pTrans);
                 sipTransISEnterState(SIP_TRANS_STATE_COMPLETED, msgType, pTrans);
 			}
 			break;
 		}
+		case SIP_TRANS_MSG_TYPE_TX_TCP_READY:
+        {
+            sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*) pMsg)->pTransId;
+            if(!pTrans)
+            {
+                logError("null pointer, pTrans, for msgType (%d).", msgType);
+                status = OS_ERROR_INVALID_VALUE;
+                goto EXIT;
+            }
+
+            pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+            pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*)pMsg)->tcpFd;
+            sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
+            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+            {
+				//notify TU
+	            sipTUMsg_t sipTUMsg;
+    	        sipTUMsg.pTransId = pMsg;
+        	    sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+            	sipTU_onMsg(SIP_TU_MSG_TYPE_NETWORK_ERROR, &sipTUMsg);
+
+                sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
+                goto EXIT;
+            }
+
+            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+
+            if(pTrans->resp.rspCode >= 100 && pTrans->resp.rspCode <=199)
+            {
+				//stay in the same state
+            }
+            else if(pTrans->resp.rspCode >= 200 && pTrans->resp.rspCode < 300)
+            {
+                sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
+            }
+            else
+            {
+                sipTransISEnterState(SIP_TRANS_STATE_COMPLETED, msgType, pTrans);
+            }
+            break;
+        }		
         case SIP_TRANS_MSG_TYPE_TX_FAILED:
 		{
+			logInfo("fails to transmit message, received SIP_TRANS_MSG_TYPE_TX_FAILED.");
+            sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*)pMsg)->pTransId;
+
             sipTUMsg_t sipTUMsg;
-            sipTUMsg.pTransId = pMsg;
+            sipTUMsg.pTransId = pTrans;
             sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
 
 			sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
-			sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, (sipTransaction_t*)pMsg);
+			sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
 			break;
 		}
         default:
@@ -207,7 +327,15 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
             sipTransaction_t* pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
 			if(((sipTransMsg_t*)pMsg)->sipMsgType == SIP_MSG_REQUEST)
 			{
-				sipTransport_send(SIP_MSG_RESPONSE, pTrans);
+	            sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
+	            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+    	        {
+        	        sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
+            	    goto EXIT;
+            	}
+
+	            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+
 			}
 			else if(((sipTransMsg_t*)pMsg)->sipMsgType == SIP_MSG_ACK)
 			{
@@ -228,15 +356,17 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
                 osMem_deref(pTrans);
                 logInfo("timer G expires, retransmit the request.");
 
-                status = sipTransport_send(SIP_MSG_RESPONSE, pTrans);
-                if(status != OS_STATUS_OK)
+                sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
+                if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
                 {
                     logError("fails to send request.");
                     sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
                     goto EXIT;
                 }
 
-                if(pTrans->isUDP)
+	            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+
+				if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
                 {
                     pTrans->timerAEGValue = osMinInt(pTrans->timerAEGValue*2, SIP_TIMER_T2);
                     pTrans->sipTransISTimer.timerIdG = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
@@ -267,7 +397,9 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
 		}
         case SIP_TRANS_MSG_TYPE_TX_FAILED:
 		{
-			sipTransaction_t* pTrans = pMsg;
+            logInfo("fails to transmit message, received SIP_TRANS_MSG_TYPE_TX_FAILED.");
+            sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*)pMsg)->pTransId;
+
             sipTUMsg_t sipTUMsg;
             sipTUMsg.pTransId = pTrans;
             sipTUMsg.pTUId = pTrans->pTUId;
@@ -346,10 +478,6 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
     {
         case SIP_TRANS_STATE_PROCEEDING:
 		{
-			//build a 100 TRYING and send
-			status = sipTransIS_build100Trying(&pTrans->req, &pTrans->resp);
-            sipTransport_send(SIP_MSG_RESPONSE, pTrans);
-
             sipTUMsg_t sipTUMsg;
             sipTUMsg.sipMsgType = SIP_MSG_REQUEST;
             sipTUMsg.pSipMsgBuf = &pTrans->req;
@@ -361,7 +489,7 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
 			break;
 		}
 		case SIP_TRANS_STATE_COMPLETED:	
-            pTrans->sipTransISTimer.timerIdH = sipTransStartTimer(SIP_TIMER_H, osMem_ref(pTrans));
+            pTrans->sipTransISTimer.timerIdH = sipTransStartTimer(SIP_TIMER_H, pTrans);
             if(pTrans->sipTransISTimer.timerIdH == 0)
             {
                 logError("fails to start timerH.");
@@ -370,10 +498,10 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
                 goto EXIT;
             }
 
-            if(pTrans->isUDP)
+            if(pTrans->tpInfo.tpType == SIP_TRANSPORT_TYPE_UDP)
             {
                 pTrans->timerAEGValue = osMinInt(pTrans->timerAEGValue*2, SIP_TIMER_T2);
-                pTrans->sipTransISTimer.timerIdG = sipTransStartTimer(pTrans->timerAEGValue, osMem_ref(pTrans));
+                pTrans->sipTransISTimer.timerIdG = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
                 if(pTrans->sipTransISTimer.timerIdG == 0)
                 {
                     logError("fails to start timerG.");
@@ -384,9 +512,9 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
             }
             break;
         case SIP_TRANS_STATE_CONFIRMED:
-			if(pTrans->isUDP)
+			if(pTrans->tpInfo.tpType == SIP_TRANSPORT_TYPE_UDP)
 			{
-            	pTrans->sipTransISTimer.timerIdI = sipTransStartTimer(SIP_TIMER_J, osMem_ref(pTrans));
+            	pTrans->sipTransISTimer.timerIdI = sipTransStartTimer(SIP_TIMER_J, pTrans);
 			}
 			else
 			{
@@ -427,10 +555,10 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
                 osMem_deref(pTrans);
             }
 
-            osHash_deleteElement(pTrans->pTransHashLE);
+            osHash_deleteNode(pTrans->pTransHashLE);
             osHashData_t* pHashData = pTrans->pTransHashLE->data;
             osMem_deref((sipTransaction_t*)pHashData->pData);
-            free(pTrans->pTransHashLE);
+            osfree(pTrans->pTransHashLE);
 
             break;
         default:

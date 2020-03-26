@@ -7,10 +7,13 @@
 #include "sipHeaderMisc.h"
 #include "sipGenericNameParam.h"
 #include "sipHdrTypes.h"
+#include "sipHdrVia.h"
+
 #include "sipTUIntf.h"
 #include "sipTU.h"
 #include "sipRegistrar.h"
 #include "masConfig.h"
+#include "masDb.h"
 
 
 static void masRegistrar_cleanup(void* pData);
@@ -18,6 +21,9 @@ static osStatus_e masReg_deRegUser(tuDeRegCause_e deregCause, tuRegistrar_t* pRe
 static void masHashData_cleanup(void* data);
 static uint64_t masRegStartTimer(time_t msec, void* pData);
 static void masReg_onTimeout(uint64_t timerId, void* data);
+static void masRegData_forceDelete(tuRegistrar_t* pRegData);
+static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
+static osStatus_e masReg_onTrFailure(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
 
 static osHash_t* masRegHash;
 static osListApply_h appInfoMatchHandler;
@@ -42,9 +48,33 @@ EXIT:
 }
 
 
-osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
+osStatus_e masReg_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 {
-	DEBUG_BEGIN	
+	switch(msgType)
+	{
+		case SIP_MSG_REQUEST:
+			return masReg_onSipMsg(msgType, pSipTUMsg);
+			break;
+		case SIP_TU_MSG_TYPE_TRANSACTION_ERROR:
+			masReg_onTrFailure(msgType, pSipTUMsg);
+			break;
+		default:
+			logError("msgType(%d) is not handled.", msgType);
+			break;
+	}
+
+	return OS_ERROR_INVALID_VALUE;
+}
+
+
+static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
+{
+	DEBUG_BEGIN
+
+    sipHdrDecoded_t* pContactHdr=osMem_zalloc(sizeof(sipHdrDecoded_t), sipHdrDecoded_cleanup);
+//	sipRawHdrListSA_t contactRawHdrSA={};
+    sipHdrDecoded_t viaHdr={};
+	
 	if(msgType != SIP_MSG_REQUEST)
 	{
 		logError("msgType is not SIP_MSG_REQUEST.");
@@ -59,8 +89,8 @@ osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 
 	osStatus_e status = OS_STATUS_OK;
     sipResponse_e rspCode = SIP_RESPONSE_INVALID;
-    sipHdrDecoded_t contactHdr={};
     osPointerLen_t* pContactExpire = NULL;
+    tuRegistrar_t* pRegData = NULL;
 
 	//raw parse the whole sip message 
 	sipMsgDecodedRawHdr_t* pReqDecodedRaw = sipDecodeMsgRawHdr(pSipTUMsg->pSipMsgBuf, NULL, 0);
@@ -70,6 +100,19 @@ osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
         status = OS_ERROR_INVALID_VALUE;
         goto EXIT;
     }
+
+    //prepare for the extraction of the peer IP/port
+    status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr, &viaHdr, false);
+    if(status != OS_STATUS_OK)
+    {
+        logError("fails to decode the top via hdr in sipDecodeHdr.");
+        goto EXIT;
+    }
+	sipHdrViaDecoded_t* pTopVia = ((sipHdrMultiVia_t*)(viaHdr.decodedHdr))->pVia;
+
+	sipHostport_t peerHostPort;
+	sipTransport_e peerTpProtocol;
+	sipHdrVia_getPeerTransport(pTopVia, &peerHostPort, &peerTpProtocol);
 
 	//get the user's sip URI
 	osPointerLen_t sipUri;
@@ -85,7 +128,9 @@ osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 
 	//decode the 1st contact entry
 	logError("sean-remove, before decode SIP_HDR_CONTACT (%d).", SIP_HDR_CONTACT);
-    status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT]->pRawHdr, &contactHdr, false);
+//	status = sipRawHdr_dup(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT], &contactRawHdrSA);
+//    status = sipDecodeHdr(contactRawHdrSA.rawHdr.pRawHdr, pContactHdr, false);
+    status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT]->pRawHdr, pContactHdr, true);
     if(status != OS_STATUS_OK)
     {
         logError("fails to decode contact hdr in sipDecodeHdr.");
@@ -114,14 +159,15 @@ osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 	else
 	{
     	osPointerLen_t expireName={"expires", 7};
-    	pContactExpire = sipHdrGenericNameParam_getGPValue(&((sipHdrMultiContact_t*)contactHdr.decodedHdr)->contactList.pGNP->hdrValue, &expireName);
+		//pContactExpire is not allocated an new memory, it just refer to a already allocated memory in pGNP->hdrValue, no need to dealloc memory for pContactExpire
+    	pContactExpire = sipHdrGenericNameParam_getGPValue(&((sipHdrMultiContact_t*)pContactHdr->decodedHdr)->contactList.pGNP->hdrValue, &expireName);
     	if(pContactExpire != NULL)
     	{
 			isExpiresFound = true;
 			regExpire = osPL_str2u32(pContactExpire);
        	}
 	}
-	 
+	
 	if(!isExpiresFound)
 	{
     	regExpire = SIP_REG_DEFAULT_EXPIRE;
@@ -148,6 +194,7 @@ osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
     {
 		if(regExpire == 0)
 		{
+			logInfo("received a out of blue deregister message, sipuri=%r", &sipUri);
 			rspCode = SIP_RESPONSE_200;
 			goto EXIT;
 		}
@@ -161,102 +208,201 @@ osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
            	goto EXIT;
        	}
 
-		tuRegistrar_t* pRegData = osMem_zalloc(sizeof(tuRegistrar_t), masRegistrar_cleanup);
-		osPL_dup(&pRegData->user, &sipUri);
-		pRegData->regState = MAS_REGSTATE_REGISTERED;
-		sipHdrDecoded_dup(&pRegData->contact, &contactHdr);
+		pRegData = osMem_zalloc(sizeof(tuRegistrar_t), masRegistrar_cleanup);
+		osDPL_dup(&pRegData->user, &sipUri);
+//		pRegData->regState = MAS_REGSTATE_REGISTERED;
+//		pRegData->pContact = osMem_ref(pContactHdr);
+//		sipHdrDecoded_dup(&pRegData->pContact-> &contactHdr);
 
 		pHashData->hashKeyType = OSHASHKEY_INT;
 		pHashData->hashKeyInt = key;
 		pHashData->pData = pRegData;
+logError("to-remvoe, just to check the creation of a address.");
 		pRegData->pRegHashLE = osHash_add(masRegHash, pHashData);
-				
-		pRegData->expiryTimerId = masRegStartTimer(regExpire*1000, pRegData);
+		logInfo("user(%r) is add into masRegHash, key=0x%ux, pRegHashLE=%p", &sipUri, key, pRegData->pRegHashLE);
+        logError("to-remove, regState, pRegHashLE=%p, pRegData=%p, state=%d, MAS_REGSTATE_REGISTERED=%d", pRegData->pRegHashLE, pRegData, pRegData->regState, MAS_REGSTATE_REGISTERED);
+
+		pRegData->regState = MAS_REGSTATE_NOT_REGISTERED;				
+//		pRegData->expiryTimerId = masRegStartTimer(regExpire*1000, pRegData);
 			
 		rspCode = SIP_RESPONSE_200;
 		goto EXIT;
     }
 
-	tuRegistrar_t* pRegData = ((osHashData_t*)pHashLE->data)->pData;
-
-	//for deregistration
-	if(regExpire == 0)
-	{
-	    masReg_deRegUser(TU_DEREG_CAUSE_USER_DEREG, pRegData);
-
-		rspCode = SIP_RESPONSE_200;
-		goto EXIT;
-	}
-
-	//for registration
-	//to-do, compare the contact between new reg and what is in pRegData.  If difference, may need to do auth, etc.  for now, just replace
-	sipHdrDecoded_delete(&pRegData->contact);
-	sipHdrDecoded_dup(&pRegData->contact, &contactHdr);
-	if(pRegData->regState == MAS_REGSTATE_REGISTERED)
-	{
-		osStopTimer(pRegData->expiryTimerId);
-		pRegData->expiryTimerId = masRegStartTimer(regExpire*1000, pRegData);
-	}
-	else
-	{
-		osStopTimer(pRegData->purgeTimerId);
-		pRegData->expiryTimerId = masRegStartTimer(regExpire*1000, pRegData);
-	}
+	pRegData = ((osHashData_t*)pHashLE->data)->pData;
 
 	rspCode = SIP_RESPONSE_200;
 
 EXIT:
 	{
-		osMBuf_t* pSipResp;
-    	sipHdrName_e sipHdrArray[] = {SIP_HDR_VIA, SIP_HDR_FROM, SIP_HDR_TO, SIP_HDR_CALL_ID, SIP_HDR_CSEQ};
+		sipHostport_t peer;
+		peer.host = pSipTUMsg->pPeer->ip;
+		peer.portValue = pSipTUMsg->pPeer->port;
+
+		osMBuf_t* pSipResp = NULL;
+    	sipHdrName_e sipHdrArray[] = {SIP_HDR_FROM, SIP_HDR_TO, SIP_HDR_CALL_ID, SIP_HDR_CSEQ};
     	int arraySize = sizeof(sipHdrArray) / sizeof(sipHdrArray[0]);
 
+		logInfo("rspCode=%d.", rspCode);
 		switch(rspCode)
 		{
-			case SIP_RESPONSE_423:
-            	pSipResp = sipTU_buildUasResponse(pReqDecodedRaw, rspCode, sipHdrArray, arraySize, false);
-				status = sipTU_addMsgHdr(pSipResp, SIP_HDR_MIN_EXPIRES, &regExpire, NULL);
-				status = sipTU_copySipMsgHdr(pSipResp, pReqDecodedRaw, NULL, 0, true);
-				break;
 			case SIP_RESPONSE_200:
 				pSipResp = sipTU_buildUasResponse(pReqDecodedRaw, rspCode, sipHdrArray, arraySize, false);
+                status = sipHdrVia_rspEncode(pSipResp, viaHdr.decodedHdr,  pReqDecodedRaw, &peer);
 				status = sipTU_addContactHdr(pSipResp, pReqDecodedRaw, regExpire);
 				status = sipTU_copySipMsgHdr(pSipResp, pReqDecodedRaw, NULL, 0, true);
+				status = sipTU_msgBuildEnd(pSipResp, false);
+				break;
+			case SIP_RESPONSE_INVALID:
+				//do nothing here, since pSipResp=NULL, the implementation will be notified to abort the transaction
 				break;
 			default:
-				pSipResp = sipTU_buildUasResponse(pReqDecodedRaw, rspCode, sipHdrArray, arraySize, true);
+                pSipResp = sipTU_buildUasResponse(pReqDecodedRaw, rspCode, sipHdrArray, arraySize, false);
+                status = sipHdrVia_rspEncode(pSipResp, viaHdr.decodedHdr,  pReqDecodedRaw, &peer);
+				if(rspCode == SIP_RESPONSE_423)
+				{
+                	status = sipTU_addMsgHdr(pSipResp, SIP_HDR_MIN_EXPIRES, &regExpire, NULL);
+				}
+                status = sipTU_copySipMsgHdr(pSipResp, pReqDecodedRaw, NULL, 0, true);
+                status = sipTU_msgBuildEnd(pSipResp, false);
 				break;
 		}
 
 		if(pSipResp)
 		{
-        	sipTransMsg_t sipTransMsg = {};
-        	sipTransMsg.sipMsgType = SIP_MSG_RESPONSE;
-        	sipTransMsg.sipMsgBuf.pSipMsg = pSipResp;
+logError("to-remove, masReg, pRegData=%p", pRegData);
+			logInfo("Response Message=\n%M", pSipResp);
+
+            sipTransMsg_t sipTransMsg = {};
+
+			//fill the peer transport info
+    		sipHdrViaDecoded_t* pTopVia = ((sipHdrMultiVia_t*)(viaHdr.decodedHdr))->pVia;
+    		sipHostport_t peerHostPort;
+    		sipTransport_e peerTpProtocol;
+    		sipHdrVia_getPeerTransport(pTopVia, &peerHostPort, &peerTpProtocol);
+
+            sipTransMsg.response.sipTrMsgBuf.tpInfo.tpType = peerTpProtocol;
+//            sipTransMsg.response.sipTrMsgBuf.tpInfo.tcpFd = pSipTUMsg->tcpFd;
+            sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.ip = peerHostPort.host;
+            sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.port = peerHostPort.portValue;
+			sipConfig_getHost(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.response.sipTrMsgBuf.tpInfo.local.port); 
+            sipTransMsg.response.sipTrMsgBuf.tpInfo.viaProtocolPos = 0;
+
+			//fill the other info
+        	sipTransMsg.sipMsgType = SIP_TRANS_MSG_CONTENT_RESPONSE;
+        	sipTransMsg.response.sipTrMsgBuf.sipMsgBuf.pSipMsg = pSipResp;
         	sipTransMsg.pTransId = pSipTUMsg->pTransId;
-			sipTransMsg.rspCode = rspCode;
+			sipTransMsg.response.rspCode = rspCode;
+			sipTransMsg.pSenderId = pRegData;
 
         	status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);
+			
+			//masRegistrar does not need to keep pSipResp, if other layers need it, it is expected they will ref it
+			osMem_deref(pSipResp);
+
+			//handle corner error case when the sending of rsp wa failed, and for normal case, start timer, set reg state, etc.
+			if(rspCode == SIP_RESPONSE_200 && pRegData)
+			{
+				if(pRegData->isRspFailed)
+				{
+					//handle the case when a UE is a initial registration, for re-reg, let it time out
+					if(pRegData->regState != MAS_REGSTATE_REGISTERED)
+					{
+		        		masRegData_forceDelete(pRegData);
+					}
+				}
+				else
+				{
+					if(regExpire == 0)
+		        	{
+						//if dereg procedure has already started, do nothing
+						if(!pRegData->purgeTimerId)
+						{
+							masReg_deRegUser(TU_DEREG_CAUSE_USER_DEREG, pRegData);
+						}
+					}
+					else
+					{
+				    	if(pRegData->regState == MAS_REGSTATE_REGISTERED)
+    					{
+    						osMem_deref(pRegData->pContact);
+    						pRegData->pContact = osMem_ref(pContactHdr);
+
+        					osStopTimer(pRegData->expiryTimerId);
+        					pRegData->expiryTimerId = masRegStartTimer(regExpire*1000, pRegData);
+    					}
+    					else
+    					{
+					        pRegData->pContact = osMem_ref(pContactHdr);
+
+        					pRegData->regState = MAS_REGSTATE_REGISTERED;
+							if(pRegData->purgeTimerId)
+							{
+        						osStopTimer(pRegData->purgeTimerId);
+								pRegData->purgeTimerId = 0;
+							}
+        					pRegData->expiryTimerId = masRegStartTimer(regExpire*1000, pRegData);
+							//start timer to query DB if there is stored SMS for the user, the reason not to query right away is that client could not handle immediate SMS after register
+							pRegData->smsQueryTimerId = masRegStartTimer(5000, pRegData);
+                           // masDbQuerySMSByUser(&sipUri);
+    					}
+					}
+				}
+			}
+
+			pRegData ? pRegData->isRspFailed = false : (void)0;
+
     	}
     	else
     	{
         	logError("fails to sipTU_buildResponse.");
+			//to-do need to notify transaction layer to drop the transaction
         	status = OS_ERROR_MEMORY_ALLOC_FAILURE;
 		}
-		
-		if(pContactExpire)
-		{
-			osMem_deref(pContactExpire);
-		}
 	}
+
+//	osMem_deref(pContactHdr->decodedHdr);
+logError("to-remove, viaHdr.decodedHdr=%p, pContactHdr=%p", viaHdr.decodedHdr, pContactHdr);
+	osMem_deref(viaHdr.decodedHdr);	
+	osMem_deref(pContactHdr);
+
+//logError("to-remove, masreg1, pRegData=%p, peer-ipaddr=%p, peer=%r:%d", pRegData, ((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.host.p, &((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.host, ((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.portValue);
 
 	DEBUG_END
 	return status;
 }
 
+//make sure dereg purge timer is long enough so that for any possible resp TrFailure error (include TrFailure error for dereg request retransmission), it ALWAYS happens within the purge timer period. (may not have to be, see comment in  pRegData = pSipTUMsg->pTUId assignment. 
+static osStatus_e masReg_onTrFailure(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
+{
+	osStatus_e status = OS_STATUS_OK;
 
+	if(!pSipTUMsg)
+	{
+		logError("null pointer, pSipTUMsg");
+		status = OS_ERROR_NULL_POINTER;
+		goto EXIT;
+	}
+
+	//there is some dangerous for this statement, as pRegData may have been reclaimed for dereg case in general.  but actually it may not be an issue, as only possible no call chain call of this function (out of blue) is for UDP TP, but UDP TP by itself would not have out of blue error, either there is error when UDP sending happens, or no error, so we are fine 
+	tuRegistrar_t* pRegData = pSipTUMsg->pTUId;
+	if(!pRegData)
+	{
+		logInfo("pRegData is NULL.");
+		goto EXIT;
+	}
+
+	//only set the flag.  In some case like in TCP case, it may be possible that the TrFailure happens after the reg procedure is completed, but we can not roll back all registration setting, let it be.  For dereg case, make sure the purge timer is longer than the possible TrFailure return time, because otherwise, pRegData maybe a garbage, and that may cause program crash.	but when seeing above  pRegData = pSipTUMsg->pTUId comment, this may not be an issue
+	pRegData->isRspFailed = true;
+
+EXIT:
+	return status;
+}
+
+		
 static void masReg_onTimeout(uint64_t timerId, void* data)
-{ 
+{
+	logInfo("timeout, timerId=0x%lx.", timerId); 
 	if(!data)
 	{
 		logError("null pointer, data.");
@@ -273,7 +419,16 @@ static void masReg_onTimeout(uint64_t timerId, void* data)
 	else if(timerId == pRegData->purgeTimerId)
 	{
 		pRegData->purgeTimerId = 0;
-		masRegistrar_cleanup(pRegData);
+		osMem_deref(pRegData);
+	}
+	else if(timerId == pRegData->smsQueryTimerId)
+	{
+        pRegData->smsQueryTimerId = 0;
+		if(pRegData->regState == MAS_REGSTATE_REGISTERED)
+		{
+logError("to-remove, sms, user=%r", &pRegData->user);
+			masDbQuerySMSByUser((osPointerLen_t*)&pRegData->user);
+		}
 	}
 	else
 	{
@@ -285,13 +440,47 @@ EXIT:
 }
 
 
+sipUri_t* masReg_getUserRegInfo(osPointerLen_t* pSipUri, tuRegState_e* regState)
+{
+	sipUri_t* pContactUser = NULL;
+
+    uint32_t key = osHash_getKeyPL(pSipUri, true);
+    osListElement_t* pHashLE = osHash_lookupByKey(masRegHash, &key, OSHASHKEY_INT);
+    if(!pHashLE)
+    {
+		debug("user(%r) does not have register record in MAS.", pSipUri);
+		*regState = MAS_REGSTATE_NOT_EXIST;
+		return pContactUser;
+	}
+
+	tuRegistrar_t* pRegData = ((osHashData_t*)pHashLE->data)->pData;
+	if(pRegData->regState == MAS_REGSTATE_NOT_REGISTERED)
+	{
+		debug("user(%r) is not registered.", pSipUri);
+        logError("to-remove, regState, pHashLE=%p, pRegData=%p, state=%d, MAS_REGSTATE_REGISTERED=%d", pHashLE, pRegData, pRegData->regState, MAS_REGSTATE_REGISTERED);
+		*regState = MAS_REGSTATE_NOT_REGISTERED;
+		return pContactUser;
+	}
+
+logError("to-remove, masreg, pRegData=%p, peer-ipaddr=%p, peer=%r:%d", pRegData, ((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.host.p, &((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.host, ((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.portValue);
+	*regState = MAS_REGSTATE_REGISTERED;
+	pContactUser = &((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri;
+
+	return pContactUser;
+}
+	
+
 void* masReg_addAppInfo(osPointerLen_t* pSipUri, masInfo_t* pMasInfo)
 {
+	DEBUG_BEGIN
+
 	if(!pSipUri || !pMasInfo)
 	{
 		logError("null pointyer, pSipUri=%p, pMasInfo=%p.", pSipUri, pMasInfo);
 		return NULL;
 	}
+
+	pMasInfo->regId = NULL;
 
     uint32_t key = osHash_getKeyPL(pSipUri, true);
     osListElement_t* pHashLE = osHash_lookupByKey(masRegHash, &key, OSHASHKEY_INT);
@@ -305,27 +494,36 @@ void* masReg_addAppInfo(osPointerLen_t* pSipUri, masInfo_t* pMasInfo)
         }
 
         tuRegistrar_t* pRegData = osMem_zalloc(sizeof(tuRegistrar_t), masRegistrar_cleanup);
-        osPL_dup(&pRegData->user, pSipUri);
+        osDPL_dup(&pRegData->user, pSipUri);
         pRegData->regState = MAS_REGSTATE_NOT_REGISTERED;
-		pMasInfo->regId = pHashLE;
+        logError("to-remove, regState, pRegData=%p, state=%d, MAS_REGSTATE_REGISTERED=%d", pRegData, pRegData->regState, MAS_REGSTATE_REGISTERED);
+#if 0
+//since SMS is not an session, really there is no need to store sms in regData 
 		osList_append(&pRegData->appInfoList, pMasInfo);
-
+#endif
         pHashData->hashKeyType = OSHASHKEY_INT;
         pHashData->hashKeyInt = key;
         pHashData->pData = pRegData;
         pRegData->pRegHashLE = osHash_add(masRegHash, pHashData);
-
+		pMasInfo->regId = pRegData->pRegHashLE;
+logError("to-remove, CRASH, pMasInfo=%p, pMasInfo->regId=%p", pMasInfo, pMasInfo->regId); 
+	
         pRegData->purgeTimerId = masRegStartTimer(MAS_REG_PURGE_TIMER*1000, pRegData);
     }
 	else
 	{
 		pMasInfo->regId = pHashLE;
-		tuRegistrar_t* pRegData = pHashLE->data;
+		tuRegistrar_t* pRegData = ((osHashData_t*)pHashLE->data)->pData;
+#if 0
+//since SMS is not an session, really there is no need to store sms in regData
 		osList_append(&pRegData->appInfoList, pMasInfo);
+#endif
+logError("to-remove, CRASH, pRegData=%p, pTransId=%p, pMasInfo(pInfo)=%p, pHashLE=%p", pRegData, pMasInfo->pSrcTransId, pMasInfo, pHashLE);
 	}
 
 EXIT:	
-	return pMasInfo;
+	DEBUG_END
+	return pMasInfo->regId;
 }
 	
 
@@ -337,9 +535,9 @@ osStatus_e masReg_deleteAppInfo(void* pTUId, void* pTransId)
 		return OS_ERROR_NULL_POINTER;
 	}
 
+logError("to-remove, CRASH, pTUId=%p, ((masInfo_t*)pTUId)->regId=%p", pTUId, ((masInfo_t*)pTUId)->regId);
 	osStatus_e status = OS_STATUS_OK;
-
-	tuRegistrar_t* pRegData = ((osListElement_t*)pTUId)->data;
+	tuRegistrar_t* pRegData = osHash_getData(((masInfo_t*)pTUId)->regId);
 	if(!pRegData)
 	{
 		logError("pRegData is NULL.");
@@ -347,6 +545,7 @@ osStatus_e masReg_deleteAppInfo(void* pTUId, void* pTransId)
 		goto EXIT;
 	}
 
+logError("to-remove, pRegData=%p, pTransId=%p", pRegData, pTransId);
 	void* pInfo = osList_deleteElement(&pRegData->appInfoList, appInfoMatchHandler, pTransId);
 	if(!pInfo)
 	{
@@ -355,7 +554,7 @@ osStatus_e masReg_deleteAppInfo(void* pTUId, void* pTransId)
 		goto EXIT;
 	}
 
-	osMem_deref(pInfo);
+	//do not free the pInfo, it is owned by masSMS and will be freed there
 
 EXIT:
 	return status;
@@ -399,10 +598,21 @@ static osStatus_e masReg_deRegUser(tuDeRegCause_e deregCause, tuRegistrar_t* pRe
         goto EXIT;
     }
 
-	if(pRegData->regState = MAS_REGSTATE_REGISTERED)
+	debug("pRegData->regState = %d", pRegData->regState);
+	if(pRegData->regState == MAS_REGSTATE_REGISTERED)
 	{
     	pRegData->regState = MAS_REGSTATE_NOT_REGISTERED;
-    	osStopTimer(pRegData->expiryTimerId);
+
+	    if(pRegData->expiryTimerId != 0)
+		{
+    		osStopTimer(pRegData->expiryTimerId);
+			pRegData->expiryTimerId = 0;
+		}
+		if(pRegData->smsQueryTimerId != 0)
+        {
+            osStopTimer(pRegData->smsQueryTimerId);
+            pRegData->smsQueryTimerId = 0;
+        }
     	pRegData->purgeTimerId = masRegStartTimer(MAS_REG_PURGE_TIMER*1000, pRegData);
 	}
 
@@ -413,6 +623,8 @@ EXIT:
 	
 static void masRegistrar_cleanup(void* pData)
 {
+	DEBUG_BEGIN;
+
 	if(!pData)
 	{
 		return;
@@ -423,17 +635,71 @@ static void masRegistrar_cleanup(void* pData)
 	if(pRegData->expiryTimerId != 0)
     {
         osStopTimer(pRegData->expiryTimerId);
+		pRegData->expiryTimerId = 0;
+    }
+
+    if(pRegData->smsQueryTimerId != 0)
+    {
+        osStopTimer(pRegData->smsQueryTimerId);
+        pRegData->smsQueryTimerId = 0;
     }
 
 	if(pRegData->purgeTimerId != 0)
 	{
 		osStopTimer(pRegData->purgeTimerId);
+		pRegData->purgeTimerId = 0;
 	}
 
-	osMem_deref(pRegData->contact.decodedHdr);
-	osMem_deref(pRegData->contact.rawHdr.buf);
-	osPL_dealloc(&pRegData->user);
+	//to-do, update so that just call one function, osMem_deref(pRegData->pContact) will clean the remaining
+//	osMem_deref(pRegData->pContact->decodedHdr);
+//	osMem_deref(pRegData->pContact->rawHdr.buf);
+    osMem_deref(pRegData->pContact);
+
+	osDPL_dealloc(&pRegData->user);
+	osList_delete(&pRegData->appInfoList);
+
+	//remove from hash
+	if(pRegData->pRegHashLE)
+	{
+		logInfo("delete hash element, key=%ud", ((osHashData_t*)pRegData->pRegHashLE->data)->hashKeyInt);
+		osHash_deleteNode(pRegData->pRegHashLE);
+	}
+	osfree(pRegData->pRegHashLE);
+	pRegData->pRegHashLE = NULL;
+
+DEBUG_END
 }
+
+
+static void masRegData_forceDelete(tuRegistrar_t* pRegData)
+{
+	if(!pRegData)
+	{
+		return;
+	}
+
+    //clear the resource
+    if(pRegData->expiryTimerId)
+    {
+        osStopTimer(pRegData->expiryTimerId);
+        pRegData->expiryTimerId = 0;
+    }
+
+    if(pRegData->smsQueryTimerId != 0)
+    {
+        osStopTimer(pRegData->smsQueryTimerId);
+        pRegData->smsQueryTimerId = 0;
+    }
+
+    if(pRegData->purgeTimerId)
+    {
+        osStopTimer(pRegData->purgeTimerId);
+        pRegData->purgeTimerId = 0;
+    }
+
+    osMem_deref(pRegData);
+}
+
 
 static void masHashData_cleanup(void* data)
 {

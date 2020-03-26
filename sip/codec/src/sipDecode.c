@@ -53,7 +53,7 @@ osStatus_e sipGetHdrName(osMBuf_t* pSipMsg, sipRawHdr_t* pSipHeader)
 
     for(pSipHeaderText; pSipMsg->pos < pSipMsg->end; ++pSipHeaderText, ++pSipMsg->pos)
     {
-		debug("debug, *pSipHeaderText=%c", *pSipHeaderText); 
+		mdebug(LM_SIPP, "debug, *pSipHeaderText=%c", *pSipHeaderText); 
 		if(*pSipHeaderText == ':')
 		{
 			if(pSipMsg->pos == origPos)
@@ -74,7 +74,7 @@ osStatus_e sipGetHdrName(osMBuf_t* pSipMsg, sipRawHdr_t* pSipHeader)
 
 				++pSipMsg->pos;
 			
-				debug("hdr name=%r, namePos=%ld", &pSipHeader->name, pSipHeader->namePos);
+				mdebug(LM_SIPP, "hdr name=%r, namePos=%ld", &pSipHeader->name, pSipHeader->namePos);
                 return OS_STATUS_OK;
             }
         }
@@ -139,7 +139,7 @@ osStatus_e sipGetHdrRawValue(osMBuf_t* pSipMsg, sipRawHdr_t* pSipHeader, bool* i
 
                     osPL_setStr(&pSipHeader->value, (const char*) &pSipMsg->buf[origPos + nSP], pSipMsg->pos - origPos - nSP - 2);
                     pSipHeader->valuePos = origPos + nSP;
-                    debug("hdr value=%r, valuePos=%ld", &pSipHeader->value, pSipHeader->valuePos);
+                    mdebug(LM_SIPP, "hdr value=%r, valuePos=%ld", &pSipHeader->value, pSipHeader->valuePos);
 
 					if(!strncmp(pSipHeaderText, "\r\n", 2))
 					{
@@ -171,7 +171,7 @@ osStatus_e sipGetHdrRawValue(osMBuf_t* pSipMsg, sipRawHdr_t* pSipHeader, bool* i
  */
 osStatus_e sipDecodeOneHdrRaw(osMBuf_t* pSipMsg, sipRawHdr_t* pSipHeader, bool* isEOH)
 {
-	DEBUG_BEGIN
+	mDEBUG_BEGIN(LM_SIPP)
 	osStatus_e status;
 
 	if(!pSipMsg || !pSipHeader)
@@ -189,7 +189,7 @@ osStatus_e sipDecodeOneHdrRaw(osMBuf_t* pSipMsg, sipRawHdr_t* pSipHeader, bool* 
 	status = sipGetHdrRawValue(pSipMsg, pSipHeader, isEOH);
 
 EXIT:
-	DEBUG_END
+	mDEBUG_END(LM_SIPP)
 	return status;
 }
 
@@ -239,7 +239,7 @@ osStatus_e sipFindHdrs(osMBuf_t* pSipMsg, sipHdrInfo_t* sipHdrArray, uint8_t hea
 		{
     		if( sipHdr.nameCode == sipHdrArray[i].nameCode)
         	{
-				debug("nameCode=%d, isEOH=%d", sipHdr.nameCode, isEOH);
+				mdebug(LM_SIPP, "nameCode=%d, isEOH=%d", sipHdr.nameCode, isEOH);
 				sipRawHdr_t* pMatchedSipHdr = osMem_dalloc(&sipHdr, sizeof(sipRawHdr_t), NULL);
 				if(sipHdrArray[i].rawHdr.pRawHdr == NULL)
 				{
@@ -346,7 +346,7 @@ sipHdrName_e sipHdr_getNameCode(osPointerLen_t* hdrName)
 	if(pName == NULL)
 	{
 		logError("could not find nameCode for hdrName=%r", hdrName);
-		return SIP_HDR_NONE;
+		return SIP_HDR_X;
 	}
 	else
 	{
@@ -732,11 +732,13 @@ const char* sipHdr_getNameByCode(sipHdrName_e nameCode)
 }
 
 
-/* decode a raw hdr.
+/* decode a raw hdr (one raw value corresponding to one hdr name, not to decode all raw hdr values under a hdr name).
  * if isDupRawHdr = true, the raw hdr contents are duplicated
  */
 osStatus_e sipDecodeHdr(sipRawHdr_t* sipRawHdr, sipHdrDecoded_t* sipHdrDecoded, bool isDupRawHdr)
 {
+	mDEBUG_BEGIN(LM_SIPP)
+
 	osStatus_e status = OS_STATUS_OK;
 
 	if(!sipRawHdr || !sipHdrDecoded)
@@ -775,6 +777,7 @@ osStatus_e sipDecodeHdr(sipRawHdr_t* sipRawHdr, sipHdrDecoded_t* sipHdrDecoded, 
     }
 
 EXIT:
+	mDEBUG_END(LM_SIPP)
 	return status;
 }
 
@@ -785,6 +788,8 @@ EXIT:
  */
 sipMsgDecoded_t* sipDecodeMsg(osMBuf_t* pSipMsg, sipHdrName_e sipHdrArray[], int requestedHdrNum)
 {
+	mDEBUG_BEGIN(LM_SIPP)
+
 	osStatus_e status = OS_STATUS_OK;
     sipMsgDecoded_t* pSipMsgDecoded = sipMsg_allocMsgDecoded(pSipMsg);
 
@@ -872,7 +877,7 @@ sipMsgDecoded_t* sipDecodeMsg(osMBuf_t* pSipMsg, sipHdrName_e sipHdrArray[], int
 
 		if(isDecode)
 		{
-        	debug("nameCode=%d, isEOH=%d", pSipRawHdr->nameCode, isEOH);
+        	mdebug(LM_SIPP, "nameCode=%d, isEOH=%d", pSipRawHdr->nameCode, isEOH);
 			void* pDecodedHdr = sipHdrParse(pSipMsg, pSipRawHdr->nameCode, pSipRawHdr->valuePos, pSipRawHdr->value.l);
 #if 0
 			osMBuf_t pSipMsgHdr;
@@ -927,6 +932,8 @@ EXIT:
 	}
 
     pSipMsg->pos = origPos;
+
+	mDEBUG_END(LM_SIPP)
     return pSipMsgDecoded;
 }
 
@@ -986,6 +993,24 @@ static void sipMsgDecodedRawHdr_delete(void* data)
 	osMem_deref(pMsgDecoded);
 }
 #endif
+
+
+//clean up for data structure sipHdrDecoded_t
+void sipHdrDecoded_cleanup(void* pData)
+{
+	if(!pData)
+	{
+		return;
+	}
+
+	sipHdrDecoded_t* pHdrDecoded = pData;
+
+	osMem_deref(pHdrDecoded->decodedHdr);
+	if(pHdrDecoded->isRawHdrCopied)
+	{
+		osMem_deref(pHdrDecoded->rawHdr.buf);
+	}
+}
 
 
 static void sipMsgDecoded_delete(void *data)

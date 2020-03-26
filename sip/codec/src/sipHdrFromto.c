@@ -206,6 +206,7 @@ osStatus_e sipHdrFromto_generateTagId(osPointerLen_t* pTagId, bool isTagLabel)
 	}
 
 	pTagId->p = tagId;
+//	pTagId->pIsDynamic = true;
 	
 EXIT:
 	if(status != OS_STATUS_OK)

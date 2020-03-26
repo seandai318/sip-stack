@@ -80,7 +80,17 @@ osStatus_e sipParamUri_parse(osMBuf_t* pSipMsg, size_t hdrEndPos, sipParsingInfo
 
     status = sipParsing_getHdrValue(pSipMsg, hdrEndPos, &sipUriABNF[1], sippParsingInfo, sipP_uriNum-1, pParsingStatus);
 
-	pSipUri->sipUser.l = pSipUri->hostport.host.p +  pSipUri->hostport.host.l - pSipUri->sipUser.p;
+	pSipUri->sipUser.l = pSipUri->hostport.host.p + pSipUri->hostport.host.l - pSipUri->sipUser.p;
+
+	//convert port to portValue
+	if(pSipUri->hostport.port.l == 0)
+	{
+		pSipUri->hostport.portValue = 0;
+	}
+	else
+	{
+		pSipUri->hostport.portValue = osPL_str2u32(&pSipUri->hostport.port);
+	}
 
 EXIT:
 	return status;

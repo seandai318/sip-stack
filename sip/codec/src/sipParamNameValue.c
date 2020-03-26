@@ -1,5 +1,8 @@
 #include "osTypes.h"
+#include "osMemory.h"
+
 #include "sipParamNameValue.h"
+#include "osDebug.h"
 
 
 bool sipParamNV_isNameExist(osList_t* pParam, osPointerLen_t* pName)
@@ -87,7 +90,7 @@ sipParamNameValue_t* sipParamNV_takeTopNVfromList(osList_t* pParamList, uint8_t*
 		{
 			*newListCount = --lCount;
 		}
-		free(pLE);
+		osfree(pLE);
 	}
 		
 EXIT:
@@ -106,6 +109,7 @@ sipParamNameValue_t* sipParamNV_takeNVfromList(osList_t* pParam, osPointerLen_t*
         goto EXIT;
     }
 
+logError("to-remove, branch free, pParam=%p, count=%d", pParam, osList_getCount(pParam));
     osListElement_t* pLE = pParam->head;
     while(pLE)
     {
@@ -133,7 +137,8 @@ sipParamNameValue_t* sipParamNV_takeNVfromList(osList_t* pParam, osPointerLen_t*
 				pLE->next->prev = pLE->prev;
 			}
 
-			free(pLE);
+logError("to-remove, branch free, pLE=%p", pLE);
+			osfree(pLE);
 			break;
 		}
 
@@ -141,5 +146,6 @@ sipParamNameValue_t* sipParamNV_takeNVfromList(osList_t* pParam, osPointerLen_t*
 	}
 
 EXIT:
+logError("to-remove, after branch free, pParam=%p, count=%d", pParam, osList_getCount(pParam));
 	return pNV;
 }

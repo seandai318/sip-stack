@@ -15,6 +15,7 @@
 #include "sipConfig.h"
 
 
+
 static osStatus_e sipParsing_setViaParsingInfo(sipParsing_param_e paramName, sipParsingInfo_t* pSippParsingInfo, void* arg);
 static sipParsingABNF_t sipViaABNF[]={  \
 	{1, 1, 					SIP_TOKEN_INVALID, 	0, SIPP_PARAM_HOSTPORT, 		 sipParser_hostport, 		NULL},
@@ -25,7 +26,7 @@ static int sipP_viaNum = sizeof(sipViaABNF)/sizeof(sipParsingABNF_t);
 
 osStatus_e sipParserHdr_via(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrMultiVia_t* pVia)
 {
-    DEBUG_BEGIN
+    mDEBUG_BEGIN(LM_SIPP)
 
     osStatus_e status = OS_STATUS_OK;
 
@@ -91,14 +92,14 @@ EXIT:
         osList_delete(&pVia->viaList);
     }
 
-    DEBUG_END
+    mDEBUG_END(LM_SIPP)
     return status;
 }
 
 
 osStatus_e sipParserHdr_viaElement(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrVia_t* pVia)
 {
-    DEBUG_BEGIN
+    mDEBUG_BEGIN(LM_SIPP)
 
     osStatus_e status = OS_STATUS_OK;
     sipParsingInfo_t sippParsingInfo[sipP_viaNum];
@@ -188,8 +189,6 @@ osStatus_e sipParserHdr_viaElement(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrVi
     status = sipParsing_getHdrValue(pSipMsg, hdrEndPos, sipViaABNF, sippParsingInfo, sipP_viaNum, &parsingStatus);
 
 EXIT:
-	DEBUG_END
-
 	if(status == OS_STATUS_OK)
 	{
 		pVia->paramNum = 0;
@@ -206,6 +205,7 @@ EXIT:
 		}
 	}
 
+    mDEBUG_END(LM_SIPP)
 	return status;
 }
 
@@ -237,6 +237,7 @@ static osStatus_e sipParsing_setViaParsingInfo(sipParsing_param_e paramName, sip
 }
 
 
+/* via: sipHdrVia_t */
 osStatus_e sipHdrVia_encode(osMBuf_t* pSipBuf, void* via, void* data)
 {
 	osStatus_e status = OS_STATUS_OK;
@@ -247,6 +248,7 @@ osStatus_e sipHdrVia_encode(osMBuf_t* pSipBuf, void* via, void* data)
 		status = OS_ERROR_NULL_POINTER;
 		goto EXIT;
 	}
+
 
 	sipHdrVia_t* pVia = via;	
 	if(pVia->pBranch == NULL || pVia->pBranch->value.l == 0)
@@ -292,55 +294,140 @@ EXIT:
 	return status;
 }
 
-#if 0
-osStatus_e sipHdrVia_create(void* via, void* branchId, void* other)
+
+osStatus_e sipHdrVia_rspEncode(osMBuf_t* pSipBuf, sipHdrMultiVia_t* pTopMultiVia, sipMsgDecodedRawHdr_t* pDecodedRaw, sipHostport_t* pPeer)
 {
     osStatus_e status = OS_STATUS_OK;
-	sipHdrParamNameValue_t* pBranchParam = NULL;
 
-    if(!via || !branchId)
+    if(!pSipBuf || !pDecodedRaw || !pTopMultiVia || !pPeer)
     {
-        logError("null pointer, via=%p, branchId=%p.", via, branchId);
+        logError("null pointer, pSipBuf=%p, pDecodedRaw=%p, pTopMultiVia=%p, pPeer=%p.", pSipBuf, pDecodedRaw, pTopMultiVia, pPeer);
         status = OS_ERROR_NULL_POINTER;
         goto EXIT;
     }
 
-	sipHdrVia_t* pVia = via;
-	osPointerLen_t* pBranchId = branchId;
-	char* pExtraInfo = other;
+    sipHdrViaDecoded_t* pTopDecodedVia = pTopMultiVia->pVia;
+    if(!pTopDecodedVia)
+    {
+        logError("pMultiVia has NULL top via.");
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
 
-    //the default transmission method is UDP, if in transmission layer switches to TCP, can be updated there
-    pVia->sentProtocol[2].p="UDP";
-    pVia->sentProtocol[2].l=3;
+    sipHdrVia_t* pVia = &pTopDecodedVia->hdrValue;
+    osPointerLen_t* pRport = NULL;
+    osPointerLen_t rport={"rport", 5};
+    if(pVia->paramNum > 1)
+    {
+        pRport = sipParamNV_getValuefromList(&pVia->viaParamList, &rport);
+        //if there is rport, but it has been assigned a value, do nothing
+        if(pRport && pRport->l != 0)
+        {
+            pRport = NULL;
+        }
+    }
 
-	sipHdrVia_generateBranchId(pBranchId, pExtraInfo);
-	sipConfig_getHost(&pVia->hostport.host, &pVia->hostport.portValue);
-		
-	pBranchParam = osMem_alloc(sizeof(sipHdrParamNameValue_t), NULL);
-	if(!pBranchParam)
+    //if there is no need to manipulate rport, just copy the received received raw hdr
+    if(!pRport)
+    {
+        sipHdrAddCtrl_t ctrl = {true, false, false, NULL};
+        status = sipMsgAddHdr(pSipBuf, SIP_HDR_VIA, pDecodedRaw->msgHdrList[SIP_HDR_VIA], NULL, ctrl);
+        goto EXIT;
+    }
+
+	//start to encode the top via based on the decoded hdr information
+    if(pVia->pBranch == NULL || pVia->pBranch->value.l == 0)
+    {
+        logError("pBranch is NULL(%p) or branch value is empty.", pVia->pBranch);
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+    osMBuf_writeStr(pSipBuf, "Via: SIP/2.0/", true);
+    osMBuf_writePL(pSipBuf, &pVia->sentProtocol[2], true);
+    osMBuf_writeU8(pSipBuf, ' ' , true);
+    osMBuf_writePL(pSipBuf, &pVia->hostport.host, true);
+    if(pVia->hostport.portValue != 0)
+    {
+        osMBuf_writeU8(pSipBuf, ':', true);
+        osMBuf_writeU32Str(pSipBuf, pVia->hostport.portValue, true);
+    }
+
+    //write branch params
+    osMBuf_writeStr(pSipBuf, ";branch=", true);
+    osMBuf_writePL(pSipBuf, &pVia->pBranch->value, true);
+
+    //write other via params
+    osList_t* pViaParamList = &pVia->viaParamList;
+    osListElement_t* pViaParamLE = pViaParamList->head;
+    while(pViaParamLE)
+    {
+		//bypass rport parameter
+		if(osPL_cmp(&((sipParamNameValue_t*)pViaParamLE->data)->name, &rport) == 0)
+		{
+			pViaParamLE = pViaParamLE->next;
+			continue;
+		}
+
+        osMBuf_writeU8(pSipBuf, ';', true);
+        sipHdrParamNameValue_t* pParam = pViaParamLE->data;
+        osMBuf_writePL(pSipBuf, &pParam->name, true);
+        if(pParam->value.l)
+        {
+            osMBuf_writeU8(pSipBuf, '=', true);
+            osMBuf_writePL(pSipBuf, &pParam->value, true);
+        }
+        pViaParamLE = pViaParamLE->next;
+    }
+
+	osMBuf_writeStr(pSipBuf, ";received=", true);
+	osMBuf_writePL(pSipBuf, &pPeer->host, true);
+	osMBuf_writeStr(pSipBuf, ";rport=", true);
+	osMBuf_writeU32Str(pSipBuf, pPeer->portValue, true);
+
+	//if there is other via value in the top via name
+	if(pTopMultiVia->viaNum > 1)
 	{
-		logError("pBranchParam allocation fails.");
-		status = OS_ERROR_MEMORY_ALLOC_FAILURE;
-		goto EXIT;
+		osMBuf_writeU8(pSipBuf, ',', true);
+		osList_t* pViaList = &pTopMultiVia->viaList;
+		osListElement_t* pLE = pViaList->head;
+		while(pLE)
+		{
+			sipHdrViaDecoded_t* pV = pLE->data;
+			if(pV != NULL)
+			{	
+				sipHdr_posInfo_t* pHdrPos = &pV->hdrPos;
+				osPointerLen_t viaValue = {&pDecodedRaw->sipMsgBuf.pSipMsg->buf[pHdrPos->startPos], pHdrPos->totalLen};
+				osMBuf_writePL(pSipBuf, &viaValue, true);
+			}
+
+			pLE = pLE->next;
+		}
+	}
+	else
+	{				
+    	osMBuf_writeBuf(pSipBuf, "\r\n", 2, true);
 	}
 
-	pBranchParam->name.p = "Branch";
-	pBranchParam->name.l = 6;
-	pBranchParam->value.p = pBranchId->p;
-	pBranchParam->value.l = pBranchId->l;
-
-    osList_init(&pVia->viaParamList);
-	osList_append(&pVia->viaParamList, pBranchParam);
-
+	//copy the remaining via headers if any
+	if(pDecodedRaw->msgHdrList[SIP_HDR_VIA]->rawHdrNum > 1)
+	{
+		osList_t* pRawViaList = &pDecodedRaw->msgHdrList[SIP_HDR_VIA]->rawHdrList;
+		osListElement_t* pLE = pRawViaList->head;
+		while(pLE)
+		{
+			osMBuf_writePL(pSipBuf, &((sipRawHdr_t*)pLE->data)->name, true);
+			osMBuf_writeU8(pSipBuf, ':', true);
+			osMBuf_writePL(pSipBuf, &((sipRawHdr_t*)pLE->data)->value, true);
+			osMBuf_writeBuf(pSipBuf, "\r\n", 2, true);
+			
+			pLE = pLE->next;
+		}
+	}
+	
 EXIT:
-	if(status != OS_STATUS_OK)
-	{
-		osMem_deref(pBranchParam);
-	}
-
 	return status;
 }
-#endif
 
 
 void* sipHdrMultiVia_alloc()
@@ -359,7 +446,7 @@ void* sipHdrMultiVia_alloc()
 
 osStatus_e sipHdrVia_generateBranchId(osPointerLen_t* pBranch, char* pExtraInfo)
 {
-	DEBUG_BEGIN
+	mDEBUG_BEGIN(LM_SIPP)
 	osStatus_e status = OS_STATUS_OK;
 	char* branchValue = NULL;
 
@@ -413,47 +500,10 @@ EXIT:
     	pBranch->l = 0;
 	}
 
-	DEBUG_END
+	mDEBUG_END(LM_SIPP)
 	return status;
 }
 		
-#if 0
-sipHdrVia_t* sipHdrVia_getTopBottomVia(sipHdrMultiVia_t* pHdrViaList, bool isTop)
-{
-	sipHdrVia_t* pHdr = NULL;
-
-	if(!pHdrViaList)
-	{
-		logError("null pointer, pHdrViaList.");
-		goto EXIT;
-	}
-
-	if(isTop || pHdrViaList->viaList.tail == NULL)
-	{
-		if(pHdrViaList->isDecoded)
-		{
-			pHdr = pHdrViaList->u.pDecodedVia ? &pHdrViaList->u.pDecodedVia->hdrValue : NULL;
-		}
-		else
-		{
-			pHdr = pHdrViaList->u.pVia;
-		}
-		goto EXIT;
-	}
-
-    if(pHdrViaList->isDecoded)
-    {
-		pHdr = &((sipHdrViaDecoded_t*)pHdrViaList->viaList.tail->data)->hdrValue;
-	}
-	else
-	{
-		pHdr = pHdrViaList->viaList.tail->data;
-	}
-
-EXIT:
-	return pHdr;
-}
-#endif
 
 osPointerLen_t* sipHdrVia_getTopBranchId(sipHdrMultiVia_t* pHdrVia)
 {
@@ -475,4 +525,49 @@ osPointerLen_t* sipHdrVia_getTopBranchId(sipHdrMultiVia_t* pHdrVia)
 EXIT:
 	return pl;
 }
-			
+
+
+//extract the peer IP and port from a via header.  If there is received, ip in the received will be used
+osStatus_e sipHdrVia_getPeerTransport(sipHdrViaDecoded_t* pVia, sipHostport_t* pHostPort, sipTransport_e* pTransportProtocol)
+{
+	osStatus_e status = OS_STATUS_OK;
+	
+	if(!pVia || !pHostPort || !pTransportProtocol)
+	{
+		logError("null pointer, pVia=%p, pHostPort=%p, pTransportProtocol=%p.", pVia, pHostPort, pTransportProtocol);
+		status = OS_ERROR_NULL_POINTER;
+		goto EXIT;
+	}			
+
+	pHostPort->portValue = pVia->hdrValue.hostport.portValue;
+	if(pVia->hdrValue.paramNum > 1)
+	{
+		//check if there is received parameter
+		osList_t* pList = &pVia->hdrValue.viaParamList;
+		osListElement_t* pLE = pList->head;
+		while(pLE !=NULL)
+		{
+			if(!osPL_strcmp(&((sipParamNameValue_t*)pLE->data)->name, "received")) 
+			{
+				pHostPort->host = ((sipParamNameValue_t*)pLE->data)->value;
+				goto EXIT;
+			}
+
+			pLE = pLE->next;
+		}
+	}
+
+	pHostPort->host = pVia->hdrValue.hostport.host;
+
+	//for now, we just support TCP and UDP.
+	if(!osPL_strcmp(&pVia->hdrValue.sentProtocol[2], "TCP"))
+	{
+		*pTransportProtocol = SIP_TRANSPORT_TYPE_TCP;
+	}
+	else
+	{
+		*pTransportProtocol = SIP_TRANSPORT_TYPE_UDP;
+	}
+EXIT:
+	return status;
+}

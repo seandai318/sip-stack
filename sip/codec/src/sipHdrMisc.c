@@ -63,7 +63,7 @@ osStatus_e sipParserHdr_lenTime(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrInt_t
 		pSipMsg->pos++;
 	}
 
-	debug("to remoove, max-forwards value=%d", *pLenTime);
+	debug("to remoove, lentime value=%d", *pLenTime);
 EXIT:
 	return status;
 }
@@ -557,6 +557,39 @@ EXIT:
 	return status;
 }
 
+
+osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, osPointerLen_t* pCallId)
+{
+	osStatus_e status = OS_STATUS_OK;
+    osPointerLen_t pl={};
+
+	if(!pSipBuf)
+	{
+		logError("null pointer, pSipBuf.");
+		status = OS_ERROR_NULL_POINTER;
+		goto EXIT;
+	}
+
+	status = sipHdrCallId_createCallId(pCallId ? pCallId : &pl);
+	if(status != OS_STATUS_OK)
+	{
+		logError("fails to create call id.");
+		goto EXIT;
+	}
+
+	osMBuf_writeStr(pSipBuf, "Call-ID: ", true);
+	osMBuf_writePL(pSipBuf, pCallId ? pCallId : &pl, true);
+	osMBuf_writeStr(pSipBuf, "\r\n", true);
+
+EXIT:
+	if(!pCallId && status == OS_STATUS_OK)
+	{
+		osMem_deref((void*)pl.p);
+	}
+
+	return status;
+}
+		
 #if 0
 osStatus_e sipHdrLenTime_encode(osMBuf_t* pSipBuf, sipHdrName_e hdrName, uint32_t value)
 {

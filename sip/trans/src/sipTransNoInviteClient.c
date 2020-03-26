@@ -1,13 +1,14 @@
 #include "osTimer.h"
 #include "osMisc.h"
 #include "osHash.h"
+#include "osPreMemory.h"
 
 #include "sipMsgRequest.h"
 #include "sipConfig.h"
 #include "sipTransMgr.h"
 #include "sipTransIntf.h"
 #include "sipTUIntf.h"
-#include "sipTransport.h"
+#include "sipTransportIntf.h"
 
 
 static osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msgType, sipTransaction_t* pTrans);
@@ -46,6 +47,16 @@ osStatus_e sipTransNoInviteClient_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
 		}
 	}
+	if(msgType == SIP_TRANS_MSG_TYPE_TX_FAILED || msgType == SIP_TRANS_MSG_TYPE_TX_TCP_READY)
+	{
+		pTrans = ((sipTransportStatusMsg_t*)pMsg)->pTransId;
+        if(!pTrans)
+        {
+            logError("null pointer, pTrans, for msgType (%d).", msgType);
+            status = OS_ERROR_INVALID_VALUE;
+            goto EXIT;
+        }
+	}
 	
     switch(pTrans->state)
 	{
@@ -63,7 +74,7 @@ osStatus_e sipTransNoInviteClient_onMsg(sipTransMsgType_e msgType, void* pMsg, u
             break;
         case SIP_TRANS_STATE_TERMINATED:
         default:
-            logError("received a timeout event that has invalid transaction state (%d),", (sipTransaction_t*)pTrans->state);
+            logError("received a event (msgType=%d) that has invalid transaction state (%d),", msgType, (sipTransaction_t*)pTrans->state);
             status = OS_ERROR_INVALID_VALUE;
             break;
     }
@@ -100,14 +111,26 @@ osStatus_e sipTransNICStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uin
         status = OS_ERROR_INVALID_VALUE;
         goto EXIT;
     }
-    pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
 
-	if(((sipTransMsg_t*) pMsg)->sipMsgType != SIP_MSG_REQUEST)
-	{
-		logError("received a unexpected response.");
-		status = OS_ERROR_INVALID_VALUE;
-		goto EXIT;
-	}
+    if(((sipTransMsg_t*) pMsg)->sipMsgType != SIP_MSG_REQUEST)
+    {
+        logError("received a unexpected response.");
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+    pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
+//    pTrans->tpInfo.pTrId = pTrans;
+	//shall not use request.pTransInfo->transId.viaId.host/port here, as this is the request top via's host/ip, which is own host/ip
+	osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip);
+	//pTrans->tpInfo.peer.ip = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip;
+	pTrans->tpInfo.peer.port = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.port;
+    osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local.ip);
+    pTrans->tpInfo.local.port = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local.port;
+	pTrans->tpInfo.viaProtocolPos = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.viaProtocolPos;
+
+	pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_ANY;
+    pTrans->tpInfo.tcpFd = -1;
 
     sipTransNICEnterState(SIP_TRANS_STATE_TRYING, msgType, pTrans);
 	
@@ -140,19 +163,25 @@ osStatus_e sipTransNICStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
         		pTrans->sipTransNICTimer.timerIdE = 0;
                 logInfo("timer E expires, resend the request.");
 
-				status = sipTransport_send(SIP_MSG_REQUEST, pTrans);
-        		if(status != OS_STATUS_OK)
-        		{
-            		logError("fails to send request.");
-					sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
-					goto EXIT;
-				}
+				sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
+	            if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+    	        {
+        	        logError("fails to send request.");
+            	    sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
+                	status = OS_ERROR_INVALID_VALUE;
+                	goto EXIT;
+            	}
 
-	        	if(pTrans->isUDP)
+	        	if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
     	    	{
+					pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_UDP;
         	    	pTrans->timerAEGValue = osMinInt(pTrans->timerAEGValue*2, SIP_TIMER_T2);
             		pTrans->sipTransNICTimer.timerIdE = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
         		}
+				else
+				{
+					pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+				}
     		}
     		else if(pTrans->sipTransNICTimer.timerIdF == timerId)
     		{
@@ -177,16 +206,16 @@ osStatus_e sipTransNICStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 		}
 		case SIP_TRANS_MSG_TYPE_PEER:
 		{
-    		if(((sipTransMsg_t*) pMsg)->sipMsgType == SIP_MSG_REQUEST)
+    		if(((sipTransMsg_t*) pMsg)->sipMsgType == SIP_TRANS_MSG_CONTENT_REQUEST)
     		{
-        		logError("received a request from peer while in NIC.");
+        		logError("received a SIP request from peer while in NIC.");
         		goto EXIT;
     		}
 
 			sipTransaction_t* pTrans = ((sipTransMsg_t*) pMsg)->pTransId;
-            sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->pTransInfo->rspCode;
+            sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
 			osMem_deref(pTrans->resp.pSipMsg);
-			pTrans->resp = ((sipTransMsg_t*)pMsg)->sipMsgBuf;
+			pTrans->resp = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf;
 
 			sipTUMsg_t sipTUMsg;
 			sipTUMsg.sipMsgType = SIP_MSG_RESPONSE;
@@ -194,6 +223,7 @@ osStatus_e sipTransNICStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 			sipTUMsg.pTransId = pTrans;
 			sipTUMsg.pTUId = pTrans->pTUId;
 
+logError("to-remove, TCP, rspCode=%d", rspCode);
     		if(rspCode >= 100 && rspCode < 200)
     		{
 				sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
@@ -217,9 +247,33 @@ osStatus_e sipTransNICStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 			}
 			break;
 		}
-		case SIP_TRANS_MSG_TYPE_TX_FAILED:
-			logInfo("fails to tx msg, let the timer to perform retransmission, ignore.");
+		case SIP_TRANS_MSG_TYPE_TX_TCP_READY:
+		{
+            sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*) pMsg)->pTransId;
+			pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+			pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*) pMsg)->tcpFd;
+
+			sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
+			if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+            {
+                logError("fails to send request.");
+                sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
+                status = OS_ERROR_NETWORK_FAILURE;
+                goto EXIT;
+            }
+
 			break;
+		}
+		case SIP_TRANS_MSG_TYPE_TX_FAILED:
+		{
+			logInfo("fails to tx msg, received SIP_TRANS_MSG_TYPE_TX_FAILED.");
+
+            sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*) pMsg)->pTransId;
+            sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
+            status = OS_ERROR_NETWORK_FAILURE;
+            goto EXIT;
+			break;
+		}
 		default:
 			logError("received unexpected msgtype (%d), ignore.", msgType);
 			break;
@@ -253,19 +307,26 @@ osStatus_e sipTransNICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
                 pTrans->sipTransNICTimer.timerIdE = 0;
                 logInfo("timer E expires, resend the request.");
 
-                status = sipTransport_send(SIP_MSG_REQUEST, pTrans);
-                if(status != OS_STATUS_OK)
+                sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
+                if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
                 {
                     logError("fails to send request.");
                     sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
+                    status = OS_ERROR_INVALID_VALUE;
                     goto EXIT;
                 }
 
-                if(pTrans->isUDP)
+				//this is a redundant check as timeout implies the UDP is used
+                if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
                 {
+                    pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_UDP;
                     pTrans->timerAEGValue = SIP_TIMER_T2;
                     pTrans->sipTransNICTimer.timerIdE = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
                 }
+				else
+				{
+                    pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+				}
             }
             else if(pTrans->sipTransNICTimer.timerIdF == timerId)
             {
@@ -290,9 +351,9 @@ osStatus_e sipTransNICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
         case SIP_TRANS_MSG_TYPE_PEER:
 		{
             pTrans = ((sipTransMsg_t*) pMsg)->pTransId;
-            sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->pTransInfo->rspCode;
+            sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
 			osMem_deref(pTrans->resp.pSipMsg);
-			pTrans->resp = ((sipTransMsg_t*)pMsg)->sipMsgBuf;
+			pTrans->resp = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf;
 
             sipTUMsg_t sipTUMsg;
             sipTUMsg.sipMsgType = SIP_MSG_RESPONSE;
@@ -322,9 +383,32 @@ osStatus_e sipTransNICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
             }
             break;
 		}
-        case SIP_TRANS_MSG_TYPE_TX_FAILED:
-            logInfo("fails to tx msg, let the timer to perform retransmission, ignore.");
+        case SIP_TRANS_MSG_TYPE_TX_TCP_READY:
+        {
+            sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*) pMsg)->pTransId;
+            pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+            pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*) pMsg)->tcpFd;
+
+            sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
+            if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+            {
+                logError("fails to send request.");
+                sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
+                status = OS_ERROR_INVALID_VALUE;
+                goto EXIT;
+            }
             break;
+        }
+        case SIP_TRANS_MSG_TYPE_TX_FAILED:
+		{
+            logInfo("fails to tx msg, received SIP_TRANS_MSG_TYPE_TX_FAILED.");
+
+            sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*) pMsg)->pTransId;
+            sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
+            status = OS_ERROR_NETWORK_FAILURE;
+            goto EXIT;
+            break;
+		}
         default:
             logError("received unexpected msgtype (%d), ignore.", msgType);
             break;
@@ -384,15 +468,24 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
 {
 	DEBUG_BEGIN
     osStatus_e status = OS_STATUS_OK;
+	sipTransportStatus_e tpStatus;
 	sipTransState_e curState = pTrans->state;
 	pTrans->state = newState;
 
+	debug("curState=%d, newState=%d", curState, newState);
     switch (newState)
     {
         case SIP_TRANS_STATE_TRYING:
-            sipTransport_send(SIP_MSG_REQUEST, pTrans);
+            tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
+			if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+			{
+                logError("fails to send SIP message out, tpStatus=%d.", tpStatus);
+                sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_INTERNAL_ERROR, pTrans);
+                status = OS_ERROR_INVALID_VALUE;
+                goto EXIT;
+			}
 
-            pTrans->sipTransNICTimer.timerIdF = sipTransStartTimer(SIP_TIMER_F, osMem_ref(pTrans));
+            pTrans->sipTransNICTimer.timerIdF = sipTransStartTimer(SIP_TIMER_F, pTrans);
             if(pTrans->sipTransNICTimer.timerIdF == 0)
             {
                 logError("fails to start timerF.");
@@ -401,10 +494,12 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
                 goto EXIT;
             }
 
-            if(pTrans->isUDP)
+            if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
             {
+                pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_UDP;
+
                 pTrans->timerAEGValue = SIP_TIMER_T1;
-                pTrans->sipTransNICTimer.timerIdE = sipTransStartTimer(pTrans->timerAEGValue, osMem_ref(pTrans));
+                pTrans->sipTransNICTimer.timerIdE = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
                 if(pTrans->sipTransNICTimer.timerIdE == 0)
                 {
                     logError("fails to start timerE.");
@@ -413,6 +508,10 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
                     goto EXIT;
                 }
             }
+			else
+			{
+                pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+			}
             break;
         case SIP_TRANS_STATE_PROCEEDING:
             break;
@@ -428,9 +527,10 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
                 pTrans->sipTransNICTimer.timerIdF = 0;
             }
 
-            if(pTrans->isUDP)
+logError("to-remove, TCP, tpType=%d", pTrans->tpInfo.tpType);
+            if(pTrans->tpInfo.tpType != SIP_TRANSPORT_TYPE_TCP)
             {
-                sipTransStartTimer(SIP_TIMER_K, pTrans);
+                pTrans->sipTransNICTimer.timerIdK = sipTransStartTimer(SIP_TIMER_K, pTrans);
             }
             else
             {
@@ -442,6 +542,8 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
             sipTUMsg_t sipTUMsg = {};
             sipTUMsg.pTransId = pTrans;
             sipTUMsg.pTUId = pTrans->pTUId;
+			sipTUMsg.pSipMsgBuf = &pTrans->req;
+			sipTUMsg.sipMsgType = SIP_MSG_REQUEST;
 
             switch(curState)
             {
@@ -458,7 +560,7 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
                         pTrans->sipTransNICTimer.timerIdF = 0;
                     }
 
-                    //notify UT
+                    //notify TU
                     sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
                     break;
                 case SIP_TRANS_STATE_COMPLETED:
@@ -481,10 +583,10 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
                 pTrans->sipTransNICTimer.timerIdK = 0;
             }
 
-            osHash_deleteElement(pTrans->pTransHashLE);
+            osHash_deleteNode(pTrans->pTransHashLE);
             osHashData_t* pHashData = pTrans->pTransHashLE->data;
             osMem_deref((sipTransaction_t*)pHashData->pData);
-            free(pTrans->pTransHashLE);
+            osfree(pTrans->pTransHashLE);
 
             break;
 		}

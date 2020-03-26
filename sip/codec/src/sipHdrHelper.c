@@ -995,6 +995,7 @@ void sipHdrGenericNameParam_cleanup(void* data)
     }
 
     sipHdrGenericNameParam_t* pGNP = data;
+
     sipUri_cleanup(&pGNP->uri);
     osList_delete(&pGNP->genericParam);
 }
@@ -1059,7 +1060,9 @@ void sipHdrVia_cleanup(void* data)
 	sipHdrVia_t* pHdr = data;
 
 	osMem_deref(pHdr->pBranch);
+logError("to-remove, VIA-MEMORY, 5, pHdr->viaParamList.head=%p", pHdr->viaParamList.head);
 	osList_delete(&pHdr->viaParamList);
+logError("to-remove, VIA-MEMORY, 6");
 }
 
 

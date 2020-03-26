@@ -3,6 +3,7 @@
 #include "sipHdrFromto.h"
 #include "sipHdrVia.h"
 #include "sipHdrTypes.h"
+#include "sipHdrMisc.h"
 
 #include "sipTU.h"
 
@@ -17,7 +18,7 @@ typedef struct sipTUHdrModifyInfo {
 } sipTUHdrModifyInfo_t;
 
 
-static osStatus_e sipTU_updateMaxForards(sipRawHdr_t* pRawMF, uint32_t* pMFValue);
+static osStatus_e sipTU_updateMaxForwards(sipRawHdr_t* pRawMF, bool isForce, uint32_t* pMFValue);
 static bool sipTU_hdrModiftListSortHandler(osListElement_t* le, osListElement_t* newLE, void* arg);
 static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* addHdrList, uint8_t addHdrNum);
 static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqDecodedRaw, size_t startPos, osList_t* pSortedModifyHdrList);
@@ -97,11 +98,16 @@ EXIT:
 
 
 //add a via, remove top Route if there is lr, decrease Max-Forwarded by 1
-osMBuf_t* sipTU_buildProxyRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId)
+//pTransViaId is IN/OUT, as IN, it passes the real peer's IP/port, when OUT, it contains the top via's branch ID, and host/port
+//if isProxy=false, a new call id is to be generated, there is no need for external to delete/modify/specify a new callid
+osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipUri_t* pReqlineUri, size_t* pViaProtocolPos)
 {
+	DEBUG_BEGIN
+
     osStatus_e status = OS_STATUS_OK;
 	osMBuf_t* pSipBufReq = NULL;
 	osList_t* pSortedModifyHdrList = NULL;
+    sipHdrDecoded_t viaHdr={};
 
     if(!pReqDecodedRaw || !pTransViaId)
     {
@@ -110,8 +116,10 @@ osMBuf_t* sipTU_buildProxyRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrR
         goto EXIT;
     }
 
+	//update the hdr delete list
 	sipHdrRawValueId_t* pUpdatedExtraDelHdrList = extraDelHdrList;
 	uint8_t updatedDelHdrNum = delHdrNum;
+	osPointerLen_t* pLR = NULL;
 	if(pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE])
 	{
 	    //remove the top Route if there is lr, and copy the remaining sipBuf
@@ -125,21 +133,49 @@ osMBuf_t* sipTU_buildProxyRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrR
 
     	sipHdrRoute_t* pRoute = sipHdrDecoded.decodedHdr;
     	osPointerLen_t lrName = {"lr", 2};
-    	osPointerLen_t* pLR = sipParamNV_getValuefromList(&pRoute->pGNP->hdrValue.genericParam, &lrName);
+    	pLR = sipParamNV_getValuefromList(&pRoute->pGNP->hdrValue.genericParam, &lrName);
+	}
 
-    	if(pLR != NULL)
-		{
-			pUpdatedExtraDelHdrList = osMem_alloc(sizeof(sipHdrRawValueId_t)*(delHdrNum+1), NULL);
-			pUpdatedExtraDelHdrList[0].nameCode = SIP_HDR_ROUTE;
-			pUpdatedExtraDelHdrList[0].isTopOnly = true;
+	int extraDelItem = 1;		//1 is count for via
+	if(pLR)
+	{
+		++extraDelItem;
+	}
+	if(!isProxy)
+	{
+		++extraDelItem;		//for call id
+	}
+	updatedDelHdrNum += extraDelItem;
 
-			for(int i=0; i<delHdrNum; i++)
-			{
-				pUpdatedExtraDelHdrList[i+1] = extraDelHdrList[i];
-			}
+	pUpdatedExtraDelHdrList = osMem_alloc(sizeof(sipHdrRawValueId_t)*(delHdrNum + extraDelItem), NULL);
 
-			updatedDelHdrNum += 1;
-		}
+	--extraDelItem;
+    //via will be reinserted again if isProxy=true, the reason for that is to handle the rport
+    pUpdatedExtraDelHdrList[extraDelItem].nameCode = SIP_HDR_VIA;
+    pUpdatedExtraDelHdrList[extraDelItem].isTopOnly = false;
+
+	if(pLR)
+	{
+    	--extraDelItem;
+    	pUpdatedExtraDelHdrList[extraDelItem].nameCode = SIP_HDR_VIA;
+    	pUpdatedExtraDelHdrList[extraDelItem].isTopOnly = true;
+	}
+
+	if(!isProxy)
+	{
+		 --extraDelItem;
+        pUpdatedExtraDelHdrList[extraDelItem].nameCode = SIP_HDR_CALL_ID;
+        pUpdatedExtraDelHdrList[extraDelItem].isTopOnly = false;
+    }
+
+	extraDelItem = updatedDelHdrNum - delHdrNum;
+
+	if(extraDelHdrList != NULL)
+	{
+    	for(int i=0; i<delHdrNum; i++)
+    	{
+        	pUpdatedExtraDelHdrList[i+extraDelItem] = extraDelHdrList[i];
+    	}
 	}
 
 	pSortedModifyHdrList = sipTU_sortModifyHdrList(pReqDecodedRaw, pUpdatedExtraDelHdrList, updatedDelHdrNum, extraAddHdrList, addHdrNum);
@@ -164,16 +200,78 @@ osMBuf_t* sipTU_buildProxyRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrR
         goto EXIT;
     }
 
-    //update MF in the original sipBuf
-    status = sipTU_updateMaxForards(pReqDecodedRaw->msgHdrList[SIP_HDR_MAX_FORWARDS]->pRawHdr, NULL);
+logError("to-remove, VIA-MEMORY, 1");
+	//prepare for the building of new request
+    status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr, &viaHdr, false);
+    if(status != OS_STATUS_OK)
+    {
+        logError("fails to decode the top via hdr in sipDecodeHdr.");
+        goto EXIT;
+    }
+logError("to-remove, VIA-MEMORY, 2");
 
-    //copy request line.
-    status = osMBuf_writeBufRange(pSipBufReq, pReqDecodedRaw->sipMsgBuf.pSipMsg, 0, pReqDecodedRaw->sipMsgBuf.hdrStartPos, true);
+    //update MF in the original sipBuf
+	if(isProxy)
+	{
+    	status = sipTU_updateMaxForwards(pReqDecodedRaw->msgHdrList[SIP_HDR_MAX_FORWARDS]->pRawHdr, false, NULL);
+	}
+	else
+	{
+		uint32_t mfValue = 70;
+		status = sipTU_updateMaxForwards(pReqDecodedRaw->msgHdrList[SIP_HDR_MAX_FORWARDS]->pRawHdr, true, &mfValue);
+	}
+
+    //on request line.
+	if(pReqlineUri)
+    {
+		osPointerLen_t method;
+		status = sipMsg_code2Method(pReqDecodedRaw->sipMsgBuf.reqCode, &method);
+
+		osPointerLen_t src = {pReqDecodedRaw->sipMsgBuf.pSipMsg->buf, pReqDecodedRaw->sipMsgBuf.hdrStartPos};
+		osMBuf_writeUntil(pSipBufReq, &src, &method, true);
+		osMBuf_writeU8(pSipBufReq, ' ', true);
+		osMBuf_writePL(pSipBufReq, &pReqlineUri->sipUser, true);
+		if(pReqlineUri->hostport.portValue != 0)
+		{
+			status = osMBuf_writeU8(pSipBufReq, ':', true);
+			status = osMBuf_writeU32Str(pSipBufReq, pReqlineUri->hostport.portValue, true);
+		}
+		status = osMBuf_writeStr(pSipBufReq, " SIP/2.0\r\n", true);
+	}
+	else
+	{
+		status = osMBuf_writeBufRange(pSipBufReq, pReqDecodedRaw->sipMsgBuf.pSipMsg, 0, pReqDecodedRaw->sipMsgBuf.hdrStartPos, true);
+	}
 
     //insert a new via hdr as the first header
-    status = sipTU_addOwnVia(pSipBufReq, NULL, NULL, &pTransViaId->branchId, &pTransViaId->host, &pTransViaId->port);
+	sipHostport_t viaHostport;
+    status = sipTU_addOwnVia(pSipBufReq, NULL, NULL, &pTransViaId->branchId, &viaHostport.host, &viaHostport.portValue, pViaProtocolPos);
+logError("to-remove, VIA-MEMORY, 2-1");
+
+	//add back the received via if isProxy=true
+	if(isProxy)
+	{
+	    sipHostport_t peer;
+    	peer.host = pTransViaId->host;
+    	peer.portValue = pTransViaId->port;
+
+		logError("to-remove, PEER, host=%r, port=%d", &peer.host, peer.portValue);
+    	status = sipHdrVia_rspEncode(pSipBufReq, viaHdr.decodedHdr, pReqDecodedRaw, &peer);
+	}
+	else
+	{
+		//create and insert call-id if not proxy
+		status = sipHdrCallId_createAndAdd(pSipBufReq, NULL);
+	}
+
+logError("to-remove, VIA-MEMORY, 2-2");
 
 	status = sipTU_copyHdrs(pSipBufReq, pReqDecodedRaw, pReqDecodedRaw->sipMsgBuf.hdrStartPos, pSortedModifyHdrList);
+
+	//update pTransViaId host/port to reflect the transaction top via's host/port
+	pTransViaId->host = viaHostport.host;
+	pTransViaId->port = viaHostport.portValue;
+logError("to-remove, VIA-MEMORY, 2-3");
 
 EXIT:
     osList_delete(pSortedModifyHdrList);
@@ -182,9 +280,86 @@ EXIT:
         pSipBufReq = osMem_deref(pSipBufReq);
     }
 
+logError("to-remove, VIA-MEMORY, 3");
+	osMem_deref(viaHdr.decodedHdr);
+logError("to-remove, VIA-MEMORY, 4");
+
+	DEBUG_END
     return pSipBufReq;
 }
 
+
+//create a UAC request with req line, via, from, to, callId and max forward.  Other headers needs to be added by user as needed
+//be noted this function does not include the extra "\r\n" at the last of header, user needs to add it when completing the creation of a SIP message
+osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipUri_t* pReqlineUri, osPointerLen_t* called, osPointerLen_t* caller, sipTransViaInfo_t* pTransViaId, size_t* pViaProtocolPos)
+{
+    DEBUG_BEGIN
+
+    osStatus_e status = OS_STATUS_OK;
+    osMBuf_t* pSipBufReq = NULL;
+
+	if(!pReqlineUri || !called || !caller)
+	{
+		logError("null pointer, pReqlineUri=%p, called=%p, caller=%p.", pReqlineUri, called, caller);
+		status = OS_ERROR_NULL_POINTER;
+        goto EXIT;
+    }
+
+    pSipBufReq = osMBuf_alloc(SIP_MAX_MSG_SIZE);
+    if(!pSipBufReq)
+    {
+        logError("fails to allocate pSipBufReq.");
+        status = OS_ERROR_MEMORY_ALLOC_FAILURE;
+        goto EXIT;
+    }
+
+    osPointerLen_t method;
+    status = sipMsg_code2Method(code, &method);
+	osMBuf_writePL(pSipBufReq, &method, true);
+
+    osMBuf_writeU8(pSipBufReq, ' ', true);
+    osMBuf_writePL(pSipBufReq, &pReqlineUri->sipUser, true);
+    if(pReqlineUri->hostport.portValue != 0)
+    {
+        status = osMBuf_writeU8(pSipBufReq, ':', true);
+        status = osMBuf_writeU32Str(pSipBufReq, pReqlineUri->hostport.portValue, true);
+    }
+    status = osMBuf_writeStr(pSipBufReq, " SIP/2.0\r\n", true);
+
+    //insert a new via hdr as the first header
+    sipHostport_t viaHostport;
+    status = sipTU_addOwnVia(pSipBufReq, NULL, NULL, &pTransViaId->branchId, &viaHostport.host, &viaHostport.portValue, pViaProtocolPos);
+
+	//encode to header
+	osMBuf_writeStr(pSipBufReq, "To: <", true);
+	osMBuf_writePL(pSipBufReq, called, true);
+	osMBuf_writeStr(pSipBufReq, ">\r\n", true);
+
+	//encode from header
+    osMBuf_writeStr(pSipBufReq, "From: <", true);
+    osMBuf_writePL(pSipBufReq, caller, true);
+    osMBuf_writeStr(pSipBufReq, ">;", true);
+
+    osDPointerLen_t fromTag;
+    status = sipHdrFromto_generateTagId((osPointerLen_t*)&fromTag, true);
+    if(status != OS_STATUS_OK)
+    {
+    	logError("fails to generateTagId.");
+        goto EXIT;
+    }
+	osMBuf_writePL(pSipBufReq, (osPointerLen_t*)&fromTag, true);
+	osMBuf_writeStr(pSipBufReq, "\r\n", true);
+	osDPL_dealloc(&fromTag);
+
+	status = sipHdrCallId_createAndAdd(pSipBufReq, NULL);
+
+	//encode max-forward
+	osMBuf_writeStr(pSipBufReq, "Max-Forwards: 69\r\n", true);
+
+EXIT:
+	DEBUG_END
+	return pSipBufReq;
+}
 
 
 /* this must be the first function to call to build a sip response buffer
@@ -226,16 +401,16 @@ osMBuf_t* sipTU_buildUasResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipRespo
     {
         if(sipHdrArray[i] == SIP_HDR_TO)
         {
-            osPointerLen_t toTag;
-            status = sipHdrFromto_generateTagId(&toTag, true);
+            osDPointerLen_t toTag;
+            status = sipHdrFromto_generateTagId((osPointerLen_t*)&toTag, true);
             if(status != OS_STATUS_OK)
             {
                 logError("fails to generateTagId.");
                 goto EXIT;
             }
 
-            status = sipMsgAddHdr(pSipBufResp, sipHdrArray[i], pReqDecodedRaw->msgHdrList[sipHdrArray[i]], &toTag, ctrl);
-            osPL_dealloc(&toTag);
+            status = sipMsgAddHdr(pSipBufResp, sipHdrArray[i], pReqDecodedRaw->msgHdrList[sipHdrArray[i]], (osPointerLen_t*)&toTag, ctrl);
+            osDPL_dealloc(&toTag);
         }
         else
         {
@@ -252,7 +427,7 @@ osMBuf_t* sipTU_buildUasResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipRespo
     if(isAddNullContent)
     {
         uint32_t contentLen = 0;
-        sipHdrAddCtrl_t ctrlCL = {false, true, false, NULL};
+        sipHdrAddCtrl_t ctrlCL = {false, false, false, NULL};
         status = sipMsgAddHdr(pSipBufResp, SIP_HDR_CONTENT_LENGTH, &contentLen, NULL, ctrlCL);
         if(status != OS_STATUS_OK)
         {
@@ -260,6 +435,9 @@ osMBuf_t* sipTU_buildUasResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipRespo
             status = OS_ERROR_INVALID_VALUE;
             goto EXIT;
         }
+	
+		//add a empty line at the end of the message
+		osMBuf_writeBuf(pSipBufResp, "\r\n", 2, true);	
     }
 
 EXIT:
@@ -295,16 +473,16 @@ osStatus_e sipTU_copySipMsgHdr(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqDec
 			logError("sean-remove, i=%d, sipHdrArray[i]=%d", i, sipHdrArray[i]);
         	if(sipHdrArray[i] == SIP_HDR_TO)
         	{
-            	osPointerLen_t toTag;
-            	status = sipHdrFromto_generateTagId(&toTag, true);
+            	osDPointerLen_t toTag;
+            	status = sipHdrFromto_generateTagId((osPointerLen_t*)&toTag, true);
             	if(status != OS_STATUS_OK)
             	{
                 	logError("fails to generateTagId.");
                 	goto EXIT;
             	}
 
-            	status = sipMsgAddHdr(pSipBuf, sipHdrArray[i], pReqDecodedRaw->msgHdrList[sipHdrArray[i]], &toTag, ctrl);
-            	osPL_dealloc(&toTag);
+            	status = sipMsgAddHdr(pSipBuf, sipHdrArray[i], pReqDecodedRaw->msgHdrList[sipHdrArray[i]], (osPointerLen_t*)&toTag, ctrl);
+            	osDPL_dealloc(&toTag);
         	}
         	else
         	{
@@ -476,71 +654,50 @@ EXIT:
 }
 
 
-osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* sipUser, bool* isOrig)
+//based on parameter's in the p-served-user or top route, if not find, assume it is orig
+osStatus_e sipTU_asGetSescase(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool* isOrig)
 {
     osStatus_e status = OS_STATUS_OK;
 
-    if(!pReqDecodedRaw || !sipUser || !isOrig)
+    if(!pReqDecodedRaw || !isOrig)
     {
-        logError("null pointer, pReqDecodedRaw=%p, sipUser=%p, isOrig=%p.", pReqDecodedRaw, sipUser, isOrig);
+        logError("null pointer, pReqDecodedRaw=%p, isOrig=%p.", pReqDecodedRaw, isOrig);
         status = OS_ERROR_NULL_POINTER;
         goto EXIT;
     }
 
-	//by default, set isOrig = true
+	//by default, assume the AS serves as orig
 	*isOrig = true;
-	
-	//check if there is P-Server-User
-	bool isOrigChecked = false;
-	if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_SERVED_USER] != NULL)
-	{
-		sipHdrDecoded_t sipHdrDecoded = {};
-		status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_P_SERVED_USER]->pRawHdr, &sipHdrDecoded, false);
-		if(status != OS_STATUS_OK)
-		{
-			logError("fails to sipDecodeHdr for SIP_HDR_P_SERVED_USER.");
-			goto EXIT;
-		}
-
-		sipHdrType_pServedUser_t* pPSU = sipHdrDecoded.decodedHdr;
-		*sipUser = pPSU->uri.sipUser;
-		osPointerLen_t sescaseName = {"sescase", 7};
-		osPointerLen_t* pSescase = sipParamNV_getValuefromList(&pPSU->genericParam, &sescaseName);
-		if(pSescase->p[0] == 'o' && osPL_strcmp(pSescase, "orig"))
-		{
-			*isOrig = true;
-			isOrigChecked = true;
-		}
-		else if(pSescase->p[0] == 't' && osPL_strcmp(pSescase, "term"))
-		{
-			*isOrig = false;
-			isOrigChecked = true;
-		}
-
-		osMem_deref(pPSU);
-	}
-	else if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY] != NULL)
-	{
-		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY]->pRawHdr->value, sipUser);
+    if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_SERVED_USER] != NULL)
+    {
+        sipHdrDecoded_t sipHdrDecoded = {};
+        status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_P_SERVED_USER]->pRawHdr, &sipHdrDecoded, false);
         if(status != OS_STATUS_OK)
         {
-            logError("fails to sipParamUri_getUriFromRawHdrValue for SIP_HDR_P_ASSERTED_ID.");
+            logError("fails to sipDecodeHdr for SIP_HDR_P_SERVED_USER.");
             goto EXIT;
         }
-	}
-	else
-	{
-		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_TO]->pRawHdr->value, sipUser);
-        if(status != OS_STATUS_OK)
-        {
-            logError("fails to sipParamUri_getUriFromRawHdrValue for SIP_HDR_TO.");
-            goto EXIT;
-        }
-	}
 
-	if(!isOrigChecked && pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE] != NULL)
-	{
-       	sipHdrDecoded_t sipHdrDecoded = {};
+        sipHdrType_pServedUser_t* pPSU = sipHdrDecoded.decodedHdr;
+        osPointerLen_t sescaseName = {"sescase", 7};
+        osPointerLen_t* pSescase = sipParamNV_getValuefromList(&pPSU->genericParam, &sescaseName);
+        if(pSescase->p[0] == 'o' && osPL_strcmp(pSescase, "orig"))
+        {
+            *isOrig = true;
+        }
+        else if(pSescase->p[0] == 't' && osPL_strcmp(pSescase, "term"))
+        {
+            *isOrig = false;
+        }
+
+        osMem_deref(pPSU);
+
+		goto EXIT;
+    }
+
+    if(pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE] != NULL)
+    {
+        sipHdrDecoded_t sipHdrDecoded = {};
         status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE]->pRawHdr, &sipHdrDecoded, false);
         if(status != OS_STATUS_OK)
         {
@@ -552,8 +709,93 @@ osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t
         osPointerLen_t sescaseName = {"orig", 4};
         *isOrig = sipParamNV_isNameExist(&pRoute->pGNP->hdrValue.genericParam, &sescaseName);
 
-		osMem_deref(pRoute);
+        osMem_deref(pRoute);
+		goto EXIT;
+    }
+
+EXIT:
+	return status;
+}
+
+
+//the order of check: p-served-user, then p-asserted-user, then for mo, from, for mt, request-uri, to
+osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* sipUser, bool isOrigUser, bool isOrigAS)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+    if(!pReqDecodedRaw || !sipUser)
+    {
+        logError("null pointer, pReqDecodedRaw=%p, sipUser=%p.", pReqDecodedRaw, sipUser);
+        status = OS_ERROR_NULL_POINTER;
+        goto EXIT;
+    }
+
+	//check if there is P-Server-User
+	if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_SERVED_USER] != NULL)
+	{
+		sipHdrDecoded_t sipHdrDecoded = {};
+		status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_P_SERVED_USER]->pRawHdr, &sipHdrDecoded, false);
+		if(status != OS_STATUS_OK)
+		{
+			logError("fails to sipDecodeHdr for SIP_HDR_P_SERVED_USER.");
+			goto EXIT;
+		}
+
+		sipHdrType_pServedUser_t* pPSU = sipHdrDecoded.decodedHdr;
+		osPointerLen_t sescaseName = {"sescase", 7};
+		osPointerLen_t* pSescase = sipParamNV_getValuefromList(&pPSU->genericParam, &sescaseName);
+		bool isSesCaseMO = true;
+		if(pSescase->p[0] == 'o' && osPL_strcmp(pSescase, "orig"))
+		{
+			isSesCaseMO = true;
+		}
+		else if(pSescase->p[0] == 't' && osPL_strcmp(pSescase, "term"))
+		{
+			isSesCaseMO = false;
+		}
+
+		osMem_deref(pPSU);
+
+		if(isOrigUser == isSesCaseMO)
+		{
+			*sipUser = pPSU->uri.sipUser;
+			goto EXIT;
+		}
 	}
+
+	if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY] != NULL)
+	{
+		//for original AS, the PAI is caller, for terminating AS, the PAI is called
+		if(isOrigUser == isOrigAS)
+		{
+			status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY]->pRawHdr->value, sipUser);
+        	if(status != OS_STATUS_OK)
+        	{
+            	logError("fails to sipParamUri_getUriFromRawHdrValue for SIP_HDR_P_ASSERTED_ID.");
+        	}
+			goto EXIT;
+		}
+	}
+
+	if(isOrigUser)
+	{
+		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_FROM]->pRawHdr->value, sipUser);
+        if(status != OS_STATUS_OK)
+        {
+            logError("fails to sipParamUri_getUriFromRawHdrValue for SIP_HDR_FROM.");
+		}
+            
+		goto EXIT;
+	}
+	else
+	{
+		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_TO]->pRawHdr->value, sipUser);
+        if(status != OS_STATUS_OK)
+        {
+            logError("fails to sipParamUri_getUriFromRawHdrValue for SIP_HDR_TO.");
+            goto EXIT;
+        }
+    }
 
 EXIT:
 	return status;
@@ -565,7 +807,7 @@ EXIT:
  * pParamList: list of sipHdrParamNameValue_t, like: sipHdrParamNameValue_t param1={{"comp", 4}, {"sigcomp", 7}};
  * pParamList: a list of header parameters other than branchId.
  */
-osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pParamList, osPointerLen_t* pBranchId, osPointerLen_t* pHost, uint32_t* pPort)
+osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pParamList, osPointerLen_t* pBranchId, osPointerLen_t* pHost, uint32_t* pPort, size_t* pProtocolViaPos)
 {
 	osStatus_e status = OS_STATUS_OK;
 
@@ -575,6 +817,8 @@ osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pP
 		status = OS_ERROR_NULL_POINTER;
 		goto EXIT;
 	}
+
+	*pProtocolViaPos = pMsgBuf->pos + 13;  		//len 0f 13 = "Via: SIP/2.0/"
 
     sipHdrVia_t viaHdr={};
     viaHdr.sentProtocol[2].p = "UDP";
@@ -606,15 +850,39 @@ osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pP
 EXIT:
 	if(status == OS_STATUS_OK)
 	{
-		*pHost = viaHdr.hostport.host;
-		*pPort = viaHdr.hostport.portValue;
+		if(pHost)
+		{
+			*pHost = viaHdr.hostport.host;
+		}
+		if(pPort)
+		{
+			*pPort = viaHdr.hostport.portValue;
+		}
 	}
 		
 	return status;
 }
 
 
-static osStatus_e sipTU_updateMaxForards(sipRawHdr_t* pRawMF, uint32_t* pMFValue)
+osStatus_e sipTU_msgBuildEnd(osMBuf_t* pSipBuf, bool isExistContent)
+{
+	if(!pSipBuf)
+	{
+		logError("null pointer, pSipBuf.");
+		return OS_ERROR_NULL_POINTER;
+	}
+
+	if(!isExistContent)
+	{
+        osMBuf_writeBuf(pSipBuf, "\r\n", 2, true);
+	}
+
+	return OS_STATUS_OK;
+}
+
+
+//if isForce=true, pMFValue is IN, pass the value to the function, otherwise, a OUT
+static osStatus_e sipTU_updateMaxForwards(sipRawHdr_t* pRawMF, bool isForce, uint32_t* pMFValue)
 {
 	uint32_t mfValue = 0;
 	osStatus_e status = OS_STATUS_OK;
@@ -626,12 +894,27 @@ static osStatus_e sipTU_updateMaxForards(sipRawHdr_t* pRawMF, uint32_t* pMFValue
 		goto EXIT;
 	}
 
-	mfValue = osPL_str2u32(&pRawMF->value);
-	if(mfValue == 0)
+	if(isForce && !pMFValue)
 	{
-		logError("max-forwards is 0.");
-		status = OS_ERROR_INVALID_VALUE;
-		goto EXIT;
+		logError("null pMFValue while isForce=true.");
+        status = OS_ERROR_NULL_POINTER;
+        goto EXIT;
+    }
+
+	if(isForce)
+	{
+		mfValue = *pMFValue;
+	}
+	else
+	{
+		mfValue = osPL_str2u32(&pRawMF->value);
+		if(mfValue == 0)
+		{
+			logError("max-forwards is 0.");
+			status = OS_ERROR_INVALID_VALUE;
+			goto EXIT;
+		}
+		--mfValue;
 	}
 
 	osPL_modifyu32(&pRawMF->value, --mfValue);
@@ -646,9 +929,11 @@ EXIT:
 }
 
 
-
+//for the deletion in the modifyHdrList, only delete the 1st hdr value if there is more than one value for a hdr or multiple hdrs for the same hdr name
 static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqDecodedRaw, size_t startPos, osList_t* pSortedModifyHdrList)
 {
+	DEBUG_BEGIN
+
     osStatus_e status = OS_STATUS_OK;
     if(!pSipBuf || !pReqDecodedRaw)
     {
@@ -673,14 +958,14 @@ static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqD
 
 			startPos = pHdrId->hdrStartPos + pHdrId->hdrSkipLen;
 
-            //check if there is multiple values for the hdr
+            //check if there are multiple values for the hdr, if yes, only skip the 1st value.
             if(sipHdr_isAllowMultiValue(pHdrId->nameCode))
             {
                 sipHdrDecoded_t sipHdrDecoded = {};
                 status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[pHdrId->nameCode]->pRawHdr, &sipHdrDecoded, false);
                 if(status != OS_STATUS_OK)
                 {
-                    logError("fails to sipDecodeHdr for SIP_HDR_P_SERVED_USER.");
+                    logError("fails to sipDecodeHdr for hdr code(%d).", pHdrId->nameCode);
                     goto EXIT;
                 }
 
@@ -697,6 +982,8 @@ static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqD
     	            osMBuf_writeStr(pSipBuf, ": ", true);
 #endif
 				}
+				        
+				osMem_deref(sipHdrDecoded.decodedHdr);	
             }
         }
         else
@@ -727,6 +1014,7 @@ static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqD
 
 
 EXIT:
+	DEBUG_END
     return status;
 }
 
@@ -775,7 +1063,7 @@ static bool sipTU_hdrModiftListSortHandler(osListElement_t* le, osListElement_t*
 		}
 		else if(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTENT_LENGTH])
 		{
-            sipHdrGetRawHdrPos(pReqDecodedRaw->msgHdrList[pNewHdrInfo->nameCode]->pRawHdr, &pNewHdrInfo->hdrStartPos, &pNewHdrInfo->hdrSkipLen);
+            sipHdrGetRawHdrPos(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTENT_LENGTH]->pRawHdr, &pNewHdrInfo->hdrStartPos, &pNewHdrInfo->hdrSkipLen);
 		}
 		else
 		{
@@ -800,7 +1088,7 @@ EXIT:
  * 5. if a hdr to be added does not have existing hdr, add before content len hdr.
  * 6. if content len does not exist, add to the end of sip hdr
  *
- * for del list, is isTopOnly, only delete the top hdr value, otherwise, delete all value for the hdr in the sip message
+ * for del list, if isTopOnly, only delete the top hdr value, otherwise, delete all value for the hdr in the sip message
  * for add list, can have multiple same hdr, the sorted list will be FILO, which corresponds FIFO in the final sip message
  * the del list can have the same hdr that appears in add list, vice versa
  * the added hdr ALWAYS the top hdr values.

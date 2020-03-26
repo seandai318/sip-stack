@@ -202,6 +202,76 @@ EXIT:
 }
 
 
+//append a new hdr at the bottom of the current existing hdrs of a sip message under construction
+//if hdrValue == NULL, implies the hdr value is digits, use hdrNumValue
+osStatus_e sipMsgAppendHdrStr(osMBuf_t* pSipBuf, char* hdrName, osPointerLen_t* hdrValue, size_t hdrNumValue)
+{
+    DEBUG_BEGIN
+    osStatus_e status = OS_STATUS_OK;
+
+    if(!pSipBuf || !hdrName)
+    {
+        logError("null pointer, pSipBuf=%p, hdrName=%p.", pSipBuf, hdrName);
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+    osMBuf_writeStr(pSipBuf, hdrName, true);
+    osMBuf_writeBuf(pSipBuf, ": ", 2, true);
+	if(hdrValue != NULL)
+	{
+    	osMBuf_writePL(pSipBuf, hdrValue, true);
+	}
+	else
+	{
+		if(hdrNumValue <= 0xff)
+		{
+			osMBuf_writeU8Str(pSipBuf, hdrNumValue, true);
+		}
+		else if(hdrNumValue <= 0xffff)
+		{
+			osMBuf_writeU16Str(pSipBuf, hdrNumValue, true);
+        }
+		else if(hdrNumValue <= 0xffffffff)
+        {
+            osMBuf_writeU32Str(pSipBuf, hdrNumValue, true);
+        }
+		else
+		{
+            osMBuf_writeU64Str(pSipBuf, hdrNumValue, true);
+        }
+	}
+    osMBuf_writeBuf(pSipBuf, "\r\n", 2, true);
+
+EXIT:
+	DEBUG_END
+	return status;
+}
+
+
+osStatus_e sipMsgAppendContent(osMBuf_t* pSipBuf, osPointerLen_t* content, bool isProceedNewline)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+    if(!pSipBuf)
+    {
+        logError("null pointer, pSipBuf=%p.", pSipBuf);
+        status = OS_ERROR_NULL_POINTER;
+        goto EXIT;
+    }
+
+	if(isProceedNewline)
+	{
+    	osMBuf_writeStr(pSipBuf, "\r\n", true);
+	}
+
+	osMBuf_writePL(pSipBuf, content, true);
+
+EXIT:
+	return status;
+}
+
+
 //insert a namevalue pair to the end of the current hdr that is ended by pSipBuf->pos.  The hdr shall already have \r\n added
 osStatus_e sipMsgHdrAppend(osMBuf_t* pSipBuf, sipHdrParamNameValue_t* paramPair, char seperator)
 {
@@ -602,8 +672,6 @@ static void sipMsgDecodedRawHdr_delete(void* data)
         osMem_deref(pMsgDecoded->msgHdrList[i]->pRawHdr);
         osList_delete(&pMsgDecoded->msgHdrList[i]->rawHdrList);
     }
-
-    osMem_deref(pMsgDecoded);
 }
 
  

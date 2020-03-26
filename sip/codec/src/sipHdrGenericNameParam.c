@@ -199,7 +199,7 @@ osStatus_e sipParserHdr_multiNameParam(osMBuf_t* pSipMsg, size_t hdrEndPos, bool
 	pMultiGNP->gnpNum = 0;
     while(pSipMsg->pos < hdrEndPos)
     {
-        sipHdrGenericNameParamDecoded_t* pNameParam = osMem_zalloc(sizeof(sipHdrGenericNameParamDecoded_t), NULL);
+        sipHdrGenericNameParamDecoded_t* pNameParam = osMem_zalloc(sizeof(sipHdrGenericNameParamDecoded_t), sipHdrGenericNameParamDecoded_cleanup);
         if(!pNameParam)
         {
             logError("could not allocate memory for pNameParam.");
