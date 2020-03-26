@@ -1,0 +1,124 @@
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/epoll.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <pthread.h>
+
+#include "osDebug.h"
+#include "osTimer.h"
+#include "osMBuf.h"
+#include "osConfig.h"
+#include "osResourceMgmt.h"
+
+#include "sipConfig.h"
+#include "sipMsgFirstLine.h"
+#include "sipUriparam.h"
+#include "sipTransMgr.h"
+#include "sipTransportIntf.h"
+#include "sipTcm.h"
+#include "sipTransportLib.h"
+
+
+static __thread sipTransportLBSetting_t tpSetting;
+static __thread int udpFd=-1, tcpListenFd=-1, lbEpFd=-1;
+
+static void sipTpServerOnIpcMsg(osIPCMsg_t* pIpcMsg);
+
+
+osStatus_e sipTransportLBInit(int pipefd[2])
+{
+    osStatus_e status = OS_STATUS_OK;
+
+    //create IPC pipes
+    if(pipe2(pipefd, O_NONBLOCK | O_DIRECT) != 0)
+    {
+        logError("fails to pipe2, errno=%d.", errno);
+        status = OS_ERROR_SYSTEM_FAILURE;
+        goto EXIT;
+    }
+
+EXIT:
+    return status;
+}
+
+
+void sipTransportLBStart(void* pData)
+{
+	struct epoll_event event, events[SYS_MAX_EPOLL_WAIT_EVENTS];
+
+    sipTransportLBSetting_t tpSetting = *(sipTransportLBSetting_t*)pData;
+
+//	sipTcmInit(sipTpNotifyTcpConnUser);
+
+    lbEpFd = epoll_create1(0);
+    if(lbEpFd == -1)
+    {
+       	logError("fails to create epoll file descriptor, errno=%d.\n", errno);
+		goto EXIT;
+	}
+
+    event.events = EPOLLIN;
+   	event.data.fd = tpSetting.ownIPCfd;
+    if(epoll_ctl(lbEpFd, EPOLL_CTL_ADD, tpSetting.ownIPCfd, &event))
+    {
+        logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", tpSetting.ownIPCfd, lbEpFd, errno);
+		goto EXIT;
+	}
+
+	ssize_t len;
+	size_t bufLen;
+	char* buffer;
+	osMBuf_t* udpBuf;
+	int event_count;
+    size_t ipcMsgAddr;
+    while (1)
+    {
+        event_count = epoll_wait(lbEpFd, events, SYS_MAX_EPOLL_WAIT_EVENTS, -1);
+        for(int i = 0; i < event_count; i++) 
+		{
+            while (1)
+            {
+           		len = read(events[i].data.fd, &ipcMsgAddr, sizeof(size_t));
+
+               	if(len == -1 && (errno == EWOULDBLOCK || errno == EAGAIN))
+				{
+                   	break;
+				}
+
+				sipTpLBOnIpcMsg((osIPCMsg_t*)ipcMsgAddr);
+			}
+		}
+	}
+
+EXIT:
+	logError("a transport LB thread fails, exiting...");
+
+	if(tpSetting.ownIPCfd >= 0)
+	{
+        close(tpSetting.ownIPCfd);
+	}
+}
+
+
+static void sipTpServerOnIpcMsg(osIPCMsg_t* pIpcMsg)
+{
+	switch (pIpcMsg->interface)
+	{
+		case OS_TIMER_ALL:
+			osTimerGetMsg(pIpcMsg->pMsg);
+			break;
+		default:
+			logError("received ipc message from unknown interface (%d).", pIpcMsg->interface);
+			break;
+	}
+}
+

@@ -1,0 +1,37 @@
+#ifndef _SIP_TRANSPORT_MGR_H
+#define _SIP_TRANSPORT_MGR_H
+
+#include "osList.h"
+
+#include "sipTransMgr.h"
+#include "sipTransport.h"
+
+#if 0
+typedef struct tcpConnInfo {
+	osListPlus_t sipTrIdList;
+} tcpConnInfo_t;
+
+
+typedef struct sipTpTcm {
+	bool isUsing;		//if this slot is current used
+	bool isTcpConnDone;	//if true, TCP connection has established
+	int sockfd;			//tcp fd 
+	struct sockaddr_in peer;
+	union {
+		tcpConnInfo_t tcpConn;				//when isTcpConn = false
+		tcpKeepAliveInfo_t tcpKeepAlive;	//when isTcpConn = true
+	};
+} sipTpTcm_t;
+
+
+
+typedef struct sipTpQuarantine {
+	bool isUsing;
+    struct sockaddr_in peer;
+    struct sockaddr_in local;
+	uint64_t qTimerId;
+} sipTpQuarantine_t;
+
+#endif
+
+#endif

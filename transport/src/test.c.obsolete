@@ -1,0 +1,45 @@
+#include <stdio.h>
+#include <string.h>
+
+typedef struct aaa {
+	int a;
+	int b;
+} aaa_t;
+
+void main()
+{
+	char pa[100]="abcefghijklmn\0";
+	aaa_t* pt=NULL;
+	int i=3;
+
+	if(pt && pt->a ==1)
+	{
+		printf("pt->a=1\n");
+	}
+
+	for(int i=0; i<3; i++)
+	{
+		switch(pa[i])
+		{
+			case 'a':
+				printf("a\n");
+				break;
+			case 'b':
+				printf("b\n");
+				break;
+			case 'c':
+				printf("c\n");
+				break;
+			default:
+				printf("wrong\n");
+				break;
+		}
+	}
+
+	char pad[100]={};
+	size_t palen = strlen(pa);
+	printf("newpa=%s\n", &pa[3]);
+    memmove(pa, &pa[3], palen-i);
+    printf("new pa=%s\n", pa);
+
+}

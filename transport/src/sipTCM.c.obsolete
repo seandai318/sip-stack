@@ -1,0 +1,717 @@
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <pthread.h>
+
+#include "osDebug.h"
+#include "osTimer.h"
+
+#include "sipMsgFirstLine.h"
+#include "sipUriParam.h"
+#include "sipTransMgr.h"
+
+
+
+typedef struct SipTpTcmConfig {
+	int comEpFd;
+	int workerNum;
+	int workerFd[SIP_CONFIG_MAX_WORKER_NUM];
+	int ownIPCfd;
+} SipTpTcmConfig_t;
+
+
+static sipTpTcm_t sipTcm[SIP_CONFIG_TRANSPORT_MAX_TCP_CONNECTION_NUM] = {};
+static sipTcmMaxNum = 0;
+static SipTpTcmConfig_t tcmSetting;
+
+
+void sipTpTcmStart(void* pData)
+{
+	tcmSetting = *(SipTpTcmConfig_t*)pData;
+	
+	int epollFd = epoll_create1(0);							    
+	if(epollFd == -1)
+	{
+		logError("fails to create epoll file descriptor, errno=%d.\n", errno);
+		exit();
+	}
+								    
+	event.events = EPOLLIN|EPOLLET|EPOLLONESHOT;
+
+	event.data.fd = tcmSetting.ownIPCfd;
+	if(epoll_ctl(epollFd, EPOLL_CTL_ADD, tcmSetting.ownIPCfd, &event))
+	{
+		logError("fails to add file descriptor (%d) to epoll, errno=%d.\n", tcmSetting.ownIPCfd, errno);
+		close(epollFd);
+		exit();
+	}
+
+	while (1) 
+	{
+		event_count = epoll_wait(epollFd, events, MAX_EVENTS, 30000);
+		for(int i = 0; i < event_count; i++) {
+			event.events = EPOLLIN|EPOLLET|EPOLLONESHOT;
+			event.data.fd = events4[i].data.fd;
+
+			epoll_ctl(epoll_fd4, EPOLL_CTL_MOD, events[i].data.fd, &event);
+
+			int len, n;
+			while (1) {
+				n = recvfrom(events[i].data.fd, (char *)buffer, MAXLINE, MSG_DONTWAIT, ( struct sockaddr *) &cliaddr4, &len);
+			
+				if(n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN)) 
+				{
+					printf("%s, EAGAIN received\n", message);
+					break;
+				}
+
+				sipTransport_onMsg(void* pData, int peerFd);
+			}
+		}
+	}
+}
+
+
+void sipTransport_onMsg(void* pData, int peerFd)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	if(!pData)
+	{
+		logError("null pointer, pData.");
+		return;
+	}
+
+	sipTransportTcmMsgType_e* pMsgType = (sipTransportTcmMsgType_e*) pData;
+	switch (*pMsgType)
+	{
+		case SIP_TRANSPORT_TCM_MSG_CREATE_TCP_CONN:
+		{
+			sipTransportTcmTcpCreate_t* pTcmCreate = pData;
+			if(pTcmCreate->failedTransport.fd != 0)
+			{
+				sipTcmCloseFd(&pTcmCreate->failedTransport);
+			}
+
+			sipTpTcm_t* pTcm = sipTcmGetTcpMap(0, pTcmCreate->dest, true);
+			if(!pTcm)
+			{
+				logError("fails to find a tcm.");
+				status = OS_ERROR_SYSTEM_FAILURE;
+				goto EXIT;
+			}
+
+			//the requested TCP connection has not been created
+			if(!pTcm->isUsing)
+			{
+				status = sipTcmCreateTcpConn(pTcm, pTcmCreate->local, pTcmCreate->dest, comEpFd);
+				pTcm->isUsing = true;
+				pTcm->transport.local = pTcmCreate->local;
+				pTcm->transport.dest = pTcmCreate->dest;
+				pTcm->timerId = osStartTimer();
+				goto EXIT;
+			}
+
+			//TCP connection establishment is already ongoing, probably triggered by another work thread
+			if(pTcm->transport.fd == 0)
+			{
+				//do nothing, wait for tcp connection result.
+				goto EXIT;
+			}
+			else
+			{
+				//a TCP connection exists.  a notification must have been sent.  to be safe, notify the sender again.
+                sipTransportTcmUpdate_t* pTcmUpdate = osMem_alloc(sizeof(sipTransportTcmUpdate_t), NULL);
+				pTcmUpdate->tcmMsgType = SIP_TRANSPORT_TCM_MSG_UPDATE_TCP_CONN;
+				pTcmUpdate->isTcpConnOpen = true;
+				pTcmUpdate->transport = pTcm->transport;
+				sipTcmNotifyWorker(pTcmUpdate, peerFd);
+			}
+
+			break;
+		}
+		case SIP_TRANSPORT_TCM_MSG_TCP_CONN_FAIL:
+		{
+			//just locally close the fd, no need to ack the sender
+			sipTransportTcmTcpFail_t* pFail = pData;
+            sipTpTcm_t* pTcm = sipTcmGetTcpMap(pFail->failedTransport.fd, pFail->failedTransport.dest, false);
+            if(pTcm)
+			{
+				sipTcmCloseTcpConn(pTcm);
+			}
+
+			break;
+		}
+		case SIP_TRANSPORT_TCM_MSG_COMM_TCP_CONN_UPDATE:
+		{
+			sipTransportcomUpdate_t* pComUpdate = pData;
+			if(pComUpdate->isCloseFd)
+			{
+				sipTpTcm_t* pTcm = sipTcmGetTcpMap(pComUpdate->transport.fd, 0, false);
+            	if(pTcm)
+            	{
+                	sipTcmCloseTcpConn(pTcm);
+
+					//notify all workers
+              		sipTransportTcmUpdate_t* pTcmUpdate = osMem_nalloc(sizeof(sipTransportTcmUpdate_t), NULL, sipConfig_getWorker());
+                	pTcmUpdate->tcmMsgType = SIP_TRANSPORT_TCM_MSG_UPDATE_TCP_CONN;
+                	pTcmUpdate->isTcpConnOpen = false;
+                	pTcmUpdate->transport = pTcm->transport;
+                	sipTcmNotifyWorker(pTcmUpdate, 0);
+				}
+			}
+			else
+			{
+				sipTpTcm_t* pTcm = sipTcmSetTcpMap(&pComUpdate->transport);
+				if(pTcm)
+				{
+					//notify all workers.  TO-DO osMem_nalloc shall be implemented to be thread-safe for refnum
+                	sipTransportTcmUpdate_t* pTcmUpdate = osMem_nalloc(sizeof(sipTransportTcmUpdate_t), NULL, sipConfig_getWorkerNum());
+                	pTcmUpdate->tcmMsgType = SIP_TRANSPORT_TCM_MSG_UPDATE_TCP_CONN;
+                	pTcmUpdate->isTcpConnOpen = true;
+                	pTcmUpdate->transport = pTcm->transport;
+                	sipTcmNotifyWorker(pTcmUpdate, 0);
+            	}
+			}
+
+			break;
+		}
+		default:
+			logError("received an unexpected message type (%d).", *pMsgType);
+			break;	
+	}
+}
+
+			
+void sipTransport_onTimeout(uint64_t timerId, void* ptr)
+{
+	sipTCPMapping_t* tcpMapElement = *ptr;
+
+	if(tcpMapElement->tcpConn.tcpConnTimerId != timerId)
+	{
+		logError("timeout, but the returned timerId (%ld) does not match the local timerId (%ld).", timerId, tcpMapElement->tcpConn.tcpConnTimerId);
+		return;
+	}
+
+	//notify the transaction layer
+	sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TX_FAILED, tcpMapElement->tcpConn.pSipTrId, 0);
+
+	//reclaim the sipBuf
+	osMBuf_dealloc(tcpMapElement->tcpConn.pSipBuf);
+}
+	
+
+static sipTpTcm_t* sipTcmGetTcpMap(int fd, struct sockaddr_in dest, bool isGetNotUsed)
+{
+    sipTpTcm_t* pTcm = NULL;
+
+    for(int i=0; i<sipTcmMaxNum; i++)
+	{
+		if(sipTcm[i].isUsing)
+		{
+			if(sipTcm[i].transport.fd == fd && sipTcm[i].transport.dest == dest)
+			{
+				pTcm = &sipTcm[i];
+				goto EXIT;
+			}
+		}
+		else
+		{
+			if(isGetNotUsed && !pTcm)
+			{
+				pTcm = &sipTcm[i];
+			}
+		}
+	}
+
+    if(isGetNotUsed && !pTcm)
+    {
+        if(sipTcmMaxNum < SIP_CONFIG_TRANSPORT_MAX_TCP_CONNECTION_NUM)
+        {
+            pTcm = &sipTcm[sipTcmMaxNum++];
+			pTcm->isUsing = false;
+        }
+    else
+    {
+        logError("fails to find a tcm.");
+    }
+ 
+EXIT:
+	return pTcm;
+}
+
+
+static ipTpTcm_t* sipTcmSetTcpMap(sipTransportInfo_t* pTransport)
+{
+	sipTpTcm_t* pTcm = NULL;
+
+	//check if the fd is for a listening or for a client
+	for(int i=0; i<sipTcmMaxNum; i++)
+	{
+		if(sipTcm[i].isUsing)
+		{
+			if(sipTcm[i].transport.fd == 0 && sipTcm[i].transport.dest == pTransport->dest)
+			{
+				sipTcm[i].fd = pTransport->fd
+				osStopTimer(sipTcm[i].timerId);
+				sipTcm[i].timerId = osStartTimer();
+				pTcm = &sipTcm[i];
+				goto EXIT;
+			}
+		}
+		else
+		{
+			if(pTcm == NULL)
+			{
+				pTcm = &sipTcm[i];
+			}
+		}
+	}
+
+	if(!pTcm)
+	{
+		if(sipTcmMaxNum < SIP_CONFIG_TRANSPORT_MAX_TCP_CONNECTION_NUM)
+		{
+			pTcm = &sipTcm[sipTcmMaxNum++];
+		}
+	}
+
+	if(pTcm)
+	{
+		pTcm->isUsing = true;
+		pTcm->transport = *pTransport;
+		pTcm->timerId = osStartTimer();
+	}
+	else	
+	{
+		logError("fails to find a tcm when com reports ctp connection establishment.");
+	}
+
+EXIT:
+	return pTcm;
+}
+
+
+static osStatus_e sipTcmCreateTcpConn(sipTpTcm_t* pTcm, struct sockaddr_in local, struct sockaddr_in dest, int epfd)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+    int sockfd;
+
+    if(sockfd = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0) < 0)
+    {
+        logError("could not open a TCP socket, errno=%d.", errno);
+        status = OS_ERROR_NETWORK_FAIL;
+        goto EXIT;
+    }
+
+    /*---Add socket to epoll---*/
+    struct epoll_event event;
+    event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+    event.data.fd = sockfd;
+    epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &event);
+
+    if(bind(sockfd, (const struct sockaddr *)&local, sizeof(local)) < 0 )
+    {
+        logError("fails to bind for sockfd (%d), errno=%d", sockfd, errno);
+        status = OS_ERROR_NETWORK_FAIL;
+        goto EXIT;
+    }
+
+    if (connect(sockfd, (struct sockaddr*)&dest, sizeof(dest)) != 0 ) 
+	{
+        if(errno != EINPROGRESS) 
+		{
+            logError("fails to Connect for sockfd (%d), errno=%d ", sockfd, errno);
+            status = OS_ERROR_NETWORK_FAIL;
+        	goto EXIT;
+        }
+    }
+
+EXIT:
+	return status;
+}
+
+
+static void sipTcmCloseFd(sipTransportInfo_t* pTransport)
+{
+	sipTpTcm_t* pTcm = sipTcmGetTcpMap(pTransport->fd, pTransport->dest, false);
+	if(!pTcm)
+	{
+		return;
+	}
+
+	pTcp->isUsing = false;
+	close(pTransport->fd);
+}
+
+
+static void sipTcmCloseTcpConn(sipTpTcm_t* pTcm)
+{
+	pTcp->isUsing = false;
+	close(pTcm->transport.fd);
+}
+
+
+static void sipTcmNotifyWorker(sipTransportTcmUpdate_t* pTcmUpdate, int workerFd)
+{
+	if(workFd != 0)
+	{
+		//only send to that worker fd
+	}
+	else
+	{
+		//send to all worker fd
+		
+	}
+}
+
+//send a packet when transaction does not specify the sending fd	
+static osStatus_e sipTpSend(sipTransportCtrl_t* pTpCtrl, osMBuf_t* pSipBuf, sipTransportStatus_e* pTransport)
+{
+	osStatus_e status = OS_STATUS_OK;
+    sipTpSipBufInfo_t* pSipBufInfo = NULL;
+    int locValue;
+
+	//check if tcp shall be used and already has a connection to the peer
+	bool isTcp = false;
+    switch(sipConfig_getTransport(pTpCtrl->dest.ip, pTpCtrl->dest.port))
+    {
+        case SIP_TRANSPORT_TYPE_TCP:
+            isTcp = true;
+            break;
+        case SIP_TRANSPORT_TYPE_ANY:
+            if(pSipBuf->end > OS_TRANSPORT_MAX_MTU - SIP_TRANSPORT_BUFFER_SIZE)
+            {
+				isTcp = true;
+			}
+            break;
+		default:
+			break;
+    }
+
+	//if !TCP, notify app to let it to resend msg via UDP
+	if(!isTcp)
+	{
+		*pTransport = SIP_TRANSPORT_STATUS_UDP;
+		goto EXIT;
+	}
+
+	if(isTcp)
+	{
+		//first check if there is already a TCP connection exists
+		sipTpTcpMapping_t* pTcpMap = sipTpGetTcpMap(0, pTpCtrl->dest.ip, pTpCtrl->dest.peerPort, false);
+		if(pTcpMap)
+		{
+            *pTransport = SIP_TRANSPORT_TYPE_TCP;
+
+            int len = write(pTcpMap->sockfd, pSipBuf->buf, pSipBuf->end);
+            if(len == 0 && len == pSipBuf->end)
+            {
+                //update the tcp connection's keep alive, it is OK to have pTcpMap here inside a rd lock, as isUsed = true always write to the same value (true) for any reader threads and also is a atomic operation
+                pTcpMap->tcpKeepAlive.isUsed = true;
+                goto EXIT;
+            }
+        }
+
+        if((lockValue = pthread_rwlock_unlock(p->p_lock_rw)) != 0)
+        {
+            logError("fails to pthread_rwlock_unlock, return value=%d.", locValue);
+            status = OS_ERROR_SYSTEM_FAIL;
+            goto EXIT;
+        }
+
+        //the pTcpMap check is broken into two parts to make rwlock looks proper and neat
+		if(pTcpMap)
+        {
+            if(len == -1)
+            {
+                if(errno != EBADF)
+                {
+                    logError("write to peer fails, fd=%d, errno=%d.", pTcpMap->sockfd, errno);
+                    status = OS_ERROR_TRANSPORT_FAIL;
+                }
+                goto EXIT;
+            }
+            else if(len != pSipBuf->end)
+            {
+                logError("write for tcpfd (%d) returns len (%d), the message len is %d, errno=%d.", pTcpMap->sockfd, len, pSipBuf->end, errno);
+                status = OS_ERROR_NETWORK_FAIL;
+                goto EXIT;
+            }
+
+			//if len==-1 && errno == EBADF, this implies the comm has already closed the fd (delayed due to pipe), create a new socket
+		}
+
+		//we are here either because len==-1 && errno == EBADF, or there is no connection towards the destination
+		//check if any connection establishment procedure is ongoing
+		sipTpSipBufInfo_t* pSipBufInfo = osMem_alloc(sizeof(sipTpSipBufInfo_t), NULL);
+		pSipBufInfo->pSipTrId = pTpCtrl->pTrId;
+		pSipBufInfo->pSipBuf = osMBuf_allocRef(pSipBuf);
+
+		//do a writer lock to avoid performing a reader lock then immediately followed by a write lock
+        if((lockValue = pthread_rwlock_wrlock(p->p_lock_rw)) != 0)
+        {
+            logError("fails to pthread_rwlock_wrlock, return value=%d.", locValue);
+            status = OS_ERROR_SYSTEM_FAIL;
+            goto EXIT;
+        }
+
+		pTcpMap = sipTpGetTcpMap(0, pTpCtrl->tcpTransport.peerIP, pTpCtrl->tcpTransport.peerPort, true);	
+		if(pTcpMap)
+		{
+			osList_append(&pTcpMap->tcpConn.tcpSipBufInfoList, pSipBufInfo);
+		}
+
+        if((lockValue = pthread_rwlock_unlock(p->p_lock_rw)) != 0)
+        {
+            logError("fails to pthread_rwlock_unlock, return value=%d.", locValue);
+            status = OS_ERROR_SYSTEM_FAIL;
+            goto EXIT;
+        }
+	}		
+
+	int sockfd;
+	struct sockaddr_in dest = {};
+	struct sockaddr_in local = {};
+
+    if(sockfd = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0) < 0)
+    {
+        logError("could not open a TCP socket, errno=%d.", errno);
+        status = OS_ERROR_NETWORK_FAIL;
+        goto EXIT;
+    }
+
+    local.sin_family = AF_INET;
+    local.sin_port = htons(pTpCtrl->local.port);
+    if (inet_pton(AF_INET, pTpCtrl->local.ip, &local.sin_addr.s_addr) == 0)
+    {
+        logError("inet_pton for localIP=%s, errno=%d.", pTpCtrl->local.ip, errno);
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+    if(bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0 )
+    {
+		logError("fails to bind for sockfd (%d), localIP=%s, localPort=%d, errno=%d", sockfd, pTpCtrl->local.ip, pTpCtrl->local.port);
+		status = OS_ERROR_NETWORK_FAIL;
+        goto EXIT;
+    }
+
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(pTpCtrl->dest.port);
+    if (inet_pton(AF_INET, pTpCtrl->dest.ip, &dest.sin_addr.s_addr) == 0)
+    {
+        logError("inet_pton for peerIP=%s, errno=%d.", peerIP, errno);
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+	if(isTcp)
+	{	
+    	*pTransport = SIP_TRANSPORT_TYPE_ANY;
+
+    	if((lockValue = pthread_rwlock_unlock(p->p_lock_rw)) != 0)
+    	{
+        	logError("fails to pthread_rwlock_unlock, return value=%d.", locValue);
+        	status = OS_ERROR_SYSTEM_FAIL;
+        	goto EXIT;
+    	}
+
+    	sipTpTcpMapping_t* tcpMap = sipTpCreateConnTCPMapping(sockfd, &dest, pSipBuf);
+		if(!tcpMap)
+		{
+			logError("fail to allocate a tcpMap.");
+			status = OS_ERROR_SYSTEM_FAIL;
+			goto EXIT;
+		}
+
+    	if((lockValue = pthread_rwlock_unlock(p->p_lock_rw)) != 0)
+    	{
+        	logError("fails to pthread_rwlock_unlock, return value=%d.", locValue);
+        	status = OS_ERROR_SYSTEM_FAIL;
+        	goto EXIT;
+    	}
+
+    	if (comm_createTCPConn(sockfd, &dest, tcpMap) != 0)
+    	{
+    		if(errno != EINPROGRESS)
+        	{
+        		logError("TCP connect() fails, errno=%d.", errno);
+            	status = OS_ERROR_NETWORK_FAIL;
+            	goto EXIT;
+        	}
+		} 
+	}
+	else
+	{
+    	*pTransport = SIP_TRANSPORT_TYPE_UDP;
+		if(pTpCtrl->viaProtocolPos != 0)
+		{
+			osMBuf_writeStr(pSipBuf, "UDP", false);
+		}
+
+		len = sendto(sockfd, pSipBuf->buf, pSipBuf->end, 0, (const struct sockaddr*) &dest, sizeof(dest));
+		if(len != pSipBuf->end || len == -1)
+		{
+			logError("fails to sendto() for sockfd=%d, len=%d, errno=%d.", sockfd, len, errno);
+			status = OS_ERROR_NETWORK_FAIL;
+			goto EXIT;
+		}
+	}
+EXIT:
+	if(status != OS_STATUS_OK && pSipBufInfo != NULL)
+	return status;
+}
+
+
+//return a tcpMap that matches with the peerIP and peerPort.  If the tcpFd != 0, also need to match tcpFd.
+//com send request to transport via pipe, would not directly manipulate sipTCPMap, so no need for semaphore 
+static sipTpTcpMapping_t* sipTpGetTcpMap(int tcpFd, char* peerIP, int peerPort, bool isCheckConn)
+{
+	sipTpTcpMapping_t* pTcpMap = NULL;
+
+    struct sockaddr_in peer = {};
+
+    peer.sin_port = htons(peerPort);
+    if (inet_pton(AF_INET, peerIP, &peer.sin_addr.s_addr) == 0)
+    {
+        logError("inet_pton for peerIP=%s, errno=%d.", peerIP, errno);
+        goto EXIT;
+    }
+
+	bool isMatch = false;
+	int lockRet = pthread_rwlock_rdlock(p->p_lock_rw);
+	if(locRet != 0)
+	{
+        logError("fails to pthread_rwlock_rdlock, return value=%d.", locRet);
+        goto EXIT;
+    }
+
+	for(int i=0; i<sipTcpMapMaxNum; i++)
+	{
+		if(!sipTCPMap[i].isUsing)
+		{
+			continue;
+		}
+
+		if(sipTCPMap[i].peer.sin_port == peer.sin_port && sipTCPMap[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr && sockfd != 0)
+		{
+			//find a tcpMap that is in the middle of establishing a TCP connection, or one that ahs a established connection 
+			if(isCheckConn)
+			{
+				if(sipTCPMap[i].sockfd == 0)
+				{
+					isMatch = true;
+				}
+			}
+			else
+			{
+				if( tcpFd == 0 ||(tcpFd != 0 && sipTCPMap[i].sockfd == tcpFd))
+				{
+					isMatch = true;
+				}
+			}
+		}
+
+		if(isMatch)
+		{
+			pTcpMap = &sipTCPMap[i];
+			break;
+		}
+	}
+
+EXIT:
+	return pTcpMap;
+}
+
+
+static sipTpTcpMapping_t* sipTpCreateConnTCPMapping(struct sockaddr_in peer, void* pSipTrId, osMBuf_t* pSipBuf)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	sipTpTcpMapping_t* tcpMapElement = sipTpGetAvailTCPMap();
+	if(!tcpMapElement)
+	{
+		logError("tcpMapElement is not available.");
+		status = OS_ERROR_SYSTEM_FAILURE;
+		goto EXIT;
+	}
+
+	tcpMapElement->sockfd = 0;
+	tcpMapElement->peer = peer;
+	tcpMapElement->tcpConn.pSipTrId = pSipTrId;
+	tcpMapElement->tcpConn.pSipBuf = osMBuf_allocRef(pSipBuf);
+	if(!tcpMapElement->tcpConn.pSipBuf)
+	{
+		logError("fails to osMBuf_allocRef() for tcpMapElement->tcpConn.pSipBuf.");
+		status = OS_ERROR_MEMORY_ALLOC_FAILURE;
+		goto EXIT;
+	}
+
+	tcpMapElement->tcpConn.tcpConnTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_TIMEOUT, sipTransport_onTimeout, tcpMapElement);
+	if(tcpMapElement->tcpConn.tcpConnTimerId == 0)
+	{
+		logError("fails to start a timer.");
+		status = OS_ERROR_SYSTEM_FAILURE;
+
+		osMBuf_dealloc(tcpMapElement->tcpConn.pSipBuf);
+        goto EXIT;
+    }
+
+EXIT:
+	if(status != OS_STATUS_OK)
+	{
+		tcpMapElement = NULL;
+	}
+	return tcpMapElement;
+}
+
+
+
+#if 0
+static osStatus_e sipTransportCreateTCP(char* serverIP, int port)
+{
+    if ( (sockfd = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0)) < 0 ) {
+        perror("Socket");
+        exit(errno);
+    }
+
+    /*---Add socket to epoll---*/
+    int epfd = epoll_create(1);
+    struct epoll_event event;
+    event.events = EPOLLIN; // Cann append "|EPOLLOUT" for write events as well
+    event.data.fd = sockfd;
+    epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &event);
+
+    /*---Initialize server address/port struct---*/
+    bzero(&dest, sizeof(dest));
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(PORT);
+    if ( inet_pton(AF_INET, SERVER, &dest.sin_addr.s_addr) == 0 ) {
+        perror(SERVER);
+        exit(errno);
+    }
+
+    /*---Connect to server---*/
+    if ( connect(sockfd, (struct sockaddr*)&dest, sizeof(dest)) != 0 ) {
+        if(errno != EINPROGRESS) {
+            perror("Connect ");
+            exit(errno);
+        }
+    }
+
+    /*---Wait for socket connect to complete---*/
+    num_ready = epoll_wait(epfd, events, MAX_EPOLL_EVENTS, 1000/*timeout*/);
+    for(i = 0; i < num_ready; i++) {
+        if(events[i].events & EPOLLIN) {
+            printf("Socket %d connected\n", events[i].data.fd);
+        }
+    }
+#endif	
