@@ -12,6 +12,7 @@
 #define SIP_MAX_TAG_ID_LENGTH	32
 #define SIP_MAX_CALL_ID_LEN		100
 #define SIP_MAX_HDR_MODIFY_NUM	25
+#define SIP_HDR_MAX_SIZE		500	//used to reserve memory for a header when needed
 #define SIP_HDR_EOF 0xFFFFFFFF		//used for the hdr insertion.  insert a header to the end of a sip msg (excluding SDP)
 #define SIP_HDR_BOTTOM	0xFF		//the bottom header value for a header
 
@@ -31,6 +32,8 @@
 #define SIP_TIMER_I		SIP_TIMER_T4
 #define SIP_TIMER_J		(64*SIP_TIMER_T1)
 #define SIP_TIMER_K		SIP_TIMER_T4
+#define SIP_TIMER_WAIT_ACK	SIP_TIMER_F
+
 
 #define SIP_CONFIG_TIMEOUT_MULTIPLE	2
 
@@ -45,12 +48,13 @@
 #define SIP_CONFIG_USE_IMS_CLIENT						true
 
 //#define SIP_CONFIG_LOCAL_IP		"192.168.56.101"
-#define SIP_CONFIG_LOCAL_IP			"192.168.1.76"
+#define SIP_CONFIG_LOCAL_IP			"192.168.1.83"
 #define SIP_CONFIG_LISTEN_PORT	5061
 
 
 char* sipConfig_getHostIP();
 int sipConfig_getHostPort();
+void sipConfig_getHostStr(char** ppHost, int* port);
 void sipConfig_getHost(osPointerLen_t* host, int* port);
 sipTransport_e sipConfig_getTransport(osPointerLen_t* ip, int port);
 

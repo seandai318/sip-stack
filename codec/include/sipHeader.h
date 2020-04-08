@@ -11,6 +11,7 @@
 #include "sipGenericNameParam.h"
 
 
+
 /* if a hdr has multiple values, like via: via1,via2\r\n. the example via hdr only has one element of this data structure.
  if a msg contains: via: via1, via2\r\nvia: via3, then there will be 2 elements of this data structure for via, one contains via1 and via2, one contains via3. */ 
 typedef struct sipHdrRaw {
@@ -150,6 +151,10 @@ size_t sipHdr_getHdrStartPos(osMBuf_t* pSipMsg);
 osStatus_e sipHdrGetRawHdrPos(sipRawHdr_t* pRawHdr, size_t* pPos, size_t* pLen);
 bool sipHdr_isAllowMultiValue(sipHdrName_e hdrCode);
 uint8_t sipHdr_getHdrValueNum(sipHdrDecoded_t* pSipHdrDecoded);
+
+//get the length of the first hdr value.  See the sipHdr_posInfo_t for the definition of the first hdr value.  If a hdr can only have one value, or if is a no-decoded hdr (sipHdrType_other), return 0.  For these hdrs, can use the raw decoded hdr info to get the hdr length
+//be noted the startPos in the sipHdr_posInfo_t gotten from this function may always be zero if the pSipHdrDecoded is decoded from sipMsgDecodedRawHdr_t.
+//if pSipHdrDecoded is directly decodeded from sipMsg, then, the startPos in the sipHdr_posInfo_t will have correct pos value
 osStatus_e sipHdr_getFirstHdrValuePosInfo(sipHdrDecoded_t* pSipHdrDecoded, sipHdr_posInfo_t* pTopHdrValuePos);
 
 //duplicate a specific raw header, the hdr content/text is also copied

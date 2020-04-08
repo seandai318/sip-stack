@@ -128,9 +128,18 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
 	if(sipTransInfo.isRequest && sipTransInfo.transId.reqCode == SIP_METHOD_ACK)
 	{
 		sipTUMsg_t ackMsg2TU={};
-		ackMsg2TU.sipMsgType = SIP_TRANS_MSG_CONTENT_ACK;
+		ackMsg2TU.sipMsgType = SIP_MSG_REQUEST;
 		ackMsg2TU.pSipMsgBuf = &sipMsgBuf;
-				
+		ackMsg2TU.pSipMsgBuf->reqCode = SIP_METHOD_ACK;
+		
+		//for ACK, we do not need to store peer address	
+        char ipaddr[INET_ADDRSTRLEN]={};
+		sipTransportIpPort_t peer;
+        inet_ntop(AF_INET, &((sipTransportMsgBuf_t*) sipBuf)->peer.sin_addr, (char*)&ipaddr, INET_ADDRSTRLEN);
+        osPL_setStr(&peer.ip, (const char *)&ipaddr, 0);
+        peer.port = ntohs(((sipTransportMsgBuf_t*) sipBuf)->peer.sin_port);
+		ackMsg2TU.pPeer = &peer;
+	
 		sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &ackMsg2TU);
 		goto EXIT;
 	}
@@ -231,8 +240,28 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
 
     osStatus_e status = OS_STATUS_OK;
 
+	//if TU requires to directly send to transport
+	if(pSipTUMsg->isTpDirect)
+	{
+		sipTransportInfo_t* pTpInfo;
+		osMBuf_t* pSipMsg;
+		if(pSipTUMsg->sipMsgType != SIP_TRANS_MSG_CONTENT_RESPONSE )
+		{
+			pTpInfo = &pSipTUMsg->request.sipTrMsgBuf.tpInfo;
+			pSipMsg = pSipTUMsg->request.sipTrMsgBuf.sipMsgBuf.pSipMsg;
+		}
+		else
+		{
+			pTpInfo = &pSipTUMsg->response.sipTrMsgBuf.tpInfo;
+			pSipMsg = pSipTUMsg->response.sipTrMsgBuf.sipMsgBuf.pSipMsg;
+		}
+
+		status = sipTransport_send(NULL, pTpInfo, pSipMsg);
+		goto EXIT;
+	}
+
     sipTransaction_t* pTrans = pSipTUMsg->pTransId;
-    if(pTrans == NULL)
+    if(pTrans == NULL && pSipTUMsg->sipMsgType != SIP_TRANS_MSG_CONTENT_ACK)
     {
         if(pSipTUMsg->sipMsgType == SIP_TRANS_MSG_CONTENT_REQUEST)
         {
@@ -276,6 +305,11 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
             logInfo("receive a unexpected sipMsgType from TU (%d), ignore.", pSipTUMsg->sipMsgType);
             goto EXIT;
         }
+    }
+    else if(pTrans == NULL && pSipTUMsg->sipMsgType == SIP_TRANS_MSG_CONTENT_ACK)
+    {
+        logInfo("received ACK, but could not find associated transactionId, drop it.");
+        osMBuf_dealloc(pSipTUMsg->ack.sipTrMsgBuf.sipMsgBuf.pSipMsg);
     }
 
 	if(pSipTUMsg->sipMsgType == SIP_TRANS_MSG_CONTENT_ACK)
@@ -408,14 +442,14 @@ static osStatus_e sipDecodeTransInfo(sipMsgBuf_t* pSipMsgBuf, sipTransInfo_t* pT
 
     pSipMsg->pos = 0;
     sipFirstline_t firstLine;
-    status = sipParser_firstLine(pSipMsg, &firstLine);
+    status = sipParser_firstLine(pSipMsg, &firstLine, false);
     if(status != OS_STATUS_OK)
     {
         logError("could not parse the first line of sip message properly.");
         goto EXIT;
     }
 
-	debug("sean-remove, isReq=%d", firstLine.isReqLine);
+debug("sean-remove, isReq=%d", firstLine.isReqLine);
     if(firstLine.isReqLine)
     {
         pTransInfo->transId.reqCode = firstLine.u.sipReqLine.sipReqCode;

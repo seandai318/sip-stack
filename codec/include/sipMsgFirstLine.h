@@ -30,6 +30,8 @@ typedef enum {
 	SIP_METHOD_OPTION,
 	SIP_METHOD_REGISTER,
 	SIP_METHOD_SUBSCRIBE,
+	SIP_METHOD_REFER,
+	SIP_METHOD_UPDATE,
 } sipRequest_e;
 
 
@@ -119,7 +121,7 @@ typedef struct sipFirstline {
 bool sipIsStatusCodeValid(int statusCode);
 sipRequest_e sipMsg_method2Code(osPointerLen_t* pMethod);
 osStatus_e sipMsg_code2Method(sipRequest_e code, osPointerLen_t* pMethod);
-osStatus_e sipParser_firstLine(osMBuf_t* pSipMsg, sipFirstline_t* pFL);
+osStatus_e sipParser_firstLine(osMBuf_t* pSipMsg, sipFirstline_t* pFL, bool isParseUri);
 osStatus_e sipHdrFirstline_encode(osMBuf_t* pSipBuf, void* pReqLine, void* other);
 osStatus_e sipHdrFirstline_create(void* pReqLineDT, void* pUriDT, void* pReqTypeDT);
 osStatus_e sipHdrFirstline_respEncode(osMBuf_t* pSipBuf, void* pRespCode, void* other);

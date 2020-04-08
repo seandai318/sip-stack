@@ -49,6 +49,8 @@ static sipHdrCreateEncode_t sipHdrCreateArray[SIP_HDR_COUNT]={
     {SIP_HDR_CONTENT_LANGUAGE, NULL, false, false, true},
     {SIP_HDR_CONTENT_LENGTH, sipHdrLenTime_encode, false, false, false},
     {SIP_HDR_CONTENT_TYPE, NULL, false, false, false},
+    {SIP_HDR_CONTRIBUTION_ID, NULL, false, false, false},
+    {SIP_HDR_CONVERSATION_ID, NULL, false, false, false},
     {SIP_HDR_CSEQ, sipHdrCSeq_encode, true, false, false},
     {SIP_HDR_DATE, sipHdrName_encode, false, false, false},
     {SIP_HDR_ENCRYPTION, NULL, false, false, false},

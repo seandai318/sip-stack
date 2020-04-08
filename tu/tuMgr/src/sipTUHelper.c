@@ -1,3 +1,6 @@
+#include "osDebug.h"
+#include "osPL.h"
+
 #include "sipConfig.h"
 #include "sipHeaderMisc.h"
 #include "sipHdrFromto.h"
@@ -11,6 +14,7 @@
 
 typedef struct sipTUHdrModifyInfo {
     bool isDelete;
+	bool isDelTopOnly;		//=1, only delete the top hdr value, even if the hdr has multiple hdr value, otherwise, delete all hdrs that has the specified hdr name
     sipHdrName_e nameCode;
     size_t hdrStartPos;
     size_t hdrSkipLen;
@@ -119,6 +123,7 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
 	//update the hdr delete list
 	sipHdrRawValueId_t* pUpdatedExtraDelHdrList = extraDelHdrList;
 	uint8_t updatedDelHdrNum = delHdrNum;
+#if 0	//ROUTE deletion logic is handled by caller, if needed, pass in from extraDelHdrList, this function does not handle it
 	osPointerLen_t* pLR = NULL;
 	if(pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE])
 	{
@@ -135,12 +140,15 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
     	osPointerLen_t lrName = {"lr", 2};
     	pLR = sipParamNV_getValuefromList(&pRoute->pGNP->hdrValue.genericParam, &lrName);
 	}
+#endif
 
 	int extraDelItem = 1;		//1 is count for via
+#if 0	//do not handle specifically for Route header in this function
 	if(pLR)
 	{
 		++extraDelItem;
 	}
+#endif
 	if(!isProxy)
 	{
 		++extraDelItem;		//for call id
@@ -150,17 +158,18 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
 	pUpdatedExtraDelHdrList = osMem_alloc(sizeof(sipHdrRawValueId_t)*(delHdrNum + extraDelItem), NULL);
 
 	--extraDelItem;
-    //via will be reinserted again if isProxy=true, the reason for that is to handle the rport
+    //via will be reinserted again if isProxy=true, the reason for that is to handle the rport, otherwise just drop the via
     pUpdatedExtraDelHdrList[extraDelItem].nameCode = SIP_HDR_VIA;
-    pUpdatedExtraDelHdrList[extraDelItem].isTopOnly = false;
+    pUpdatedExtraDelHdrList[extraDelItem].isTopOnly = true;
 
+#if 0	//do not handle specifically for Route header in this function	
 	if(pLR)
 	{
     	--extraDelItem;
-    	pUpdatedExtraDelHdrList[extraDelItem].nameCode = SIP_HDR_VIA;
+    	pUpdatedExtraDelHdrList[extraDelItem].nameCode = SIP_HDR_ROUTE;
     	pUpdatedExtraDelHdrList[extraDelItem].isTopOnly = true;
 	}
-
+#endif
 	if(!isProxy)
 	{
 		 --extraDelItem;
@@ -864,6 +873,26 @@ EXIT:
 }
 
 
+//other req may also be a in-session req, like REFER, etc. but they shall be taken care of in UA.  These req will be pass through in proxy
+bool sipTU_isProxyCallReq(sipRequest_e reqCode)
+{
+	switch (reqCode)
+	{
+		case SIP_METHOD_INVITE:
+		case SIP_METHOD_ACK:
+		case SIP_METHOD_BYE:
+		case SIP_METHOD_UPDATE:
+		case SIP_METHOD_CANCEL:
+			return true;
+			break;
+		default:
+			return false;
+			break;
+	}
+}
+
+
+
 osStatus_e sipTU_msgBuildEnd(osMBuf_t* pSipBuf, bool isExistContent)
 {
 	if(!pSipBuf)
@@ -956,33 +985,24 @@ static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqD
         {
             status = osMBuf_writeBufRange(pSipBuf, pReqDecodedRaw->sipMsgBuf.pSipMsg, startPos, pHdrId->hdrStartPos, true);
 
+			//skip the whole hdr entry
 			startPos = pHdrId->hdrStartPos + pHdrId->hdrSkipLen;
 
-            //check if there are multiple values for the hdr, if yes, only skip the 1st value.
-            if(sipHdr_isAllowMultiValue(pHdrId->nameCode))
-            {
-                sipHdrDecoded_t sipHdrDecoded = {};
-                status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[pHdrId->nameCode]->pRawHdr, &sipHdrDecoded, false);
-                if(status != OS_STATUS_OK)
-                {
-                    logError("fails to sipDecodeHdr for hdr code(%d).", pHdrId->nameCode);
-                    goto EXIT;
-                }
-
-                if(sipHdr_getHdrValueNum(&sipHdrDecoded) > 1)
+            //check if there are multiple values for the hdr, if yes, update the startPos to only skip the 1st value of the hdr entry
+			if(pHdrId->isDelTopOnly)
+			{
+				sipHdrDecoded_t sipHdrDecoded = {};
+				if(sipMsg_isHdrMultiValue(pHdrId->nameCode, pReqDecodedRaw, true, &sipHdrDecoded))
                 {
 					sipHdr_posInfo_t firstHdrValuePos;
 					sipHdr_getFirstHdrValuePosInfo(&sipHdrDecoded, &firstHdrValuePos);
-					osMBuf_writeBufRange(pSipBuf, pReqDecodedRaw->sipMsgBuf.pSipMsg, pHdrId->hdrStartPos, firstHdrValuePos.startPos, true);
-					startPos = firstHdrValuePos.startPos + firstHdrValuePos.totalLen;
-#if 0
-                   pHdrId->hdrSkipLen = sipHdr_getFirstHdrValueLen(&sipHdrDecoded);
+					size_t nextHdrValueStartPos = pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr->valuePos;	
+					//this is needed to include the hdr name, be noted the nextHdrValueStartPos is used instead of firstHdrValuePos.startPos, the reason is that when pReqDecodedRaw is used to decode a hdr, the top hdr value's startPos is always 0
+					osMBuf_writeBufRange(pSipBuf, pReqDecodedRaw->sipMsgBuf.pSipMsg, pHdrId->hdrStartPos, nextHdrValueStartPos, true);
 
-	                osMBuf_writeStr(pSipBuf, sipHdr_getNameByCode(pHdrId->nameCode), true);
-    	            osMBuf_writeStr(pSipBuf, ": ", true);
-#endif
+					startPos = nextHdrValueStartPos + firstHdrValuePos.totalLen;
 				}
-				        
+						        
 				osMem_deref(sipHdrDecoded.decodedHdr);	
             }
         }
@@ -1125,6 +1145,7 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
 
 		pHdrInfo->nameCode = delHdrList[i].nameCode;
 		pHdrInfo->isDelete = true;
+		pHdrInfo->isDelTopOnly = delHdrList[i].isTopOnly;
 
         status = sipHdrGetRawHdrPos(pReqDecodedRaw->msgHdrList[delHdrList[i].nameCode]->pRawHdr, &pHdrInfo->hdrStartPos, &pHdrInfo->hdrSkipLen);
         if(status != OS_STATUS_OK)
@@ -1134,9 +1155,9 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
             goto EXIT;
         }
 
-		osList_orderAppend(pList, sipTU_hdrModiftListSortHandler, pHdrInfo, pReqDecodedRaw);
+		osList_orderAppend(pList, sipTU_hdrModiftListSortHandler, pHdrInfo, NULL);
 
-		//check if more than one hdr value to be removed
+		//check if more than one hdr line to be removed (a hdr line means a whole hdr entry in a SIP message, hdr-name: hdrvalue1, hdrvalue2...
 		if(!delHdrList[i].isTopOnly && pReqDecodedRaw->msgHdrList[delHdrList[i].nameCode]->rawHdrNum > 1)
 		{
 			osList_t* pList = &pReqDecodedRaw->msgHdrList[delHdrList[i].nameCode]->rawHdrList;
@@ -1152,7 +1173,7 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
            			goto EXIT;
 				} 
 
-        		osList_orderAppend(pList, sipTU_hdrModiftListSortHandler, pHdrInfo, pReqDecodedRaw);
+        		osList_orderAppend(pList, sipTU_hdrModiftListSortHandler, pHdrInfo, NULL);
 				
 				pLE = pLE->next;
 			}

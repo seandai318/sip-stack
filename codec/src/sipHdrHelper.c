@@ -650,6 +650,7 @@ uint8_t sipHdr_getHdrValueNum(sipHdrDecoded_t* pSipHdrDecoded)
 
 
 //get the length of the first hdr value.  See the sipHdr_posInfo_t for the definition of the first hdr value.  If a hdr can only have one value, or if is a no-decoded hdr (sipHdrType_other), return 0.  For these hdrs, can use the raw decoded hdr info to get the hdr length
+//be noted the startPos in the sipHdr_posInfo_t gotten from this function may always be zero if the pSipHdrDecoded is decoded from sipMsgDecodedRawHdr_t.
 osStatus_e sipHdr_getFirstHdrValuePosInfo(sipHdrDecoded_t* pSipHdrDecoded, sipHdr_posInfo_t* pTopPosInfo)
 {
 	osStatus_e status = OS_STATUS_OK;

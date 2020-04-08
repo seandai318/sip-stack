@@ -6,6 +6,7 @@
 
 #include "sipMsgRequest.h"
 #include "sipMsgFirstLine.h"
+#include "sipTUIntf.h"
 #include "sipTransport.h"
 
 
@@ -86,6 +87,8 @@ typedef struct sipTransMsgTcpReady {
 //only used when TU or transport sends a msg to transaction state machine.  For transaction state machine -> TU, directly send sipTransaction_t
 typedef struct sipTransMsg {
     sipTransMsgContent_e sipMsgType;
+	sipTuAppType_e appType;		//for TU to determine where to route a message, for response only
+	bool isTpDirect;		//if=1, bypass transaction SM, otherwise, via transaction SM
 //	sipTransMsgBuf_t sipTrMsgBuf;
 //    sipMsgBuf_t* pSipMsg;
 	union {

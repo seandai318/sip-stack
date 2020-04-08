@@ -51,7 +51,6 @@ osStatus_e sipParserHdr_via(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrMultiVia_
             goto EXIT;
         }
 
-		debug("sean, char='%c'", pSipMsg->buf[pSipMsg->pos]);
         pViaElem->hdrPos.startPos = pSipMsg->pos;
         status = sipParserHdr_viaElement(pSipMsg, hdrEndPos, &pViaElem->hdrValue);
         if(status != OS_STATUS_OK)
@@ -571,3 +570,101 @@ osStatus_e sipHdrVia_getPeerTransport(sipHdrViaDecoded_t* pVia, sipHostport_t* p
 EXIT:
 	return status;
 }
+
+
+//peerViaIdx=0, 1, SIP_HDR_BOTTOM, corresponds to top, secondary, and bottom.
+osStatus_e sipHdrVia_getPeerTransportFromRaw(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint8_t peerViaIdx, sipHostport_t* pHostPort, sipTransport_e* pTpProtocol)
+{
+	osStatus_e status = OS_STATUS_OK;
+	sipHdrDecoded_t hdrDecoded = {};
+	sipHdrViaDecoded_t* pHdrViaDecoded = NULL;
+
+	switch(peerViaIdx)
+	{
+		case 0:
+        	status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr, &hdrDecoded, false);
+			if(status != OS_STATUS_OK)
+        	{
+            	logError("fails to sipDecodeHdr for hdr code(%d).", SIP_HDR_VIA);
+            	goto EXIT;
+        	}
+
+			pHdrViaDecoded = ((sipHdrMultiVia_t*)hdrDecoded.decodedHdr)->pVia;
+			break;
+		case 1:
+		{
+		    bool isMulti = sipMsg_isHdrMultiValue(SIP_HDR_VIA, pReqDecodedRaw, false, &hdrDecoded);
+		    if(isMulti)
+    		{
+        		if(sipHdr_getHdrValueNum(&hdrDecoded) > 1)
+        		{
+            		//get the nexthop from the top hdr
+            		pHdrViaDecoded = ((sipHdrMultiVia_t*)hdrDecoded.decodedHdr)->viaList.head->data;
+        		}
+        		else
+        		{
+            		//get the nexthop from the 2nd hdr
+					osMem_deref(hdrDecoded.decodedHdr);	//remove the memory allocated for the top hdr
+					hdrDecoded.decodedHdr = NULL;
+            		status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->rawHdrList.head->data, &hdrDecoded, false);
+					if(status != OS_STATUS_OK)
+            		{		
+                		logError("fails to sipDecodeHdr for the 2nd header entry of SIP_HDR_VIA.");
+                		status = OS_ERROR_INVALID_VALUE;
+                		goto EXIT;
+            		}
+					pHdrViaDecoded = ((sipHdrMultiVia_t*)hdrDecoded.decodedHdr)->pVia;
+				}
+			}
+			else
+			{
+				logError("try to get the second via value, but the message does not have.");
+				status = OS_ERROR_INVALID_VALUE;
+				goto EXIT;
+			}
+			break;
+		}
+		case SIP_HDR_BOTTOM:
+		{
+			if(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->rawHdrNum == 1)
+			{
+            	status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr, &hdrDecoded, false);
+			}
+            else if(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->rawHdrNum > 1)
+            {
+                status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->rawHdrList.tail->data, &hdrDecoded, false);
+			}
+
+           	if(status != OS_STATUS_OK)
+           	{
+               	logError("fails to sipDecodeHdr for hdr code(%d).", SIP_HDR_VIA);
+               	goto EXIT;
+           	}
+
+			uint8_t viaNum = ((sipHdrMultiVia_t*)hdrDecoded.decodedHdr)->viaNum;
+			if(viaNum == 0)
+			{
+           		pHdrViaDecoded = ((sipHdrMultiVia_t*)hdrDecoded.decodedHdr)->pVia;
+			}
+			else
+			{
+				pHdrViaDecoded = ((sipHdrMultiVia_t*)hdrDecoded.decodedHdr)->viaList.tail->data;
+			}
+			break;
+		}
+		default:
+			logError("peerViaIdx(%d) is out of the range(0, 1, %d).", peerViaIdx, SIP_HDR_BOTTOM);
+			status = OS_ERROR_INVALID_VALUE;
+			goto EXIT;
+			break;
+	}
+
+	if(pHdrViaDecoded)
+	{
+    	status = sipHdrVia_getPeerTransport(pHdrViaDecoded, pHostPort, pTpProtocol);
+	}
+
+EXIT:
+	osMem_deref(hdrDecoded.decodedHdr);
+	return status;
+}	

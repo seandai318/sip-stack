@@ -9,6 +9,8 @@
 #include "sipTUIntf.h"
 #include "sipTransportIntf.h"
 
+#include "/home/ama/project/sip-stack/tu/proxy/proxyMgr/include/proxyMgr.h"
+
 
 static osStatus_e sipTransICEnterState(sipTransState_e newState, sipTransMsgType_e msgType, sipTransaction_t* pTrans);
 static osStatus_e sipTransICStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uint64_t timerId);
@@ -43,6 +45,7 @@ osStatus_e sipTransInviteClient_onMsg(sipTransMsgType_e msgType, void* pMsg, uin
 		if( msgType == SIP_TRANS_MSG_TYPE_TU)
 		{
 			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
+			pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
 		}
     }
 
@@ -100,8 +103,11 @@ osStatus_e sipTransICStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uint
         goto EXIT;
     }
 	pTrans->pTUId = ((sipTransMsg_t*) pMsg)->pSenderId;
+    pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
 
-	if(!((sipTransMsg_t*) pMsg)->sipMsgType != SIP_MSG_REQUEST)
+logError("to-remove, CALL, pTUId=%p, pCallInfo=%p", pTrans->pTUId, ((proxyInfo_t*)pTrans->pTUId)->pCallInfo);
+
+	if(((sipTransMsg_t*) pMsg)->sipMsgType != SIP_TRANS_MSG_CONTENT_REQUEST)
 	{
 		logError("received a unexpected response.");
 		status = OS_ERROR_INVALID_VALUE;
@@ -109,6 +115,8 @@ osStatus_e sipTransICStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uint
 	}
 
 	pTrans->tpInfo = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo;
+    osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip);
+    osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local.ip);
     pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_ANY;
     pTrans->tpInfo.tcpFd = -1;
 
@@ -169,6 +177,7 @@ osStatus_e sipTransICStateCalling_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 
 	            sipTUMsg_t sipTUMsg;
     	        sipTUMsg.pTransId = pTrans;
+	            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
         	    sipTUMsg.pTUId = pTrans->pTUId;
 				sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
 
@@ -200,13 +209,23 @@ osStatus_e sipTransICStateCalling_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 			sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;	
 			osMem_deref(pTrans->resp.pSipMsg);
             pTrans->resp = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf;
-
-            sipTUMsg_t sipTUMsg;
-            sipTUMsg.sipMsgType = SIP_MSG_RESPONSE;
-            sipTUMsg.pSipMsgBuf = &pTrans->resp;
-            sipTUMsg.pTransId = pTrans;
-            sipTUMsg.pTUId = pTrans->pTUId;
-            sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
+            if(rspCode == SIP_RESPONSE_100)
+			{
+				//when receiving 100 Trying, clean the memory and change state, no need to notify TU
+				osMem_deref(pTrans->resp.pSipMsg);
+				pTrans->resp.pSipMsg = NULL;
+			}
+			else
+			{
+            	sipTUMsg_t sipTUMsg;
+            	sipTUMsg.sipMsgType = SIP_MSG_RESPONSE;
+            	sipTUMsg.pPeer = &pTrans->tpInfo.peer;
+            	sipTUMsg.pSipMsgBuf = &pTrans->resp;
+            	sipTUMsg.pTransId = pTrans;
+            	sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+            	sipTUMsg.pTUId = pTrans->pTUId;
+            	sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
+			}
 
     		if(rspCode >= 100 && rspCode < 200)
     		{
@@ -218,14 +237,14 @@ osStatus_e sipTransICStateCalling_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 			}
 			else
 			{
-                //to-do, build ACK, and store in pTrans, per 3261, the ACK by transaction has to be sent to the same peer IP/port/transport, the SIP_TRANSPORT_STATUS_TCP_CONN case shall not occur
+                //to-do, no need to build ACK, let TU handled it. build ACK, and store in pTrans, per 3261, the ACK by transaction has to be sent to the same peer IP/port/transport, the SIP_TRANSPORT_STATUS_TCP_CONN case shall not occur
                 sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->ack.pSipMsg);
                 if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
                 {
                     logError("fails to send request.");
                     //notify TU about the ACK failure, to-do
-                    sipTUMsg.sipMsgType = SIP_MSG_ACK;
-                    sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
+                //    sipTUMsg.sipMsgType = SIP_MSG_ACK;
+                 //   sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
 
                     sipTransICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
                     status = OS_ERROR_NETWORK_FAILURE;
@@ -302,13 +321,24 @@ osStatus_e sipTransICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
             osMem_deref(pTrans->resp.pSipMsg);
             pTrans->resp = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf;
 
-            sipTUMsg_t sipTUMsg;
-            sipTUMsg.sipMsgType = SIP_MSG_RESPONSE;
-            sipTUMsg.pSipMsgBuf = &pTrans->resp;
-            sipTUMsg.pTransId = pTrans;
-            sipTUMsg.pTUId = pTrans->pTUId;
+            if(rspCode == SIP_RESPONSE_100)
+            {
+                //when receiving 100 Trying, clean the memory and change state, no need to notify TU
+                osMem_deref(pTrans->resp.pSipMsg);
+                pTrans->resp.pSipMsg = NULL;
+            }
+            else
+            {
+            	sipTUMsg_t sipTUMsg;
+            	sipTUMsg.sipMsgType = SIP_MSG_RESPONSE;
+            	sipTUMsg.pPeer = &pTrans->tpInfo.peer;
+            	sipTUMsg.pSipMsgBuf = &pTrans->resp;
+            	sipTUMsg.pTransId = pTrans;
+            	sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+            	sipTUMsg.pTUId = pTrans->pTUId;
 
-            sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
+            	sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
+			}
 
             if(rspCode >= 100 && rspCode < 200)
             {
@@ -326,8 +356,8 @@ osStatus_e sipTransICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
         	    {
             	    logError("fails to send request.");
 					//notify TU about the ACK failure, to-do
-					sipTUMsg.sipMsgType = SIP_MSG_ACK;
-                	sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
+				//	sipTUMsg.sipMsgType = SIP_MSG_ACK;
+                //	sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
 
                 	sipTransICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
                 	status = OS_ERROR_NETWORK_FAILURE;
@@ -354,6 +384,7 @@ osStatus_e sipTransICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 
             sipTUMsg_t sipTUMsg;
             sipTUMsg.pTransId = pTrans;
+            sipTUMsg.appType = pTrans->appType;
             sipTUMsg.pTUId = pTrans->pTUId;
 
 			sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
@@ -433,6 +464,7 @@ osStatus_e sipTransICStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
 
             sipTUMsg_t sipTUMsg;
             sipTUMsg.pTransId = pTrans;
+            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             sipTUMsg.pTUId = pTrans->pTUId;
 
             sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
@@ -457,6 +489,8 @@ osStatus_e sipTransICEnterState(sipTransState_e newState, sipTransMsgType_e msgT
     osStatus_e status = OS_STATUS_OK;
 	sipTransState_e prvState = pTrans->state;
     pTrans->state = newState;
+
+	logInfo("switch state from %d to %d.", prvState, newState);
 	
     switch (newState)
     {
@@ -507,6 +541,7 @@ osStatus_e sipTransICEnterState(sipTransState_e newState, sipTransMsgType_e msgT
 				{
             		sipTUMsg_t sipTUMsg;
             		sipTUMsg.pTransId = pTrans;
+		            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             		sipTUMsg.pTUId = pTrans->pTUId;
 
                     sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
@@ -541,3 +576,30 @@ EXIT:
     return status;
 }
 
+
+#if 0
+
+static osMBuf_t* sipTransICBuildErrorACK()
+{
+	//raw decode the req msg
+	sipMsgDecodedRawHdr_t* pReqDecodedRaw = 
+
+	//copy pReq's reqline, replace the INVITE to ACK
+
+    //insert a new via hdr as the first header
+    sipHostport_t viaHostport;
+    status = sipTU_addOwnVia(pSipBufReq, NULL, NULL, &pTransViaId->branchId, &viaHostport.host, &viaHostport.portValue, pViaProtocolPos);
+logError("to-remove, VIA-MEMORY, 2-1");
+
+	//copy from
+	//copy to
+	//copy callId
+	//copy CSeq, replace INVITE with ACK
+	//set content-length=0
+
+	//copy received errorresponse's tpinfo as the peer tpinfo
+
+	return pACK;
+}
+
+#endif

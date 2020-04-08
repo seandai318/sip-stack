@@ -206,6 +206,7 @@ logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->
     sipConfig_getHost(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.request.sipTrMsgBuf.tpInfo.local.port);
 	sipTransMsg.request.sipTrMsgBuf.tpInfo.viaProtocolPos = topViaProtocolPos;
 	sipTransMsg.pTransId = NULL;
+	sipTransMsg.appType = SIPTU_APP_TYPE_MAS;
 	sipTransMsg.pSenderId = pMasInfo;
 					
     status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);
@@ -266,6 +267,7 @@ BUILD_RESPONSE:
             sipTransMsg.sipMsgType = SIP_TRANS_MSG_CONTENT_RESPONSE;
             sipTransMsg.response.sipTrMsgBuf.sipMsgBuf.pSipMsg = pSipResp;
             sipTransMsg.pTransId = pSipTUMsg->pTransId;
+    		sipTransMsg.appType = SIPTU_APP_TYPE_MAS;
             sipTransMsg.response.rspCode = rspCode;
             sipTransMsg.pSenderId = pMasInfo;
 

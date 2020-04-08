@@ -15,6 +15,8 @@
 #include "sipHdrDate.h"
 #include "sipHeader.h"
 #include "sipHeaderPriv.h"
+#include "./sipMsgRequest.h"
+
 
 
 //idx =0, top header of a header name, idx = SIP_MAX_SAME_HDR_NUM, bottom header of a header name, idx= 1 ~ SIP_MAX_SAME_HDR_NUM-1, from top

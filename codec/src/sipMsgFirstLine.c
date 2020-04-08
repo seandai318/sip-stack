@@ -10,7 +10,9 @@
 
 
 
-osStatus_e sipParser_firstLine(osMBuf_t* pSipMsg, sipFirstline_t* pFL)
+
+//if isParseUri==true, URI in the req line will be parsed, otherwise, uri would not be parsed
+osStatus_e sipParser_firstLine(osMBuf_t* pSipMsg, sipFirstline_t* pFL, bool isParseUri)
 { 
     osStatus_e status = OS_STATUS_OK;
 
@@ -20,6 +22,8 @@ osStatus_e sipParser_firstLine(osMBuf_t* pSipMsg, sipFirstline_t* pFL)
         status = OS_ERROR_NULL_POINTER;
         goto EXIT;
     }
+
+	pSipMsg->pos = 0;
 
 	if(strncmp((char*) &pSipMsg->buf[pSipMsg->pos], "SIP", 3) == 0)
 	{
@@ -60,6 +64,7 @@ osStatus_e sipParser_firstLine(osMBuf_t* pSipMsg, sipFirstline_t* pFL)
 		} 
 		pSipMsg->pos++;
 
+#if 0
 		//now parse sip uri	
         sipParsingStatus_t parsingStatus;
         sipParsingInfo_t parentParsingInfo;
@@ -69,7 +74,7 @@ osStatus_e sipParser_firstLine(osMBuf_t* pSipMsg, sipFirstline_t* pFL)
         parentParsingInfo.token[0] = ' ';
         parentParsingInfo.arg = &pFL->u.sipReqLine.sipUri;
 		osList_init(&pFL->u.sipReqLine.sipUri.headers);
-
+#endif
 		//before performing parse, find the request line boundary CRLF
 		size_t flEnd = pSipMsg->pos;
 		while(flEnd < pSipMsg->end)
@@ -89,6 +94,23 @@ osStatus_e sipParser_firstLine(osMBuf_t* pSipMsg, sipFirstline_t* pFL)
             status = OS_ERROR_INVALID_VALUE;
             goto EXIT;
         }
+
+		if(!isParseUri)
+		{
+			//flEnd +1 to count 2 reduced space (\r\n) - extra 1 added in EXIT
+			pSipMsg->pos = flEnd + 1;
+			goto EXIT;
+		}
+
+        //now parse sip uri
+        sipParsingStatus_t parsingStatus;
+        sipParsingInfo_t parentParsingInfo;
+
+        parentParsingInfo.tokenNum = 1;
+        parentParsingInfo.extTokenNum = 1;
+        parentParsingInfo.token[0] = ' ';
+        parentParsingInfo.arg = &pFL->u.sipReqLine.sipUri;
+        osList_init(&pFL->u.sipReqLine.sipUri.headers);
 
 		status = sipParamUri_parse(pSipMsg, flEnd, &parentParsingInfo, &parsingStatus);
 		if(status != OS_STATUS_OK)

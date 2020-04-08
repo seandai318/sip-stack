@@ -45,6 +45,7 @@ osStatus_e sipTransInviteServer_onMsg(sipTransMsgType_e msgType, void* pMsg, uin
 		if(msgType == SIP_TRANS_MSG_TYPE_TU)
 		{
 			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
+			pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
 		}
     }
 
@@ -107,7 +108,7 @@ osStatus_e sipTransISStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uint
 			}
 
 //    		pTrans->tpInfo.pTrId = pTrans;
-			pTrans->tpInfo = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo;
+//			pTrans->tpInfo = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo;
 
     		//build a 100 TRYING and send
     		status = sipTransIS_build100Trying(&pTrans->req, &pTrans->resp);
@@ -183,7 +184,9 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
             {
                 //notify TU
                 sipTUMsg_t sipTUMsg;
-                sipTUMsg.pTransId = pMsg;
+             //   sipTUMsg.pTransId = pMsg;
+                sipTUMsg.pTransId = pTrans;
+	            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
                 sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
                 sipTU_onMsg(SIP_TU_MSG_TYPE_NETWORK_ERROR, &sipTUMsg);
 
@@ -204,7 +207,20 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 			}
 
             sipTransaction_t* pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
+
+            //the peer address from TU is the address in the top via, may be different from the real address used by the peer.  if the request message was received via TCP, the real peer has been saved when transaction was created, only reset when the message was received via UDP.
+            if(pTrans->tpInfo.tcpFd < 0)
+            {
+                //no need to reallocate memory for peer using osDPL_dup, it has been done in transMgr via osPL_setStr when a message is first received from peer
+                osPL_plcpy(&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer.ip);
+                pTrans->tpInfo.peer.port = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer.port;
+                //pTrans->tpInfo.peer = pTU->response.sipTrMsgBuf.tpInfo.peer;
+            }
+            osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.local.ip);
+            pTrans->tpInfo.local.port = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.local.port;
+
 			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
+            pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
             sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
 			osMem_deref(pTrans->resp.pSipMsg);
 			pTrans->resp.pSipMsg = osMem_ref(((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
@@ -214,7 +230,9 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
             {
                 //notify TU
                 sipTUMsg_t sipTUMsg;
-                sipTUMsg.pTransId = pMsg;
+               // sipTUMsg.pTransId = pMsg;
+                sipTUMsg.pTransId = pTrans;
+                sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
                 sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
                 sipTU_onMsg(SIP_TU_MSG_TYPE_NETWORK_ERROR, &sipTUMsg);
 
@@ -261,6 +279,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 				//notify TU
 	            sipTUMsg_t sipTUMsg;
     	        sipTUMsg.pTransId = pMsg;
+                sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
         	    sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
             	sipTU_onMsg(SIP_TU_MSG_TYPE_NETWORK_ERROR, &sipTUMsg);
 
@@ -291,6 +310,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 
             sipTUMsg_t sipTUMsg;
             sipTUMsg.pTransId = pTrans;
+            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
 
 			sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
@@ -353,7 +373,7 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
             if(pTrans->sipTransISTimer.timerIdG == timerId)
             {
                 pTrans->sipTransISTimer.timerIdG = 0;
-                osMem_deref(pTrans);
+                //osMem_deref(pTrans);
                 logInfo("timer G expires, retransmit the request.");
 
                 sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
@@ -375,18 +395,19 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
             else if(pTrans->sipTransISTimer.timerIdH == timerId)
             {
                 pTrans->sipTransISTimer.timerIdH = 0;
-                osMem_deref(pTrans);
+                // osMem_deref(pTrans);
                 logInfo("timer H expires, terminate the transaction.");
 
                 if(pTrans->sipTransISTimer.timerIdG !=0)
                 {
                     osStopTimer(pTrans->sipTransISTimer.timerIdG);
                     pTrans->sipTransISTimer.timerIdG = 0;
-                    osMem_deref(pTrans);
+                //    osMem_deref(pTrans);
                 }
 
 	            sipTUMsg_t sipTUMsg;
     	        sipTUMsg.pTransId = pTrans;
+                sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
         	    sipTUMsg.pTUId = pTrans->pTUId;
 
                 sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
@@ -402,6 +423,7 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
 
             sipTUMsg_t sipTUMsg;
             sipTUMsg.pTransId = pTrans;
+            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             sipTUMsg.pTUId = pTrans->pTUId;
 
             sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
@@ -443,14 +465,14 @@ osStatus_e sipTransISStateConfirmed_onMsg(sipTransMsgType_e msgType, void* pMsg,
             {
                 pTrans->sipTransISTimer.timerIdI = 0;
 				osMem_deref(pTrans);
-                debug("timer J expires, terminate the transaction.");
+                debug("timer I expires, terminate the transaction.");
 
                 sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TIMEOUT, pTrans);
                 goto EXIT;
             }
             else
             {
-                logError("receive an unexpected timerId (%d), ignore.", timerId);
+                logError("receive an unexpected timerId(0x%x), ignore.", timerId);
                 goto EXIT;
             }
 			break;
@@ -474,14 +496,18 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
 	sipTransState_e prvState = pTrans->state;
 	pTrans->state = newState;
 
+	logInfo("switch state from %d to %d.", prvState, newState);
+
     switch (newState)
     {
         case SIP_TRANS_STATE_PROCEEDING:
 		{
             sipTUMsg_t sipTUMsg;
             sipTUMsg.sipMsgType = SIP_MSG_REQUEST;
+            sipTUMsg.pPeer = &pTrans->tpInfo.peer;
             sipTUMsg.pSipMsgBuf = &pTrans->req;
             sipTUMsg.pTransId = pTrans;
+            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             sipTUMsg.pTUId = pTrans->pTUId;
 
 			sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
@@ -500,7 +526,7 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
 
             if(pTrans->tpInfo.tpType == SIP_TRANSPORT_TYPE_UDP)
             {
-                pTrans->timerAEGValue = osMinInt(pTrans->timerAEGValue*2, SIP_TIMER_T2);
+                pTrans->timerAEGValue = SIP_TIMER_T1;
                 pTrans->sipTransISTimer.timerIdG = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
                 if(pTrans->sipTransISTimer.timerIdG == 0)
                 {
@@ -512,9 +538,21 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
             }
             break;
         case SIP_TRANS_STATE_CONFIRMED:
+			if(pTrans->sipTransISTimer.timerIdG != 0)
+			{
+				osStopTimer(pTrans->sipTransISTimer.timerIdG);
+				pTrans->sipTransISTimer.timerIdG = 0;
+			}
+			
+            if(pTrans->sipTransISTimer.timerIdH != 0)
+            {
+                osStopTimer(pTrans->sipTransISTimer.timerIdH);
+                pTrans->sipTransISTimer.timerIdH = 0;
+            }
+
 			if(pTrans->tpInfo.tpType == SIP_TRANSPORT_TYPE_UDP)
 			{
-            	pTrans->sipTransISTimer.timerIdI = sipTransStartTimer(SIP_TIMER_J, pTrans);
+            	pTrans->sipTransISTimer.timerIdI = sipTransStartTimer(SIP_TIMER_I, pTrans);
 			}
 			else
 			{
@@ -623,7 +661,7 @@ static osStatus_e sipTransIS_build100Trying(sipMsgBuf_t* pSipBufReq, sipMsgBuf_t
 	}
 
     uint32_t contentLen = 0;
-    sipHdrAddCtrl_t ctrlCL = {false, true, false, NULL};
+    sipHdrAddCtrl_t ctrlCL = {false, false, false, NULL};
     status = sipMsgAddHdr(pSipMsgBuf->pSipMsg, SIP_HDR_CONTENT_LENGTH, &contentLen, NULL, ctrlCL);
     if(status != OS_STATUS_OK)
     {
@@ -631,6 +669,8 @@ static osStatus_e sipTransIS_build100Trying(sipMsgBuf_t* pSipBufReq, sipMsgBuf_t
         status = OS_ERROR_INVALID_VALUE;
         goto EXIT;
     }
+
+	logInfo("rspMsg=\n%M", pSipMsgBuf->pSipMsg);
 	
 EXIT:
 	osMem_deref(pReqDecodedRaw);

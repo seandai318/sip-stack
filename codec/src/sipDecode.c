@@ -84,7 +84,7 @@ osStatus_e sipGetHdrName(osMBuf_t* pSipMsg, sipRawHdr_t* pSipHeader)
 		}
 		else if(nSP !=0)
 		{
-			logError("Find empty spaces in hte hader name");
+			logError("Find empty spaces in the hader name");
 			return OS_ERROR_INVALID_VALUE;
 		}	
 	}
@@ -345,7 +345,7 @@ sipHdrName_e sipHdr_getNameCode(osPointerLen_t* hdrName)
 	struct gperfSipHdrName* pName = gperfSipHdrLookup(fullName, fullNameLen);
 	if(pName == NULL)
 	{
-		logError("could not find nameCode for hdrName=%r", hdrName);
+		logError("could not find nameCode for hdrName=%r, nameLen=%ld", hdrName, fullNameLen);
 		return SIP_HDR_X;
 	}
 	else
@@ -814,7 +814,7 @@ sipMsgDecoded_t* sipDecodeMsg(osMBuf_t* pSipMsg, sipHdrName_e sipHdrArray[], int
         goto EXIT;
     }
 
-	status = sipParser_firstLine(pSipMsg, &pSipMsgDecoded->sipMsgFirstLine);
+	status = sipParser_firstLine(pSipMsg, &pSipMsgDecoded->sipMsgFirstLine, true);
 	if(status != OS_STATUS_OK)
 	{
 		logError("could not parse the first line of sip message properly.");

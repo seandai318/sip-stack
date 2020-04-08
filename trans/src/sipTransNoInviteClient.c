@@ -45,6 +45,7 @@ osStatus_e sipTransNoInviteClient_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 		if(msgType == SIP_TRANS_MSG_TYPE_TU)
 		{
 			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
+			pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
 		}
 	}
 	if(msgType == SIP_TRANS_MSG_TYPE_TX_FAILED || msgType == SIP_TRANS_MSG_TYPE_TX_TCP_READY)
@@ -120,6 +121,8 @@ osStatus_e sipTransNICStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uin
     }
 
     pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
+	pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
+
 //    pTrans->tpInfo.pTrId = pTrans;
 	//shall not use request.pTransInfo->transId.viaId.host/port here, as this is the request top via's host/ip, which is own host/ip
 	osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip);
@@ -221,6 +224,7 @@ osStatus_e sipTransNICStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 			sipTUMsg.sipMsgType = SIP_MSG_RESPONSE;
 			sipTUMsg.pSipMsgBuf = &pTrans->resp;
 			sipTUMsg.pTransId = pTrans;
+            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
 			sipTUMsg.pTUId = pTrans->pTUId;
 
 logError("to-remove, TCP, rspCode=%d", rspCode);
@@ -359,6 +363,7 @@ osStatus_e sipTransNICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
             sipTUMsg.sipMsgType = SIP_MSG_RESPONSE;
             sipTUMsg.pSipMsgBuf = &pTrans->resp;
             sipTUMsg.pTransId = pTrans;
+            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             sipTUMsg.pTUId = pTrans->pTUId;
 
             if(rspCode >= 100 && rspCode < 200)
@@ -541,6 +546,7 @@ logError("to-remove, TCP, tpType=%d", pTrans->tpInfo.tpType);
 		{
             sipTUMsg_t sipTUMsg = {};
             sipTUMsg.pTransId = pTrans;
+            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             sipTUMsg.pTUId = pTrans->pTUId;
 			sipTUMsg.pSipMsgBuf = &pTrans->req;
 			sipTUMsg.sipMsgType = SIP_MSG_REQUEST;

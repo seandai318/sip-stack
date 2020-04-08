@@ -72,5 +72,10 @@ sipMsgRequest_t* sipMsgCreateProxyReq(sipMsgDecoded_t* sipMsgInDecoded, sipHdrNm
 sipMsgResponse_t* sipMsgCreateResponse(sipMsgDecoded_t* sipMsgInDecoded, sipResponse_e rspCode, sipHdrName_e addHdrList[], int n);
 sipMsgDecodedRawHdr_t* sipDecodeMsgRawHdr(sipMsgBuf_t* pSipMsgBuf, sipHdrName_e sipHdrArray[], int hdrArraySize);
 
+//if there is error, false is returned
+//if isCheckTopHdrOnly=true, only check the top hdr of the specified hdr name, otherwise, check hdr for the whole message
+//if isCheckTopHdrOnly=true, and the result isMulti=true, then the top hdr has to be decoded, in this case, pHdrCodeDecoded will pass out the decoded hdr, and the caller has to clear the pHdrCodeDecoded after done using it
+bool sipMsg_isHdrMultiValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isCheckTopHdrOnly, sipHdrDecoded_t* pHdrDecoded);
+osStatus_e sipHdrMultiNameParam_get2ndHdrValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrDecoded_t* pFocusHdrDecoded, sipHdrGenericNameParamDecoded_t** pp2ndHdr);
 
 #endif

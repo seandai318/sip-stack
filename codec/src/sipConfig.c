@@ -24,6 +24,13 @@ void sipConfig_getHost(osPointerLen_t* host, int* port)
 }
 
 
+void sipConfig_getHostStr(char** ppHost, int* port)
+{
+	*ppHost = SIP_CONFIG_LOCAL_IP;
+	*port = SIP_CONFIG_LISTEN_PORT;
+}
+
+
 sipTransport_e sipConfig_getTransport(osPointerLen_t* ip, int port)
 {
 	size_t n = sizeof(sipConfig_peerTpType) / sizeof(sipConfig_peerTpType[0]);

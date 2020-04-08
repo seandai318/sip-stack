@@ -42,6 +42,10 @@ osStatus_e sipHdrVia_generateBranchId(osPointerLen_t* pBranch, char* pExtraInfo)
 osPointerLen_t* sipHdrVia_getTopBranchId(sipHdrMultiVia_t* pHdrVia);
 //extract the peer IP and port from a via header.  If there is received, ip in the received will be used
 osStatus_e sipHdrVia_getPeerTransport(sipHdrViaDecoded_t* pVia, sipHostport_t* pHostPort, sipTransport_e* pTransportProtocol);
+
+//extract the peer IP and port from raw via headers, peerViaIdx=0(top), 1(secondly), and SIP_HDR_BOTTOM(bottom)
+osStatus_e sipHdrVia_getPeerTransportFromRaw(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint8_t peerViaIdx, sipHostport_t* pHostPort, sipTransport_e* pTpProtocol);
+
 //this is to encode via for a response, instead of copying all rawVia, add received and rport for the top via if the received top via has rport
 osStatus_e sipHdrVia_rspEncode(osMBuf_t* pSipBuf, sipHdrMultiVia_t* pTopMultiVia, sipMsgDecodedRawHdr_t* pRawVia, sipHostport_t* pPeer);
 

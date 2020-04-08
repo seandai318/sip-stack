@@ -299,6 +299,7 @@ logError("to-remove, masReg, pRegData=%p", pRegData);
         	sipTransMsg.sipMsgType = SIP_TRANS_MSG_CONTENT_RESPONSE;
         	sipTransMsg.response.sipTrMsgBuf.sipMsgBuf.pSipMsg = pSipResp;
         	sipTransMsg.pTransId = pSipTUMsg->pTransId;
+			sipTransMsg.appType = SIPTU_APP_TYPE_REG;
 			sipTransMsg.response.rspCode = rspCode;
 			sipTransMsg.pSenderId = pRegData;
 

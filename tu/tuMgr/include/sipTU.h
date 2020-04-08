@@ -105,5 +105,7 @@ osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pP
  */
 osStatus_e sipTU_msgBuildEnd(osMBuf_t* pSipMsg, bool isExistContent);
 
+/* only these req that may involves a session creation/modification/deletion are included.  assume other req are mass through in proxy */
+bool sipTU_isProxyCallReq(sipRequest_e reqCode);
 
 #endif

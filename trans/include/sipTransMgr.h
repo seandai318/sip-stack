@@ -10,6 +10,7 @@
 #include "sipTransIntf.h"
 
 
+
 typedef enum {
 	SIP_TRANS_STATE_NONE,	//this is not part of state machine, just indicate a transaction block is just created
 	SIP_TRANS_STATE_TRYING,
@@ -60,6 +61,7 @@ typedef osStatus_e (*sipTransSMOnMsg_h)(sipTransMsgType_e msgType, void* pMsg, u
 
 typedef struct sipTransaction {
 	sipTransState_e state;
+	sipTuAppType_e appType;
 //    bool isReq;
     sipMsgBuf_t req;	//contains the original request.  The branchId that is used to identify a transaction always points to this message via osPointerLen_t.  This implies this message shall not be changed and not be freed until the transaction is removed
     sipMsgBuf_t resp;	//will be updated each time a new response is received

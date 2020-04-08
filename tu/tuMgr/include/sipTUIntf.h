@@ -9,6 +9,14 @@
 #include "sipTransport.h" 
 
 
+typedef enum {
+    SIPTU_APP_TYPE_NONE,
+    SIPTU_APP_TYPE_PROXY,
+    SIPTU_APP_TYPE_MAS,
+    SIPTU_APP_TYPE_REG,
+    SIPTU_APP_TYPE_COUNT,
+} sipTuAppType_e;
+
 
 typedef enum {
 	SIP_TU_MSG_TYPE_MESSAGE,
@@ -19,6 +27,7 @@ typedef enum {
 
 typedef struct sipTUMsg {
     sipMsgType_e sipMsgType;
+	sipTuAppType_e appType;
     sipTransportIpPort_t* pPeer;
     sipMsgBuf_t* pSipMsgBuf;		//contains raw sip buffer
 //	int tcpFd;						//tcp fd of the received message when > 0
@@ -35,6 +44,6 @@ typedef osStatus_e (*sipTUAppOnSipMsg_h)(sipTUMsgType_e msgType, sipTUMsg_t* pSi
 
 //if sipTrans calls this function and get error response, it shall remove the transaction.  TU shall return OS_STATUS_OK even if it returns error response.  TU shall only return !OS_STATUS_OK if it can not habdle the SIP MESSAGE properly, like could not decode, memory error, etc. 
 osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg);
-void sipTU_attach(sipTUAppOnSipMsg_h appOnSipMsg);
+void sipTU_attach(sipTuAppType_e appType, sipTUAppOnSipMsg_h appOnSipMsg);
 
 #endif

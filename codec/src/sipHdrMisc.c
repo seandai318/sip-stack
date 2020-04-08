@@ -7,6 +7,7 @@
 #include "sipHdrMisc.h"
 #include "sipConfig.h"
 #include "sipHeader.h"
+#include "sipMsgRequest.h"
 
 
 osStatus_e sipParserHdr_str(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrStr_t* pCallid)
@@ -589,37 +590,54 @@ EXIT:
 
 	return status;
 }
-		
-#if 0
-osStatus_e sipHdrLenTime_encode(osMBuf_t* pSipBuf, sipHdrName_e hdrName, uint32_t value)
+
+
+
+osStatus_e sipHdrCallId_getValue(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* pCallId)
 {
     osStatus_e status = OS_STATUS_OK;
 
-    if(!pSipBuf)
+    sipHdrDecoded_t sipHdrDecoded = {};
+    status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_CALL_ID]->pRawHdr, &sipHdrDecoded, false);
+    if(status != OS_STATUS_OK)
     {
-        logError("null pointer, pSipBuf.");
-        status = OS_ERROR_NULL_POINTER;
+        logError("fails to sipDecodeHdr for SIP_HDR_P_SERVED_USER.");
         goto EXIT;
     }
 
-	switch (hdrName)
-	{
-		case SIP_HDR_MAX_FORWARDS:
-			osMBuf_writeStr(pSipBuf, "Max-Forwards:", true);
-			osMBuf_writeU32(pSipBuf, value, true);
-			break;
-		default:
-			logError("invalid hdrName (%d).", hdrName);
-			status = OS_ERROR_INVALID_VALUE;
-			goto EXIT;
-			break;
-	}
-			
-	osMBuf_writeStr(pSipBuf, "\r\n", true);
+	*pCallId = *(osPointerLen_t*)sipHdrDecoded.decodedHdr;
+
+    osMem_deref(sipHdrDecoded.decodedHdr);
 
 EXIT:
 	return status;
 }
 
-#endif	
+
+osStatus_e sipHdrCSeq_getValue(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pSeqNum, osPointerLen_t* pMethod)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+    sipHdrDecoded_t sipHdrDecoded = {};
+    status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_CSEQ]->pRawHdr, &sipHdrDecoded, false);
+    if(status != OS_STATUS_OK)
+    {
+        logError("fails to sipDecodeHdr for SIP_HDR_P_SERVED_USER.");
+        goto EXIT;
+    }
+
+	if(pSeqNum)
+	{
+		*pSeqNum = ((sipHdrCSeq_t*)sipHdrDecoded.decodedHdr)->seqNum;
+	}
+	if(pMethod)
+	{
+		*pMethod = ((sipHdrCSeq_t*)sipHdrDecoded.decodedHdr)->method;
+	}
+
+    osMem_deref(sipHdrDecoded.decodedHdr);
+
+EXIT:
+	return status;	
+}	
 	

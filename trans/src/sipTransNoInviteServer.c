@@ -46,6 +46,7 @@ osStatus_e sipTransNoInviteServer_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 		if( msgType == SIP_TRANS_MSG_TYPE_TU)
 		{
 			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
+			pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
 		}
     }
 
@@ -139,9 +140,12 @@ osStatus_e sipTransNISStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
         		goto EXIT;
     		}
 			pTrans->pTUId = pTU->pSenderId;
+            pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
+
 			//the peer address from TU is the address in the top via, may be different from the real address used by the peer.  if the request message was received via TCP, the real peer has been saved when transaction was created, only reset when the message was received via UDP.
 			if(pTrans->tpInfo.tcpFd < 0)
 			{
+				//no need to reallocate memory for peer using osDPL_dup, it has been done in transMgr via osPL_setStr when a message is first received from peer
 				osPL_plcpy(&pTrans->tpInfo.peer.ip, &pTU->response.sipTrMsgBuf.tpInfo.peer.ip);
 				pTrans->tpInfo.peer.port = pTU->response.sipTrMsgBuf.tpInfo.peer.port;
 				//pTrans->tpInfo.peer = pTU->response.sipTrMsgBuf.tpInfo.peer;
@@ -262,6 +266,7 @@ osStatus_e sipTransNISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
         		goto EXIT;
     		}
 			pTrans->pTUId = pTU->pSenderId;
+            pTrans->appType = pTU->appType;
 
 			osMem_deref(pTrans->resp.pSipMsg);
 			pTrans->resp = pTU->response.sipTrMsgBuf.sipMsgBuf;
@@ -405,6 +410,7 @@ osStatus_e sipTransNISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg
                 goto EXIT;
             }
 			pTrans->pTUId = pTU->pSenderId;
+			pTrans->appType = pTU->appType;
 
 			logInfo("received a response from TU in NISStateCompleted, ignore.");
 			break;
@@ -517,6 +523,7 @@ osStatus_e sipTransNISEnterState(sipTransState_e newState, sipTransMsgType_e msg
 			sipTUMsg.pPeer = &pTrans->tpInfo.peer;
             sipTUMsg.pSipMsgBuf = &pTrans->req;
             sipTUMsg.pTransId = pTrans;
+			sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             sipTUMsg.pTUId = pTrans->pTUId;
 
             sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
@@ -544,6 +551,7 @@ osStatus_e sipTransNISEnterState(sipTransState_e newState, sipTransMsgType_e msg
 		            sipTUMsg_t sipTUMsg;
 					sipTUMsg.pSipMsgBuf = &pTrans->req;
                     sipTUMsg.pTransId = pTrans;
+		            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             		sipTUMsg.pTUId = pTrans->pTUId;
 
 					sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
@@ -556,6 +564,7 @@ osStatus_e sipTransNISEnterState(sipTransState_e newState, sipTransMsgType_e msg
 	                    sipTUMsg_t sipTUMsg;
                     	sipTUMsg.pSipMsgBuf = &pTrans->req;
     	                sipTUMsg.pTransId = pTrans;
+			            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
         	            sipTUMsg.pTUId = pTrans->pTUId;
 
 	                    sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);

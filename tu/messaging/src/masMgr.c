@@ -12,6 +12,7 @@
 #include "sipSMS.h"
 #include "masConfig.h"
 #include "sipTransIntf.h"
+#include "sipTUIntf.h"
 #include "sipTransportServer.h"
 #include "sipTransportClient.h"
 #include "masMgr.h"
@@ -23,7 +24,8 @@ static osStatus_e masMgr_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 
 void masMgr_init()
 {
-    sipTU_attach(masMgr_onSipMsg);
+    sipTU_attach(SIPTU_APP_TYPE_MAS, masMgr_onSipMsg);
+    sipTU_attach(SIPTU_APP_TYPE_REG, masMgr_onSipMsg);
 
 	sipRegAction_t masRegActionData = {masRegAction, NULL};
 	sipReg_attach(masSMS_matchHandler, &masRegActionData);

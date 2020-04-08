@@ -674,6 +674,136 @@ static void sipMsgDecodedRawHdr_delete(void* data)
     }
 }
 
+
+//if isCheckTopHdrOnly=true, only check the top hdr of the specified hdr name, otherwise, check hdr for the whole message
+//if isCheckTopHdrOnly=true, and the result isMulti=true, then the top hdr has to be decoded, in this case, pHdrCodeDecoded will pass out the decoded hdr, and the caller has to clear the pHdrCodeDecoded after done using it
+bool sipMsg_isHdrMultiValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isCheckTopHdrOnly, sipHdrDecoded_t* pTopHdrDecoded)
+{
+    bool isMulti = false;
+
+    if(!pReqDecodedRaw)
+    {
+        logError("null pointer, pReqDecodedRaw.");
+        goto EXIT;
+    }
+
+	if(pReqDecodedRaw->msgHdrList[hdrCode] == NULL)
+	{
+		goto EXIT;
+	}
+
+    if(sipHdr_isAllowMultiValue(hdrCode))
+    {
+		//if check the specified hdr in the whole message, check rawHdrNum first
+		if(!isCheckTopHdrOnly)
+		{
+			if(pReqDecodedRaw->msgHdrList[hdrCode]->rawHdrNum > 1)
+			{
+				isMulti = true;
+				goto EXIT;
+			}
+		}
+
+		if(isCheckTopHdrOnly && !pTopHdrDecoded)
+		{
+			logError("isCheckTopHdrOnly=true, but pHdrDecoded is null.");
+			goto EXIT;
+		}
+		pTopHdrDecoded->decodedHdr = NULL;
+		pTopHdrDecoded->isRawHdrCopied = false;
+
+        //check the top hdr if isCheckTopHdrOnly=false, or there is only 1 specified hdr name in the whole message
+        bool isMultiHdrValuePossible = false;
+        for(int i=0; i<pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr->value.l; i++)
+        {
+            if(pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr->value.p[i] == ',')
+            {
+                isMultiHdrValuePossible = true;
+                break;
+            }
+        }
+
+        if(isMultiHdrValuePossible)
+        {
+            sipHdrDecoded_t sipHdrDecoded = {};
+            if(sipDecodeHdr(pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr, &sipHdrDecoded, false) != OS_STATUS_OK)
+            {
+                logError("fails to sipDecodeHdr for hdr code(%d).", hdrCode);
+                goto EXIT;
+            }
+
+            if(sipHdr_getHdrValueNum(&sipHdrDecoded) > 1)
+            {
+                isMulti = true;
+            }
+
+			//it will be the caller's responsibility to clear sipHdrDecoded if pHdrDecoded != NULL
+			if(pTopHdrDecoded)
+			{
+				*pTopHdrDecoded = sipHdrDecoded;
+			}
+			else
+			{
+            	osMem_deref(sipHdrDecoded.decodedHdr);
+			}
+
+			goto EXIT;
+        }
+    }
+
+EXIT:
+    return isMulti;
+}
+
+
+osStatus_e sipHdrMultiNameParam_get2ndHdrValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrDecoded_t* pFocusHdrDecoded, sipHdrGenericNameParamDecoded_t** pp2ndHdr)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+	if(!pReqDecodedRaw || !pFocusHdrDecoded || !pp2ndHdr)
+	{
+		logError("null pointer, pReqDecodedRaw=%p, pFocusHdrDecoded=%p, pp2ndHdr=%p.", pReqDecodedRaw, pFocusHdrDecoded, pp2ndHdr);
+		return OS_ERROR_NULL_POINTER;
+	}
+
+	pFocusHdrDecoded->decodedHdr = NULL;
+
+    bool isMulti = sipMsg_isHdrMultiValue(hdrCode, pReqDecodedRaw, false, pFocusHdrDecoded);
+    if(isMulti)
+    {
+        if(sipHdr_getHdrValueNum(pFocusHdrDecoded) > 1)
+        {
+            //get the nexthop from the top hdr
+            *pp2ndHdr = ((sipHdrMultiGenericNameParam_t*)pFocusHdrDecoded->decodedHdr)->gnpList.head->data;
+        }
+        else
+        {
+            //get the nexthop from the 2nd hdr
+            if(sipDecodeHdr(pReqDecodedRaw->msgHdrList[hdrCode]->rawHdrList.head->data, pFocusHdrDecoded, false) != OS_STATUS_OK)
+            {
+                logError("fails to sipDecodeHdr for the 2nd route header.");
+                status = OS_ERROR_INVALID_VALUE;
+                goto EXIT;
+            }
+
+            *pp2ndHdr = ((sipHdrMultiGenericNameParam_t*)pFocusHdrDecoded->decodedHdr)->pGNP;
+        }
+
+        if(!*pp2ndHdr)
+        {
+            logError("expect 2nd route, but decoded=null.");
+            osMem_deref(pFocusHdrDecoded->decodedHdr);
+            pFocusHdrDecoded->decodedHdr = NULL;
+
+            status = OS_ERROR_SYSTEM_FAILURE;
+            goto EXIT;
+        }
+    }
+
+EXIT:
+    return status;
+}
+
  
 bool sipHdr_listSortFunc(osListElement_t *le1, osListElement_t *le2, void *arg)
 {
