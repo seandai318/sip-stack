@@ -317,6 +317,10 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 			sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
 			break;
 		}
+        case SIP_TRANS_MSG_TYPE_TU_FORCE_TERM_TRANS:
+            sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, ((sipTransMsg_t*)pMsg)->pTransId);
+            goto EXIT;
+            break;
         default:
             logError("received unexpected msgType (%d), ignore.", msgType);
             break;

@@ -17,6 +17,7 @@ typedef enum {
 	SIP_TRANS_MSG_TYPE_TX_TCP_READY,		//TCP connection is ready to send message
     SIP_TRANS_MSG_TYPE_TX_FAILED,   		//msg transmission failure
     SIP_TRANS_MSG_TYPE_INTERNAL_ERROR,  	//internal error, like memory can not be allocated, timer can not be started, etc.
+	SIP_TRANS_MSG_TYPE_TU_FORCE_TERM_TRANS,	//forcefully terminate a transaction, like when timerIdC timesout, TU may request to terminate a transaction
 } sipTransMsgType_e;
 
 

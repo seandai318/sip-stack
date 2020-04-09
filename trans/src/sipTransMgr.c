@@ -98,6 +98,19 @@ logError("to-remove, TCM, pTrans=%p", pTrans);
 			pTrans->smOnMsg(msgType, (sipTransportStatusMsg_t*)pData, 0);
 			break;
 		}
+		case SIP_TRANS_MSG_TYPE_TU_FORCE_TERM_TRANS:
+		{
+			sipTransaction_t* pTrans = pData ? ((sipTransMsg_t*)pData)->pTransId : NULL;
+			if(!pTrans)
+			{
+				status = OS_ERROR_INVALID_VALUE;
+			}
+			else
+			{
+				pTrans->smOnMsg(msgType, pData, 0);
+			}
+			break;
+		} 
         default:
 			logError("unexpected msgType (%d), ignore.", msgType);
 			break;
@@ -184,6 +197,7 @@ logError("to-remove, PEER, ip=%r, port=%d, ipaddr=%s", &pTrans->tpInfo.peer.ip, 
             pHashData->hashKeyInt = hashKey;
             pHashData->pData = pTrans;
 			pTrans->pTransHashLE = osHash_add(sipTransHash, pHashData); 
+			debug("pTrans(%p) is created and stored in hash, key=%u, pTrans->pTransHashLE=%p.", pTrans, hashKey, pTrans->pTransHashLE);
 
 			//forward to transaction state handler
 			sipTransMsg_t msg2SM;
@@ -243,6 +257,8 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
 	//if TU requires to directly send to transport
 	if(pSipTUMsg->isTpDirect)
 	{
+		debug("isTpDirect=%d", pSipTUMsg->isTpDirect);
+
 		sipTransportInfo_t* pTpInfo;
 		osMBuf_t* pSipMsg;
 		if(pSipTUMsg->sipMsgType != SIP_TRANS_MSG_CONTENT_RESPONSE )
@@ -284,6 +300,7 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
             pHashData->hashKeyInt = osHash_getKeyPL(&pSipTUMsg->request.pTransInfo->transId.viaId.branchId, true);
             pHashData->pData = pTrans;
             pTrans->pTransHashLE = osHash_add(sipTransHash, pHashData);
+            debug("pTrans(%p) is created and stored in hash, key=%u (branchId=%r), pTrans->pTransHashLE=%p.", pTrans, pHashData->hashKeyInt, &pSipTUMsg->request.pTransInfo->transId.viaId.branchId, pTrans->pTransHashLE);
 
             //forward to transaction state handler
             pSipTUMsg->pTransId = pTrans;
@@ -349,6 +366,7 @@ sipTransaction_t* sipTransHashLookup(osHash_t* sipTransHash, sipTransInfo_t* pTr
 	osListElement_t* pHashLE = osHash_lookup1(sipTransHash, *pKey, sipTrans_transIdCmp, &transIdCmp);
 	if(!pHashLE)
 	{
+logError("to-remove, no pHashLE, key=%u, branchId=%r", *pKey, &pTransInfo->transId.viaId.branchId); 
 		goto EXIT;
 	}
 
@@ -573,7 +591,7 @@ static void sipTrans_delete(void* pData)
 
 	osDPL_dealloc((osDPointerLen_t*)&pTrans->tpInfo.peer.ip);
 	osDPL_dealloc((osDPointerLen_t*)&pTrans->tpInfo.local.ip);
-	//to-do, shall we also stop the timers?
+	//no need to stop the timers, they shall be stopped in the state machine.
 	//no need to free pTransHashLE as it is freed as part of delete a hash entry.  as a matter of fact, sipTrans is freed inside pTransHashLE free
 }
 

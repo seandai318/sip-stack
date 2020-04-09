@@ -812,6 +812,7 @@ EXIT:
 
 
 /*
+ * pBranchId can be NULL.  If it is NULL, the generated branchId is to be cleared at the end of this function.
  * branchExtraStr: a string that caller wants to be inserted into branch ID.
  * pParamList: list of sipHdrParamNameValue_t, like: sipHdrParamNameValue_t param1={{"comp", 4}, {"sigcomp", 7}};
  * pParamList: a list of header parameters other than branchId.
@@ -819,6 +820,7 @@ EXIT:
 osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pParamList, osPointerLen_t* pBranchId, osPointerLen_t* pHost, uint32_t* pPort, size_t* pProtocolViaPos)
 {
 	osStatus_e status = OS_STATUS_OK;
+	osPointerLen_t branchId={};
 
 	if(pMsgBuf == NULL)
 	{
@@ -833,14 +835,14 @@ osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pP
     viaHdr.sentProtocol[2].p = "UDP";
     viaHdr.sentProtocol[2].l = 3;
     sipConfig_getHost(&viaHdr.hostport.host, &viaHdr.hostport.portValue);
-    status = sipHdrVia_generateBranchId(pBranchId, branchExtraStr);
+    status = sipHdrVia_generateBranchId(&branchId, branchExtraStr);
     if(status != OS_STATUS_OK)
     {
         logError("fails to generate via branch id.");
         goto EXIT;
     }
 
-    sipHdrParamNameValue_t branch={{"branch", 6}, *pBranchId};
+    sipHdrParamNameValue_t branch={{"branch", 6}, branchId};
 	viaHdr.pBranch = &branch;
 	if(pParamList != NULL)
 	{
@@ -868,7 +870,16 @@ EXIT:
 			*pPort = viaHdr.hostport.portValue;
 		}
 	}
-		
+	
+	if(pBranchId)
+	{
+		*pBranchId = branchId;
+	}
+	else
+	{
+		osDPL_dealloc((osDPointerLen_t*) &branchId);
+	}
+	
 	return status;
 }
 

@@ -37,6 +37,7 @@ osStatus_e sipProxy_addTrPair(osListPlus_t* pList, proxyTranInfo_t* pProxyTrInfo
 osStatus_e sipProxy_updatePairUacTrId(osListPlus_t* pList, void* uasTrId, void* uacTrId, bool isPrimary);
 void* sipProxy_getPairUasTrId(osListPlus_t* pList, void* uacTrId, bool isPrimary, bool isRemove); 
 void* sipProxy_getPairPrimaryUasTrId(osListPlus_t* pList);
+void sipProxy_getPairPrimaryTrId(osListPlus_t* pList, void** ppUasId, void** ppUacId);
 osStatus_e sipProxy_removePairTrInfo(osListPlus_t* pList, void* trId, bool isPrimary);
 osHash_t* proxy_getHash();
 

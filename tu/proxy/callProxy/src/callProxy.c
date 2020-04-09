@@ -92,6 +92,26 @@ void callProxy_onTimeout(uint64_t timerId, void* data)
 			logError("received timerIdC timeout in unexpected state(%d), timerId=0x%x.", pCallInfo->state, timerId);
 		}
 
+		//notify transaction to cleanup
+		void* pUasId = NULL;
+		void* pUacId = NULL;
+		sipProxy_getPairPrimaryTrId(&pCallInfo->proxyTransInfo, &pUasId, &pUacId);
+
+        sipTransMsg_t sipTransMsg;
+		if(pUasId)
+		{
+    		sipTransMsg.pTransId = pUasId;
+
+		    sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU_FORCE_TERM_TRANS, &sipTransMsg, 0);
+		}
+
+		if(pUacId)
+        {
+            sipTransMsg.pTransId = pUacId;
+
+            sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU_FORCE_TERM_TRANS, &sipTransMsg, 0);
+        }
+	
         callProxyEnterState(SIP_CALLPROXY_STATE_NONE, pCallInfo);
 	}
 	else if(timerId == pCallInfo->timerIdWaitAck)
@@ -124,7 +144,6 @@ static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_
 	}
 
 	callProxyInfo_t* pCallInfo = pSipTUMsg->pTUId ? ((proxyInfo_t*)pSipTUMsg->pTUId)->pCallInfo : NULL;
-logError("to-remove, CALL, pTUId=%p, pCallInfo=%p", pSipTUMsg->pTUId, pCallInfo);
 	if(!pCallInfo)
 	{
 		if(pHashLE)
@@ -267,7 +286,7 @@ osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t
     pHashData->hashKeyInt = osHash_getKeyPL(&callId, true);
 logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCallInfo=%p.", pProxyInfo, pCallInfo);
     pCallInfo->pCallHashLE = osHash_add(callHash, pHashData);
-    logInfo("callId(%r) is added into callProxyHash, key=0x%x, pCallHashLE=%p", &callId, pHashData->hashKeyInt, pCallInfo->pCallHashLE);
+    logInfo("callId(%r) is added into callProxyHash, key=0x%x, pCallHashLE=%p, pCallInfo=%p.", &callId, pHashData->hashKeyInt, pCallInfo->pCallHashLE, pCallInfo);
 
     callProxy_addTrInfo(&pCallInfo->proxyTransInfo, SIP_METHOD_INVITE, pCallInfo->seqNum, pSipTUMsg->pTransId, NULL, true);
 
@@ -514,9 +533,7 @@ osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRa
 			{
 				if(pSipTUMsg->pSipMsgBuf->rspCode > SIP_RESPONSE_100 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_200)
 				{
-logError("to-remove, CALL, pCallInfo=%p, pCallInfo->timerIdC=0x%lx, 1", pCallInfo, pCallInfo->timerIdC);
 					pCallInfo->timerIdC = osRestartTimer(pCallInfo->timerIdC);
-logError("to-remove, CALL, pCallInfo->timerIdC=0x%lx, 2", pCallInfo->timerIdC);
 				}
 				else if(pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_300)
 				{
@@ -570,7 +587,6 @@ logError("to-remove, CALL, pCallInfo->timerIdC=0x%lx, 2", pCallInfo->timerIdC);
 EXIT:
     osMem_deref(pReqDecodedRaw);
 
-logError("to-remove, CALL, pCallInfo=%p, pCallInfo->state=%d",  pCallInfo, pCallInfo->state);
 	DEBUG_END
 	return status;
 }
@@ -753,7 +769,6 @@ osStatus_e callProxyStateInitAck_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHd
 			void* pUacTransId;
             status = sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, NULL, true, NULL, false, pCallInfo->pProxyInfo, &pUacTransId);
             callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->pSipMsgBuf->reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
-logError("to-remove, CALL, uas=%p, uac=%p", pSipTUMsg->pTransId, pUacTransId);
 
             if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_BYE)
             {
@@ -817,13 +832,12 @@ osStatus_e callProxyStateBye_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t*
 		{
 			//set isRemove=false.  the record will be removed when the session is cleaned
             void* pTransId = sipProxy_getPairUasTrId(&pCallInfo->proxyTransInfo, pSipTUMsg->pTransId, false, false);
-logError("to-remove, CALL, pTransId=%p, pSipTUMsg->pTransId=%p", pTransId, pSipTUMsg->pTransId);
             if(pTransId)
             {
                 status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo);
             }
 
-			if(osPL_strcmp(&method, "INVITE") == 0 && (pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_300))
+			if(osPL_strcmp(&method, "BYE") == 0 && (pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_300))
 			{
                 callProxyEnterState(SIP_CALLPROXY_STATE_NONE, pCallInfo);
 			}
@@ -1071,7 +1085,6 @@ static osStatus_e callProxy_onSipRequest(sipTUMsg_t* pSipTUMsg)
 	sipTransInfo_t sipTransInfo;
 	sipTransInfo.transId.viaId.host = pSipTUMsg->pPeer->ip;
 	sipTransInfo.transId.viaId.port = pSipTUMsg->pPeer->port;
-logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->pPeer->port); 
 
 	//prepare message forwarding
 	sipHdrRawValueId_t delList = {SIP_HDR_ROUTE, true};

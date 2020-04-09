@@ -144,6 +144,8 @@ osStatus_e sipProxy_forwardResp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
 	status = sipTU_sendRsp2Tr(pSipTUMsg->pSipMsgBuf->rspCode, pResp, pReqDecodedRaw, 1, pTransId, proxyInfo);
 
 EXIT:
+    //proxy does not need to keep pResp.  If other laters need it, it is expected they will add ref to it
+	osMem_deref(pResp);
 	return status;
 }
 

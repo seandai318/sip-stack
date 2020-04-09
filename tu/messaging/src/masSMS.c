@@ -194,11 +194,15 @@ logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->
 
 	sipTransMsg_t sipTransMsg;
 	sipTransMsg.sipMsgType = SIP_TRANS_MSG_CONTENT_REQUEST;
-    sipTransInfo.isRequest = true;
+    sipTransMsg.isTpDirect = false;
+    sipTransMsg.appType = SIPTU_APP_TYPE_MAS;
+
 	sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.pSipMsg = pReq;
 	sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.reqCode = SIP_METHOD_MESSAGE;
 	sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.isRequest = true;
 	sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.hdrStartPos = 0;
+
+    sipTransInfo.isRequest = true;
 	sipTransInfo.transId.reqCode = SIP_METHOD_MESSAGE;
 	sipTransMsg.request.pTransInfo = &sipTransInfo;
     sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.ip = pCalledContactUser->hostport.host;
@@ -265,6 +269,7 @@ BUILD_RESPONSE:
 
             //fill the other info
             sipTransMsg.sipMsgType = SIP_TRANS_MSG_CONTENT_RESPONSE;
+			sipTransMsg.isTpDirect = false;
             sipTransMsg.response.sipTrMsgBuf.sipMsgBuf.pSipMsg = pSipResp;
             sipTransMsg.pTransId = pSipTUMsg->pTransId;
     		sipTransMsg.appType = SIPTU_APP_TYPE_MAS;

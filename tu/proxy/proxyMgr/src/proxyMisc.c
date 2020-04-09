@@ -135,6 +135,19 @@ EXIT:
 }
 
 
+void sipProxy_getPairPrimaryTrId(osListPlus_t* pList, void** ppUasId, void** ppUacId)
+{
+    if(!pList)
+    {
+        logError("null pointer, pList.");
+        return;
+    }
+
+	*ppUasId = ((proxyTranInfo_t*)pList->first)->pTransUas;
+	*ppUacId = ((proxyTranInfo_t*)pList->first)->pTransUac;
+}
+
+
 void* sipProxy_getPairPrimaryUasTrId(osListPlus_t* pList)
 {
     void* pUasTrId = NULL;
