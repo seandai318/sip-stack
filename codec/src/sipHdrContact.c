@@ -97,7 +97,7 @@ void sipHdrMultiContact_cleanup(void* data)
 
 void* sipHdrMultiContact_alloc()
 {
-	sipHdrMultiContact_t* pContact = osMem_zalloc(sizeof(sipHdrMultiContact_t), sipHdrMultiContact_cleanup);
+	sipHdrMultiContact_t* pContact = oszalloc(sizeof(sipHdrMultiContact_t), sipHdrMultiContact_cleanup);
 	if(!pContact)
 	{
 		return NULL;

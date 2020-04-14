@@ -482,10 +482,10 @@ logError("to-remove, sms, userPL=%r", &userPL);
 
 	//append message body
 	status = sipMsgAppendContent(pSipBuf, pContent, true);
-	osMem_deref(pContent);
+	osfree(pContent);
 #endif
 
-    masInfo_t* pMasInfo = osMem_alloc(sizeof(masInfo_t), masInfo_cleanup);
+    masInfo_t* pMasInfo = osmalloc(sizeof(masInfo_t), masInfo_cleanup);
 	if(!pMasInfo)
     {
         logError("fails to allocate memory for uacData.");
@@ -503,7 +503,7 @@ logError("to-remove, sms, userPL=%r", &userPL);
     if(!pMasInfo->regId)
     {
 		logError("the called user(%r) is not registered.", &userPL);
-		osMem_deref(pMasInfo);
+		osfree(pMasInfo);
 		osMBuf_dealloc(pSipBuf);
         status = OS_ERROR_INVALID_VALUE;
         goto EXIT;

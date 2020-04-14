@@ -187,6 +187,7 @@ void* sipTransportServerStart(void* pData)
 	size_t bufLen;
 	char* buffer;
 	osMBuf_t* udpBuf;
+    char* udpRcv[SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE];	//temp hold the received message to avoid allc/dealloc udp buffer when receiving ping or status info
 	int event_count;
 //    size_t ipcMsgAddr;
 	osIPCMsg_t ipcMsg;
@@ -217,12 +218,13 @@ void* sipTransportServerStart(void* pData)
 			}
 			else if(events[i].data.fd == udpFd)
 			{
+				char* udpRcv[SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE];
 				while(1)
 				{
 					struct sockaddr_in peerAddr;
 					int peerAddrLen = sizeof(peerAddr);
-					udpBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
-					len = recvfrom(udpFd, (char *)udpBuf->buf, SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE, MSG_DONTWAIT, (struct sockaddr *) &peerAddr, &peerAddrLen);
+				//	udpBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
+					len = recvfrom(udpFd, udpRcv, SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE, MSG_DONTWAIT, (struct sockaddr *) &peerAddr, &peerAddrLen);
 					if(len == -1 && (errno == EWOULDBLOCK || errno == EAGAIN || errno == EBADF))
 					{
 						debug("EAGAIN received for udpfd(%d).", udpFd);
@@ -234,6 +236,9 @@ void* sipTransportServerStart(void* pData)
 						debug("received udp message with len(%d) less than minimum packet size for udp (%d).", len, udpFd);
 						continue;
 					}
+
+                    udpBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
+					memcpy(udpBuf->buf, udpRcv, len);
 
 					char *ip = inet_ntoa(peerAddr.sin_addr);
 					debug("to-remove, peer ip=%s, port=%d.", ip, ntohs(peerAddr.sin_port));
@@ -541,7 +546,7 @@ static void sipTpServerForwardMsg(osMBuf_t* pSipBuf, int tcpFd, struct sockaddr_
     osIPCMsg_t ipcMsg;
     ipcMsg.interface = OS_SIP_TRANSPORT_SERVER;
 
-	sipTransportMsgBuf_t* pMsg = osMem_alloc(sizeof(sipTransportMsgBuf_t), sipTransportMsgBuf_free);
+	sipTransportMsgBuf_t* pMsg = osmalloc(sizeof(sipTransportMsgBuf_t), sipTransportMsgBuf_free);
     pMsg->pSipBuf = pSipBuf;
     pMsg->tcpFd = tcpFd;
 	pMsg->isServer = true;

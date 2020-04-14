@@ -20,9 +20,9 @@ osStatus_e sipHdrDecoded_dup(sipHdrDecoded_t* dst, sipHdrDecoded_t* src)
 	*dst = *src;
 	dst->isRawHdrCopied = true;
 
-	dst->rawHdr.buf = osMem_alloc(src->rawHdr.size, NULL);
+	dst->rawHdr.buf = osmalloc(src->rawHdr.size, NULL);
     memcpy(dst->rawHdr.buf, src->rawHdr.buf, src->rawHdr.size);
-	osMem_ref(dst->decodedHdr);
+	osmemref(dst->decodedHdr);
 	//for decodedHdr, if it is int or string, already has its own space.  if it contains osPL, need to change the osPL.p to point to new rawHdr. to-do 
 	return OS_STATUS_OK;
 }
@@ -38,10 +38,10 @@ void sipHdrDecoded_delete(sipHdrDecoded_t* pData)
 
 	if(pData->isRawHdrCopied)
 	{
-		osMem_deref(pData->rawHdr.buf);
+		osfree(pData->rawHdr.buf);
 	}
 
-	osMem_deref(pData->decodedHdr);
+	osfree(pData->decodedHdr);
 }
 #endif
 
@@ -78,7 +78,7 @@ osStatus_e sipRawHdr_dup(sipRawHdrList_t* pRawHdrList, sipRawHdrListSA_t* pHdrSA
 	{
 		len += ((sipRawHdr_t*)pLE->data)->name.l + ((sipRawHdr_t*)pLE->data)->value.l;
 
-		sipRawHdr_t* newHdr = osMem_alloc(sizeof(sipRawHdr_t), NULL);
+		sipRawHdr_t* newHdr = osmalloc(sizeof(sipRawHdr_t), NULL);
 		if(!newHdr)
 		{
 			logError("fails to allocate memory for newHdr, size=%d", sizeof(sipRawHdr_t));
@@ -92,7 +92,7 @@ osStatus_e sipRawHdr_dup(sipRawHdrList_t* pRawHdrList, sipRawHdrListSA_t* pHdrSA
 		pLE = pLE->next;
 	}
 
-	pHdrSA->pRawHdrContent = osMem_alloc(len, NULL);
+	pHdrSA->pRawHdrContent = osmalloc(len, NULL);
 	if(!pHdrSA->pRawHdrContent)
 	{
 		logError("fails to allocate memory for pHdrSA->pRawHdrContent, size=%ld", len);
@@ -101,7 +101,7 @@ osStatus_e sipRawHdr_dup(sipRawHdrList_t* pRawHdrList, sipRawHdrListSA_t* pHdrSA
 	}
 
 	//now assign value to rawHdrList parameters
-	pHdrSA->rawHdr.pRawHdr = osMem_alloc(sizeof(sipRawHdr_t), NULL);
+	pHdrSA->rawHdr.pRawHdr = osmalloc(sizeof(sipRawHdr_t), NULL);
 	if(!pHdrSA->rawHdr.pRawHdr)
 	{
 		logError("fails to allocate memory for pHdrSA->rawHdrList.pRawHdr, size=%d", sizeof(sipRawHdr_t));
@@ -163,8 +163,8 @@ void sipRawHdrListSA_cleanup(void* pData)
 
 	sipRawHdrListSA_t* pHdrSA = pData;
 
-    osMem_deref(pHdrSA->pRawHdrContent);
-    osMem_deref(pHdrSA->rawHdr.pRawHdr);
+    osfree(pHdrSA->pRawHdrContent);
+    osfree(pHdrSA->rawHdr.pRawHdr);
     osList_delete(&pHdrSA->rawHdr.rawHdrList);
     pHdrSA->pRawHdrContent = NULL;
 	pHdrSA->rawHdr.pRawHdr = NULL;

@@ -163,7 +163,7 @@ osStatus_e sipTransNISStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 
 			//pTrans->pResp shall be NULL before
 			pTrans->resp = pTU->response.sipTrMsgBuf.sipMsgBuf;
-			pTrans->resp.pSipMsg = osMem_ref(pTU->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
+			pTrans->resp.pSipMsg = osmemref(pTU->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
 
     		sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
 			if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
@@ -268,9 +268,9 @@ osStatus_e sipTransNISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
 			pTrans->pTUId = pTU->pSenderId;
             pTrans->appType = pTU->appType;
 
-			osMem_deref(pTrans->resp.pSipMsg);
+			osfree(pTrans->resp.pSipMsg);
 			pTrans->resp = pTU->response.sipTrMsgBuf.sipMsgBuf;
-			pTrans->resp.pSipMsg = osMem_ref(pTU->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
+			pTrans->resp.pSipMsg = osmemref(pTU->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
 
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
             if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
@@ -585,7 +585,8 @@ osStatus_e sipTransNISEnterState(sipTransState_e newState, sipTransMsgType_e msg
 
 			osHash_deleteNode(pTrans->pTransHashLE);
 			osHashData_t* pHashData = pTrans->pTransHashLE->data;
-			osMem_deref((sipTransaction_t*)pHashData->pData);
+			osfree(pHashData);
+			//osfree((sipTransaction_t*)pHashData->pData);
 			osfree(pTrans->pTransHashLE);
 
 			break;

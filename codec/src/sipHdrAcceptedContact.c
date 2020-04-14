@@ -22,7 +22,7 @@ osStatus_e sipHdr_acceptedContact(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrAcc
 
     while(pSipMsg->pos < hdrEndPos)
     {
-        osList_t* pACElem = osMem_alloc(sizeof(osList_t), NULL);
+        osList_t* pACElem = osmalloc(sizeof(osList_t), NULL);
         if(!pACElem)
         {
             logError("could not allocate memory for pACElem.");
@@ -61,7 +61,7 @@ osStatus_e sipHdr_acceptedContact(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrAcc
         if(pLE == NULL)
         {
             logError("osList_append failure for accept contact.");
-            osMem_deref(pACElem);
+            osfree(pACElem);
             status = OS_ERROR_MEMORY_ALLOC_FAILURE;
             goto EXIT;
         }
@@ -99,7 +99,7 @@ void sipHdrAC_cleanup(void* data)
 
 void* sipHdrAC_alloc()
 {
-	sipHdrAcceptedContact_t* pAC = osMem_alloc(sizeof(sipHdrAcceptedContact_t), sipHdrAC_cleanup);
+	sipHdrAcceptedContact_t* pAC = osmalloc(sizeof(sipHdrAcceptedContact_t), sipHdrAC_cleanup);
 
 	if(!pAC)
 	{

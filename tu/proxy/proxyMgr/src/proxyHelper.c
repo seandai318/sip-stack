@@ -107,7 +107,7 @@ logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->
 
 EXIT:
     //proxy does not need to keep pReq.  If other laters need it, it is expected they will add ref to it
-    osMem_deref(pReq);
+    osfree(pReq);
 	
 	return status;
 }
@@ -145,7 +145,7 @@ osStatus_e sipProxy_forwardResp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
 
 EXIT:
     //proxy does not need to keep pResp.  If other laters need it, it is expected they will add ref to it
-	osMem_deref(pResp);
+	osfree(pResp);
 	return status;
 }
 
@@ -168,7 +168,7 @@ osStatus_e sipProxy_uasResponse(sipResponse_e rspCode, sipTUMsg_t* pSipTUMsg, si
         peer.host = pSipTUMsg->pPeer->ip;
         peer.portValue = pSipTUMsg->pPeer->port;
         status = sipHdrVia_rspEncode(pSipResp, viaHdr.decodedHdr,  pReqDecodedRaw, &peer);
-        osMem_deref(viaHdr.decodedHdr);
+        osfree(viaHdr.decodedHdr);
 
         status = sipTU_copySipMsgHdr(pSipResp, pReqDecodedRaw, NULL, 0, true);
         status = sipTU_msgBuildEnd(pSipResp, false);
@@ -181,7 +181,7 @@ osStatus_e sipProxy_uasResponse(sipResponse_e rspCode, sipTUMsg_t* pSipTUMsg, si
 		}
 
         //proxy does not need to keep pSipResp.  If other laters need it, it is expected they will add ref to it
-        osMem_deref(pSipResp);
+        osfree(pSipResp);
 	}
 
 EXIT:
@@ -208,7 +208,7 @@ osStatus_e sipProxy_getNextHopFrom2ndHdrValue(sipHdrName_e hdrCode, sipMsgDecode
     	pNextHop->ip = p2ndHdrValue->hdrValue.uri.hostport.host;
     	pNextHop->port = p2ndHdrValue->hdrValue.uri.hostport.portValue;
 
-	    osMem_deref(focusHdrDecoded.decodedHdr);
+	    osfree(focusHdrDecoded.decodedHdr);
 	}
 	else
 	{

@@ -211,12 +211,12 @@ osStatus_e sipTransICStateCalling_onMsg(sipTransMsgType_e msgType, void* pMsg, u
             }
 
 			sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;	
-			osMem_deref(pTrans->resp.pSipMsg);
+			osfree(pTrans->resp.pSipMsg);
             pTrans->resp = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf;
             if(rspCode == SIP_RESPONSE_100)
 			{
 				//when receiving 100 Trying, clean the memory and change state, no need to notify TU
-				osMem_deref(pTrans->resp.pSipMsg);
+				osfree(pTrans->resp.pSipMsg);
 				pTrans->resp.pSipMsg = NULL;
 			}
 			else
@@ -338,13 +338,13 @@ osStatus_e sipTransICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 		{
             sipTransaction_t* pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
             sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
-            osMem_deref(pTrans->resp.pSipMsg);
+            osfree(pTrans->resp.pSipMsg);
             pTrans->resp = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf;
 
             if(rspCode == SIP_RESPONSE_100)
             {
                 //when receiving 100 Trying, clean the memory and change state, no need to notify TU
-                osMem_deref(pTrans->resp.pSipMsg);
+                osfree(pTrans->resp.pSipMsg);
                 pTrans->resp.pSipMsg = NULL;
             }
             else
@@ -477,7 +477,7 @@ osStatus_e sipTransICStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
 		{
             sipTransaction_t* pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
             sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
-            osMem_deref(pTrans->resp.pSipMsg);
+            osfree(pTrans->resp.pSipMsg);
             pTrans->resp = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf;
             if(rspCode >= 300 && rspCode < 699)
             {
@@ -620,7 +620,8 @@ osStatus_e sipTransICEnterState(sipTransState_e newState, sipTransMsgType_e msgT
 
             osHash_deleteNode(pTrans->pTransHashLE);
             osHashData_t* pHashData = pTrans->pTransHashLE->data;
-            osMem_deref((sipTransaction_t*)pHashData->pData);
+			osfree(pHashData);
+            //osfree((sipTransaction_t*)pHashData->pData);
             osfree(pTrans->pTransHashLE);
 
             break;
@@ -734,7 +735,7 @@ static osMBuf_t* sipTransICBuildErrorACK(sipTransaction_t* pTrans, osMBuf_t* pSi
 EXIT: 
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(pAckMsg);
+		osfree(pAckMsg);
         pAckMsg = NULL;
     }
 

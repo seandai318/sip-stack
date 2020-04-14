@@ -105,7 +105,7 @@ void* sipProxy_getPairUasTrId(osListPlus_t* pList, void* uacTrId, bool isPrimary
 			pUasTrId = ((proxyTranInfo_t*)pList->first)->pTransUas;
 			if(isRemove)
 			{
-				osMem_deref(pList->first);
+				osfree(pList->first);
 				pList->first = NULL;
 			}
 		}
@@ -192,7 +192,7 @@ osStatus_e sipProxy_removePairTrInfo(osListPlus_t* pList, void* trId, bool isPri
 	{
 		if(pList->first)
 		{
-			osMem_deref(pList->first);
+			osfree(pList->first);
 			pList->first = NULL;
 			pList->num--;
 		}

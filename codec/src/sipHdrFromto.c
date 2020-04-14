@@ -166,7 +166,7 @@ EXIT:
 osStatus_e sipHdrFromto_generateTagId(osPointerLen_t* pTagId, bool isTagLabel)
 {
 	osStatus_e status = OS_STATUS_OK;
-	char* tagId = osMem_alloc(SIP_MAX_TAG_ID_LENGTH, NULL);
+	char* tagId = NULL;
 
 	if(!pTagId)
 	{
@@ -176,7 +176,7 @@ osStatus_e sipHdrFromto_generateTagId(osPointerLen_t* pTagId, bool isTagLabel)
 	}
 	pTagId->p = NULL;
 
-    tagId = osMem_alloc(SIP_MAX_TAG_ID_LENGTH, NULL);
+    tagId = osmalloc(SIP_MAX_TAG_ID_LENGTH, NULL);
     if(tagId == NULL)
     {
         logError("allocate tagId fails.");
@@ -211,7 +211,7 @@ osStatus_e sipHdrFromto_generateTagId(osPointerLen_t* pTagId, bool isTagLabel)
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(tagId);
+		osfree(tagId);
 		pTagId->p = NULL;
 		pTagId->l = 0;
 	}
@@ -234,5 +234,5 @@ void sipHdrFromto_cleanup(void* data)
 
 void* sipHdrFromto_alloc()
 {
-	return osMem_alloc(sizeof(sipHdr_fromto_t), sipHdrFromto_cleanup);
+	return osmalloc(sizeof(sipHdr_fromto_t), sipHdrFromto_cleanup);
 }

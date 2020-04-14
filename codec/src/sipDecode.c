@@ -19,7 +19,7 @@ static osStatus_e sipGetHdrRawValue(osMBuf_t* pSipMsg, sipRawHdr_t* pSipHeader, 
 
 sipMsgDecoded_t* sipMsg_allocMsgDecoded(osMBuf_t* pSipMsg)
 {
-	sipMsgDecoded_t* pSipMsgDecoded = osMem_zalloc(sizeof(sipMsgDecoded_t), sipMsgDecoded_delete);
+	sipMsgDecoded_t* pSipMsgDecoded = oszalloc(sizeof(sipMsgDecoded_t), sipMsgDecoded_delete);
 
 	if(!pSipMsgDecoded)
 	{
@@ -35,7 +35,7 @@ sipMsgDecoded_t* sipMsg_allocMsgDecoded(osMBuf_t* pSipMsg)
 
 void sipMsg_deallocMsgDecoded(void *pData)
 {
-	osMem_deref(pData);
+	osfree(pData);
 }
 
 
@@ -240,7 +240,7 @@ osStatus_e sipFindHdrs(osMBuf_t* pSipMsg, sipHdrInfo_t* sipHdrArray, uint8_t hea
     		if( sipHdr.nameCode == sipHdrArray[i].nameCode)
         	{
 				mdebug(LM_SIPP, "nameCode=%d, isEOH=%d", sipHdr.nameCode, isEOH);
-				sipRawHdr_t* pMatchedSipHdr = osMem_dalloc(&sipHdr, sizeof(sipRawHdr_t), NULL);
+				sipRawHdr_t* pMatchedSipHdr = osdalloc(&sipHdr, sizeof(sipRawHdr_t), NULL);
 				if(sipHdrArray[i].rawHdr.pRawHdr == NULL)
 				{
 					sipHdrArray[i].rawHdr.pRawHdr = pMatchedSipHdr;
@@ -261,7 +261,7 @@ EXIT:
 	{
 		for(int i=0; i<headerNum; i++)
 		{
-			osMem_deref(sipHdrArray[i].rawHdr.pRawHdr);
+			osfree(sipHdrArray[i].rawHdr.pRawHdr);
 			osList_delete(&sipHdrArray[i].rawHdr.rawHdrList);
 			sipHdrArray[i].rawHdr.rawHdrNum = 0;
 		}
@@ -755,7 +755,7 @@ osStatus_e sipDecodeHdr(sipRawHdr_t* sipRawHdr, sipHdrDecoded_t* sipHdrDecoded, 
 	sipHdrDecoded->rawHdr.end = sipHdrDecoded->rawHdr.size;
 	if(isDupRawHdr)
 	{
-		sipHdrDecoded->rawHdr.buf = osMem_alloc(sipHdrDecoded->rawHdr.size, NULL);
+		sipHdrDecoded->rawHdr.buf = osmalloc(sipHdrDecoded->rawHdr.size, NULL);
 		memcpy(sipHdrDecoded->rawHdr.buf, sipRawHdr->value.p, sipRawHdr->value.l);
 	}
 	else
@@ -771,7 +771,7 @@ osStatus_e sipDecodeHdr(sipRawHdr_t* sipRawHdr, sipHdrDecoded_t* sipHdrDecoded, 
         status = OS_ERROR_INVALID_VALUE;
 		if(isDupRawHdr)
 		{
-			osMem_deref(sipHdrDecoded->rawHdr.buf);
+			osfree(sipHdrDecoded->rawHdr.buf);
 		}
         goto EXIT;
     }
@@ -825,7 +825,7 @@ sipMsgDecoded_t* sipDecodeMsg(osMBuf_t* pSipMsg, sipHdrName_e sipHdrArray[], int
 	bool isEOH= false;
 	while(!isEOH)
 	{
-		sipRawHdr_t* pSipRawHdr = osMem_alloc(sizeof(sipRawHdr_t), NULL);
+		sipRawHdr_t* pSipRawHdr = osmalloc(sizeof(sipRawHdr_t), NULL);
 
 		//decode rawHdr for each hdr in the SIP message
 		if(sipDecodeOneHdrRaw(pSipMsg, pSipRawHdr, &isEOH) != OS_STATUS_OK)
@@ -839,7 +839,7 @@ sipMsgDecoded_t* sipDecodeMsg(osMBuf_t* pSipMsg, sipHdrName_e sipHdrArray[], int
 		sipHdrInfo_t* pHdrInfo = pSipMsgDecoded->msgHdrList[pSipRawHdr->nameCode];
 		if(pHdrInfo == NULL)
 		{
-			pHdrInfo = osMem_zalloc(sizeof(sipHdrInfo_t), sipHdrListMemDestroy);
+			pHdrInfo = oszalloc(sizeof(sipHdrInfo_t), sipHdrListMemDestroy);
 			pHdrInfo->nameCode = pSipRawHdr->nameCode;
 //			osList_init(&pHdr->rawHdrList);
 //			osList_init(&pHdr->decodedHdrList);
@@ -986,11 +986,11 @@ static void sipMsgDecodedRawHdr_delete(void* data)
 			continue;
 		}
 
-		osMem_deref(pMsgDecoded->msgHdrList[i]->pRawHdr);
+		osfree(pMsgDecoded->msgHdrList[i]->pRawHdr);
 		osList_delete(&pMsgDecoded->msgHdrList[i]->rawHdrList);
 	}
 
-	osMem_deref(pMsgDecoded);
+	osfree(pMsgDecoded);
 }
 #endif
 
@@ -1005,10 +1005,10 @@ void sipHdrDecoded_cleanup(void* pData)
 
 	sipHdrDecoded_t* pHdrDecoded = pData;
 
-	osMem_deref(pHdrDecoded->decodedHdr);
+	osfree(pHdrDecoded->decodedHdr);
 	if(pHdrDecoded->isRawHdrCopied)
 	{
-		osMem_deref(pHdrDecoded->rawHdr.buf);
+		osfree(pHdrDecoded->rawHdr.buf);
 	}
 }
 
@@ -1030,8 +1030,8 @@ static void sipMsgDecoded_delete(void *data)
 			continue;
 		}
 
-		osMem_deref(pMsgDecoded->msgHdrList[i]->decodedHdr.pDecodedHdr);
-        osMem_deref(pMsgDecoded->msgHdrList[i]->rawHdr.pRawHdr);
+		osfree(pMsgDecoded->msgHdrList[i]->decodedHdr.pDecodedHdr);
+        osfree(pMsgDecoded->msgHdrList[i]->rawHdr.pRawHdr);
 
 		if(pMsgDecoded->msgHdrList[i]->decodedHdr.decodedHdrNum > 1)
 		{
@@ -1042,7 +1042,7 @@ static void sipMsgDecoded_delete(void *data)
 		{
     		osList_delete(&pMsgDecoded->msgHdrList[i]->rawHdr.rawHdrList);
 		}
-    //to-do, double check if this line shall be called. decodeValue may refer field in sipBuf    osMem_deref(pHdrInfo->decodedValue);
+    //to-do, double check if this line shall be called. decodeValue may refer field in sipBuf    osfree(pHdrInfo->decodedValue);
     }
 
     osMBuf_dealloc(pMsgDecoded->sipMsg);
@@ -1056,9 +1056,9 @@ static void sipHdrListMemDestroy(void* data)
     }
 
     sipHdrInfo_t* pSipHdrInfo = data;
-	osMem_deref(pSipHdrInfo->rawHdr.pRawHdr);
+	osfree(pSipHdrInfo->rawHdr.pRawHdr);
 	osList_delete(&pSipHdrInfo->rawHdr.rawHdrList);
-	osMem_deref(pSipHdrInfo->decodedHdr.pDecodedHdr);
+	osfree(pSipHdrInfo->decodedHdr.pDecodedHdr);
 	osList_delete(&pSipHdrInfo->decodedHdr.decodedHdrList);
-    //to-do, double check if this line shall be called. decodeValue may refer field in sipBuf    osMem_deref(pHdrInfo->decodedValue);
+    //to-do, double check if this line shall be called. decodeValue may refer field in sipBuf    osfree(pHdrInfo->decodedValue);
 } 	

@@ -262,7 +262,7 @@ void sipHdrRoute_cleanup(void* data)
 
 void* sipHdrRoute_alloc()
 {
-    sipHdrRoute_t* pRoute = osMem_zalloc(sizeof(sipHdrRoute_t), sipHdrRoute_cleanup);
+    sipHdrRoute_t* pRoute = oszalloc(sizeof(sipHdrRoute_t), sipHdrRoute_cleanup);
     if(!pRoute)
     {
         return NULL;

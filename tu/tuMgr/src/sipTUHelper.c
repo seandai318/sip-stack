@@ -40,6 +40,8 @@ static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqD
  */
 osMBuf_t* sipTU_buildProxyResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* addHdrList, uint8_t addHdrNum)
 {
+	DEBUG_BEGIN
+
     osStatus_e status = OS_STATUS_OK;
     osMBuf_t* pSipBufResp = NULL;
 	osList_t* pSortedModifyHdrList = NULL;
@@ -90,13 +92,15 @@ osMBuf_t* sipTU_buildProxyResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdr
     status = sipTU_copyHdrs(pSipBufResp, pReqDecodedRaw, pReqDecodedRaw->sipMsgBuf.hdrStartPos, pSortedModifyHdrList);
 
 EXIT:
-	osList_delete(pSortedModifyHdrList);
+	osfree(pSortedModifyHdrList);
+	//osList_delete(pSortedModifyHdrList);
 
     if(status != OS_STATUS_OK)
     {
-        pSipBufResp = osMem_deref(pSipBufResp);
+        pSipBufResp = osfree(pSipBufResp);
     }
 
+	DEBUG_END
 	return pSipBufResp;
 }
 
@@ -155,7 +159,7 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
 	}
 	updatedDelHdrNum += extraDelItem;
 
-	pUpdatedExtraDelHdrList = osMem_alloc(sizeof(sipHdrRawValueId_t)*(delHdrNum + extraDelItem), NULL);
+	pUpdatedExtraDelHdrList = osmalloc(sizeof(sipHdrRawValueId_t)*(delHdrNum + extraDelItem), NULL);
 
 	--extraDelItem;
     //via will be reinserted again if isProxy=true, the reason for that is to handle the rport, otherwise just drop the via
@@ -190,7 +194,7 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
 	pSortedModifyHdrList = sipTU_sortModifyHdrList(pReqDecodedRaw, pUpdatedExtraDelHdrList, updatedDelHdrNum, extraAddHdrList, addHdrNum);
 	if(updatedDelHdrNum != delHdrNum)
 	{
-		osMem_deref(pUpdatedExtraDelHdrList);
+		osfree(pUpdatedExtraDelHdrList);
 	}
 
     if(!pSortedModifyHdrList)
@@ -283,14 +287,15 @@ logError("to-remove, VIA-MEMORY, 2-2");
 logError("to-remove, VIA-MEMORY, 2-3");
 
 EXIT:
-    osList_delete(pSortedModifyHdrList);
+	osfree(pSortedModifyHdrList);
+    //osList_delete(pSortedModifyHdrList);
     if(status != OS_STATUS_OK)
     {
-        pSipBufReq = osMem_deref(pSipBufReq);
+        pSipBufReq = osfree(pSipBufReq);
     }
 
 logError("to-remove, VIA-MEMORY, 3");
-	osMem_deref(viaHdr.decodedHdr);
+	osfree(viaHdr.decodedHdr);
 logError("to-remove, VIA-MEMORY, 4");
 
 	DEBUG_END
@@ -377,6 +382,8 @@ EXIT:
 */
 osMBuf_t* sipTU_buildUasResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipResponse_e rspCode, sipHdrName_e sipHdrArray[], int arraySize, bool isAddNullContent)
 {
+	DEBUG_BEGIN
+
     osStatus_e status = OS_STATUS_OK;
 
     if(!pReqDecodedRaw || !sipHdrArray)
@@ -450,6 +457,8 @@ osMBuf_t* sipTU_buildUasResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipRespo
     }
 
 EXIT:
+	DEBUG_END
+
     return pSipBufResp;
 }
 
@@ -543,7 +552,7 @@ osMBuf_t* sipTU_modifySipMsgHdr(osMBuf_t* pSipBuf, sipHdrRawValueId_t* delHdrLis
         goto EXIT;
     }
 
-	sipHdrName_e* sipHdrArray = osMem_alloc(sizeof(sipHdrName_e)*(delHdrNum + addHdrNum), NULL);
+	sipHdrName_e* sipHdrArray = osmalloc(sizeof(sipHdrName_e)*(delHdrNum + addHdrNum), NULL);
 	for(int i=0; i<delHdrNum; i++)
 	{
 		sipHdrArray[i] = delHdrList->nameCode;
@@ -559,7 +568,7 @@ osMBuf_t* sipTU_modifySipMsgHdr(osMBuf_t* pSipBuf, sipHdrRawValueId_t* delHdrLis
 	if(!pMsgDecodedRaw)
 	{
 		logError("fails to sipDecodeMsgRawHdr.");
-		osMem_deref(sipHdrArray);
+		osfree(sipHdrArray);
         goto EXIT;
     }
 
@@ -585,17 +594,18 @@ osMBuf_t* sipTU_modifySipMsgHdr(osMBuf_t* pSipBuf, sipHdrRawValueId_t* delHdrLis
     status = sipTU_copyHdrs(pSipBufNew, pMsgDecodedRaw, pMsgDecodedRaw->sipMsgBuf.hdrStartPos, pSortedModifyHdrList);
 
 EXIT:
-    osList_delete(pSortedModifyHdrList);
-	osMem_deref(pMsgDecodedRaw);
+	osfree(pSortedModifyHdrList);
+    //osList_delete(pSortedModifyHdrList);
+	osfree(pMsgDecodedRaw);
 
     if(status != OS_STATUS_OK)
     {
-        osMem_deref(pSipBufNew);
+        osfree(pSipBufNew);
 		pSipBufNew = pSipBuf;
     }
 	else
 	{
-		osMem_deref(pSipBuf);
+		osfree(pSipBuf);
 	}
 
     return pSipBufNew;
@@ -699,7 +709,7 @@ osStatus_e sipTU_asGetSescase(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool* isOri
             *isOrig = false;
         }
 
-        osMem_deref(pPSU);
+        osfree(pPSU);
 
 		goto EXIT;
     }
@@ -718,7 +728,7 @@ osStatus_e sipTU_asGetSescase(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool* isOri
         osPointerLen_t sescaseName = {"orig", 4};
         *isOrig = sipParamNV_isNameExist(&pRoute->pGNP->hdrValue.genericParam, &sescaseName);
 
-        osMem_deref(pRoute);
+        osfree(pRoute);
 		goto EXIT;
     }
 
@@ -763,7 +773,7 @@ osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t
 			isSesCaseMO = false;
 		}
 
-		osMem_deref(pPSU);
+		osfree(pPSU);
 
 		if(isOrigUser == isSesCaseMO)
 		{
@@ -1014,7 +1024,7 @@ static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqD
 					startPos = nextHdrValueStartPos + firstHdrValuePos.totalLen;
 				}
 						        
-				osMem_deref(sipHdrDecoded.decodedHdr);	
+				osfree(sipHdrDecoded.decodedHdr);	
             }
         }
         else
@@ -1135,10 +1145,10 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
 		goto EXIT;
 	}
 
-	pList = osMem_zalloc(sizeof(osList_t), NULL);
+	pList = oszalloc(sizeof(osList_t), osList_cleanup);
 	if(!pList)
 	{
-		logError("fails to osMem_zalloc pList.");
+		logError("fails to oszalloc pList.");
 		goto EXIT;
 	}
 
@@ -1152,7 +1162,7 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
 			continue;
 		}
 
-        pHdrInfo = osMem_alloc(sizeof(sipTUHdrModifyInfo_t), NULL);
+        pHdrInfo = osmalloc(sizeof(sipTUHdrModifyInfo_t), NULL);
 
 		pHdrInfo->nameCode = delHdrList[i].nameCode;
 		pHdrInfo->isDelete = true;
@@ -1162,7 +1172,7 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
         if(status != OS_STATUS_OK)
         {
             logInfo("fails to get hdrStartPos for nameCode (%d)", delHdrList[i]);
-			osMem_deref(pHdrInfo);
+			osfree(pHdrInfo);
             goto EXIT;
         }
 
@@ -1175,12 +1185,12 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
 			osListElement_t* pLE = pList->head;
 			while (pLE)
 			{
-				pHdrInfo = osMem_alloc(sizeof(sipTUHdrModifyInfo_t), NULL);
+				pHdrInfo = osmalloc(sizeof(sipTUHdrModifyInfo_t), NULL);
 		       	status = sipHdrGetRawHdrPos((sipRawHdr_t*)pLE->data, &pHdrInfo->hdrStartPos, &pHdrInfo->hdrSkipLen);
         		if(status != OS_STATUS_OK)
         		{
            			logInfo("fails to get hdrStartPos for nameCode (%d) in the rawHdrList", delHdrList[i].nameCode);
-           			osMem_deref(pHdrInfo);
+           			osfree(pHdrInfo);
            			goto EXIT;
 				} 
 
@@ -1193,7 +1203,7 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
 
 	for(int i=0; i<addHdrNum; i++)
 	{
-		sipTUHdrModifyInfo_t* pHdrInfo = osMem_alloc(sizeof(sipTUHdrModifyInfo_t), NULL);
+		sipTUHdrModifyInfo_t* pHdrInfo = osmalloc(sizeof(sipTUHdrModifyInfo_t), NULL);
 
         pHdrInfo->nameCode = addHdrList[i].nameCode;
 		pHdrInfo->value = addHdrList[i].value;

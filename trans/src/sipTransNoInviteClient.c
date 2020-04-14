@@ -217,7 +217,7 @@ osStatus_e sipTransNICStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 
 			sipTransaction_t* pTrans = ((sipTransMsg_t*) pMsg)->pTransId;
             sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
-			osMem_deref(pTrans->resp.pSipMsg);
+			osfree(pTrans->resp.pSipMsg);
 			pTrans->resp = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf;
 
 			sipTUMsg_t sipTUMsg;
@@ -356,7 +356,7 @@ osStatus_e sipTransNICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
 		{
             pTrans = ((sipTransMsg_t*) pMsg)->pTransId;
             sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
-			osMem_deref(pTrans->resp.pSipMsg);
+			osfree(pTrans->resp.pSipMsg);
 			pTrans->resp = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf;
 
             sipTUMsg_t sipTUMsg;
@@ -591,7 +591,8 @@ logError("to-remove, TCP, tpType=%d", pTrans->tpInfo.tpType);
 
             osHash_deleteNode(pTrans->pTransHashLE);
             osHashData_t* pHashData = pTrans->pTransHashLE->data;
-            osMem_deref((sipTransaction_t*)pHashData->pData);
+			osfree(pHashData);
+            //osfree((sipTransaction_t*)pHashData->pData);
             osfree(pTrans->pTransHashLE);
 
             break;

@@ -214,16 +214,20 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
                 //no need to reallocate memory for peer using osDPL_dup, it has been done in transMgr via osPL_setStr when a message is first received from peer
                 osPL_plcpy(&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer.ip);
                 pTrans->tpInfo.peer.port = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer.port;
-                //pTrans->tpInfo.peer = pTU->response.sipTrMsgBuf.tpInfo.peer;
             }
-            osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.local.ip);
-            pTrans->tpInfo.local.port = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.local.port;
+
+			//only copy if the local address has not been stored.		
+			if(pTrans->tpInfo.local.ip.l == 0)
+			{	
+            	osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.local.ip);
+            	pTrans->tpInfo.local.port = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.local.port;
+			}
 
 			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
             pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
             sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
-			osMem_deref(pTrans->resp.pSipMsg);
-			pTrans->resp.pSipMsg = osMem_ref(((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
+			osfree(pTrans->resp.pSipMsg);
+			pTrans->resp.pSipMsg = osmemref(((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
 
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
             if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
@@ -377,7 +381,7 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
             if(pTrans->sipTransISTimer.timerIdG == timerId)
             {
                 pTrans->sipTransISTimer.timerIdG = 0;
-                //osMem_deref(pTrans);
+                //osfree(pTrans);
                 logInfo("timer G expires, retransmit the request.");
 
                 sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
@@ -399,14 +403,14 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
             else if(pTrans->sipTransISTimer.timerIdH == timerId)
             {
                 pTrans->sipTransISTimer.timerIdH = 0;
-                // osMem_deref(pTrans);
+                // osfree(pTrans);
                 logInfo("timer H expires, terminate the transaction.");
 
                 if(pTrans->sipTransISTimer.timerIdG !=0)
                 {
                     osStopTimer(pTrans->sipTransISTimer.timerIdG);
                     pTrans->sipTransISTimer.timerIdG = 0;
-                //    osMem_deref(pTrans);
+                //    osfree(pTrans);
                 }
 
 	            sipTUMsg_t sipTUMsg;
@@ -468,7 +472,7 @@ osStatus_e sipTransISStateConfirmed_onMsg(sipTransMsgType_e msgType, void* pMsg,
         	if(pTrans->sipTransISTimer.timerIdI == timerId)
             {
                 pTrans->sipTransISTimer.timerIdI = 0;
-				osMem_deref(pTrans);
+				osfree(pTrans);
                 debug("timer I expires, terminate the transaction.");
 
                 sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TIMEOUT, pTrans);
@@ -582,24 +586,25 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
             {
                 osStopTimer(pTrans->sipTransISTimer.timerIdG);
                 pTrans->sipTransISTimer.timerIdG = 0;
-				osMem_deref(pTrans);
+				osfree(pTrans);
             }
             if(pTrans->sipTransISTimer.timerIdH != 0)
             {
                 osStopTimer(pTrans->sipTransISTimer.timerIdH);
                 pTrans->sipTransISTimer.timerIdH = 0;
-                osMem_deref(pTrans);
+                osfree(pTrans);
             }
             if(pTrans->sipTransISTimer.timerIdI != 0)
             {
                 osStopTimer(pTrans->sipTransISTimer.timerIdI);
                 pTrans->sipTransISTimer.timerIdI = 0;
-                osMem_deref(pTrans);
+                osfree(pTrans);
             }
 
             osHash_deleteNode(pTrans->pTransHashLE);
             osHashData_t* pHashData = pTrans->pTransHashLE->data;
-            osMem_deref((sipTransaction_t*)pHashData->pData);
+			osfree(pHashData);
+            //osfree((sipTransaction_t*)pHashData->pData);
             osfree(pTrans->pTransHashLE);
 
             break;
@@ -677,7 +682,7 @@ static osStatus_e sipTransIS_build100Trying(sipMsgBuf_t* pSipBufReq, sipMsgBuf_t
 	logInfo("rspMsg=\n%M", pSipMsgBuf->pSipMsg);
 	
 EXIT:
-	osMem_deref(pReqDecodedRaw);
+	osfree(pReqDecodedRaw);
 
 	DEBUG_END
 	return status;

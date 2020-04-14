@@ -55,7 +55,7 @@ osStatus_e sipParserHdr_nameaddrAddrSpec(osMBuf_t* pSipMsg, size_t hdrEndPos, si
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(pAddr);
+		osfree(pAddr);
 	}
 
 	return status;
@@ -65,5 +65,5 @@ EXIT:
 
 void sipHdrNameaddrAddrspec_dealloc(void* data)
 {
-	osMem_deref(data);
+	osfree(data);
 }

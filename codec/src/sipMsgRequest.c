@@ -34,7 +34,7 @@ sipMsgRequest_t* sipMsgCreateReq(sipRequest_e reqType, sipUri_t* pReqUri)
         goto EXIT;
     }
 
-    pSipRequest = osMem_zalloc(sizeof(sipMsgRequest_t), sipMsgRequest_delete);
+    pSipRequest = oszalloc(sizeof(sipMsgRequest_t), sipMsgRequest_delete);
     if(pSipRequest == NULL)
     {
         logError("pSipRequest allocation fails.");
@@ -70,7 +70,7 @@ sipMsgRequest_t* sipMsgCreateReq(sipRequest_e reqType, sipUri_t* pReqUri)
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(pSipRequest);
+		osfree(pSipRequest);
 		pSipRequest = NULL;
 	}
 
@@ -314,7 +314,7 @@ sipMsgRequest_t* sipMsgCreateProxyReq(sipMsgDecoded_t* sipMsgInDecoded, sipHdrNm
         goto EXIT;
     }
 
-    pSipReq = osMem_zalloc(sizeof(sipMsgRequest_t), sipMsgRequest_delete);
+    pSipReq = oszalloc(sizeof(sipMsgRequest_t), sipMsgRequest_delete);
     if(!pSipReq)
     {
         logError("fails to allocate memory for sipMsgRequest_t.");
@@ -322,7 +322,7 @@ sipMsgRequest_t* sipMsgCreateProxyReq(sipMsgDecoded_t* sipMsgInDecoded, sipHdrNm
         goto EXIT;
     }
 
-    sipHdrModifyInfo_t* modifyInfo = osMem_zalloc(n*sizeof(sipHdrModifyInfo_t), NULL);
+    sipHdrModifyInfo_t* modifyInfo = oszalloc(n*sizeof(sipHdrModifyInfo_t), NULL);
 	if(!modifyInfo)
 	{
 		logError("fail to allocate modifyInfo.");
@@ -420,11 +420,11 @@ sipMsgRequest_t* sipMsgCreateProxyReq(sipMsgDecoded_t* sipMsgInDecoded, sipHdrNm
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(pSipReq);
+		osfree(pSipReq);
 		pSipReq = NULL;
 	}
 
-	osMem_deref(modifyInfo);
+	osfree(modifyInfo);
 	osList_clear(&modifyHdrList);
 
 	DEBUG_END
@@ -445,7 +445,7 @@ sipMsgResponse_t* sipMsgCreateResponse(sipMsgDecoded_t* sipMsgInDecoded, sipResp
         goto EXIT;
     }
 
-    pSipResponse = osMem_zalloc(sizeof(sipMsgResponse_t), sipMsgResponse_delete);
+    pSipResponse = oszalloc(sizeof(sipMsgResponse_t), sipMsgResponse_delete);
     if(pSipResponse == NULL)
     {
         logError("pSipRequest allocation fails.");
@@ -454,7 +454,7 @@ sipMsgResponse_t* sipMsgCreateResponse(sipMsgDecoded_t* sipMsgInDecoded, sipResp
     }
 
     pSipResponse->rspCode = rspCode;
-    pSipResponse->pRequest = osMem_ref(sipMsgInDecoded);
+    pSipResponse->pRequest = osmemref(sipMsgInDecoded);
 
     pSipResponse->sipMsg = osMBuf_alloc(SIP_MAX_MSG_SIZE);
     if(pSipResponse->sipMsg == NULL)
@@ -512,7 +512,7 @@ sipMsgResponse_t* sipMsgCreateResponse(sipMsgDecoded_t* sipMsgInDecoded, sipResp
 EXIT:
     if(status != OS_STATUS_OK)
     {
-        osMem_deref(pSipResponse);
+        osfree(pSipResponse);
         pSipResponse = NULL;
     }
 
@@ -568,10 +568,10 @@ sipMsgDecodedRawHdr_t* sipDecodeMsgRawHdr(sipMsgBuf_t* pSipMsgBuf, sipHdrName_e 
     pSipMsg->pos = pSipMsgBuf->hdrStartPos;
     debug("sean-remove, after, hdrStartPos=%ld, pos=%ld", pSipMsgBuf->hdrStartPos, pSipMsg->pos);
 
-    pSipMsgDecoded = osMem_zalloc(sizeof(sipMsgDecodedRawHdr_t), sipMsgDecodedRawHdr_delete);
+    pSipMsgDecoded = oszalloc(sizeof(sipMsgDecodedRawHdr_t), sipMsgDecodedRawHdr_delete);
     if(!pSipMsgDecoded)
     {
-        logError("fails to osMem_zalloc for pSipMsgDecoded.");
+        logError("fails to oszalloc for pSipMsgDecoded.");
         status = OS_ERROR_MEMORY_ALLOC_FAILURE;
         return NULL;
     }
@@ -581,7 +581,7 @@ sipMsgDecodedRawHdr_t* sipDecodeMsgRawHdr(sipMsgBuf_t* pSipMsgBuf, sipHdrName_e 
     bool isEOH= false;
     while(!isEOH)
     {
-        sipRawHdr_t* pSipHdr = osMem_alloc(sizeof(sipRawHdr_t), NULL);
+        sipRawHdr_t* pSipHdr = osmalloc(sizeof(sipRawHdr_t), NULL);
 
         //decode rawHdr for each hdr in the SIP message
         if(sipDecodeOneHdrRaw(pSipMsg, pSipHdr, &isEOH) != OS_STATUS_OK)
@@ -612,13 +612,13 @@ sipMsgDecodedRawHdr_t* sipDecodeMsgRawHdr(sipMsgBuf_t* pSipMsgBuf, sipHdrName_e 
         }
         if(!isAdd)
         {
-            osMem_deref(pSipHdr);
+            osfree(pSipHdr);
             continue;
         }
 
         if(pSipMsgDecoded->msgHdrList[pSipHdr->nameCode] == NULL)
         {
-            pSipMsgDecoded->msgHdrList[pSipHdr->nameCode] = osMem_zalloc(sizeof(sipRawHdrList_t), NULL);
+            pSipMsgDecoded->msgHdrList[pSipHdr->nameCode] = oszalloc(sizeof(sipRawHdrList_t), NULL);
             pSipMsgDecoded->hdrNum++;
         }
 
@@ -639,7 +639,7 @@ sipMsgDecodedRawHdr_t* sipDecodeMsgRawHdr(sipMsgBuf_t* pSipMsgBuf, sipHdrName_e 
 EXIT:
     if(status != OS_STATUS_OK)
     {
-        pSipMsgDecoded = osMem_deref(pSipMsgDecoded);
+        pSipMsgDecoded = osfree(pSipMsgDecoded);
 		pSipMsgDecoded = NULL;
     }
 
@@ -669,8 +669,9 @@ static void sipMsgDecodedRawHdr_delete(void* data)
             continue;
         }
 
-        osMem_deref(pMsgDecoded->msgHdrList[i]->pRawHdr);
+        osfree(pMsgDecoded->msgHdrList[i]->pRawHdr);
         osList_delete(&pMsgDecoded->msgHdrList[i]->rawHdrList);
+		osfree(pMsgDecoded->msgHdrList[i]);
     }
 }
 
@@ -744,7 +745,7 @@ bool sipMsg_isHdrMultiValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDec
 			}
 			else
 			{
-            	osMem_deref(sipHdrDecoded.decodedHdr);
+            	osfree(sipHdrDecoded.decodedHdr);
 			}
 
 			goto EXIT;
@@ -792,7 +793,7 @@ osStatus_e sipHdrMultiNameParam_get2ndHdrValue(sipHdrName_e hdrCode, sipMsgDecod
         if(!*pp2ndHdr)
         {
             logError("expect 2nd route, but decoded=null.");
-            osMem_deref(pFocusHdrDecoded->decodedHdr);
+            osfree(pFocusHdrDecoded->decodedHdr);
             pFocusHdrDecoded->decodedHdr = NULL;
 
             status = OS_ERROR_SYSTEM_FAILURE;
@@ -846,10 +847,10 @@ void sipMsgRequest_delete(void* data)
 
 	sipMsgRequest_t* pReq = data;
 	osMBuf_dealloc(pReq->sipRequest);
-	osMem_deref((void*)pReq->viaBranchId.p);
-	osMem_deref((void*)pReq->fromTag.p);
-//	osMem_deref((void*)pReq->toTag.p);
-	osMem_deref((void*)pReq->callId.p);
+	osfree((void*)pReq->viaBranchId.p);
+	osfree((void*)pReq->fromTag.p);
+//	osfree((void*)pReq->toTag.p);
+	osfree((void*)pReq->callId.p);
 }
 
 void sipMsgResponse_delete(void* data)
@@ -861,6 +862,6 @@ void sipMsgResponse_delete(void* data)
 
 	sipMsgResponse_t* pResp = data;
 	osMBuf_dealloc(pResp->sipMsg);
-	osMem_deref((void*)pResp->pRequest);
-    osMem_deref((void*)pResp->toTag.p);
+	osfree((void*)pResp->pRequest);
+    osfree((void*)pResp->toTag.p);
 }

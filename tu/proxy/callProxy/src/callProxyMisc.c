@@ -13,7 +13,7 @@ osStatus_e callProxy_addTrInfo(osListPlus_t* pList, sipRequest_e reqCode, uint32
 		goto EXIT;
 	}
 
-	proxyTranInfo_t* pProxyTrInfo = osMem_zalloc(sizeof(proxyTranInfo_t), NULL);
+	proxyTranInfo_t* pProxyTrInfo = oszalloc(sizeof(proxyTranInfo_t), NULL);
 	if(!pProxyTrInfo)
 	{
 		logError("fails to allocate memory for pProxyTrInfo.");
@@ -30,7 +30,7 @@ osStatus_e callProxy_addTrInfo(osListPlus_t* pList, sipRequest_e reqCode, uint32
 	if(status != OS_STATUS_OK)
 	{
 		logError("fails to sipProxy_addTrPair (uasId=%p, uacId=%p).", uasId, uacId);
-		osMem_deref(pProxyTrInfo);
+		osfree(pProxyTrInfo);
 		goto EXIT;
 	}
 

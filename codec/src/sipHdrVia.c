@@ -43,7 +43,7 @@ osStatus_e sipParserHdr_via(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrMultiVia_
 	pVia->viaNum = 0;
     while(pSipMsg->pos < hdrEndPos)
     {
-        sipHdrViaDecoded_t* pViaElem = osMem_zalloc(sizeof(sipHdrViaDecoded_t), sipHdrViaDecoded_cleanup);
+        sipHdrViaDecoded_t* pViaElem = oszalloc(sizeof(sipHdrViaDecoded_t), sipHdrViaDecoded_cleanup);
         if(!pViaElem)
         {
             logError("could not allocate memory for pViaElem.");
@@ -77,7 +77,7 @@ osStatus_e sipParserHdr_via(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrMultiVia_
         	if(pLE == NULL)
         	{
             	logError("osList_append failure for via.");
-            	osMem_deref(pViaElem);
+            	osfree(pViaElem);
             	status = OS_ERROR_MEMORY_ALLOC_FAILURE;
             	goto EXIT;
         	}
@@ -87,7 +87,7 @@ osStatus_e sipParserHdr_via(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrMultiVia_
 EXIT:
     if(status != OS_STATUS_OK)
     {
-		osMem_deref(pVia->pVia);
+		osfree(pVia->pVia);
         osList_delete(&pVia->viaList);
     }
 
@@ -431,7 +431,7 @@ EXIT:
 
 void* sipHdrMultiVia_alloc()
 {
-	sipHdrMultiVia_t* pVia = osMem_zalloc(sizeof(sipHdrMultiVia_t), sipHdrMultiVia_cleanup);
+	sipHdrMultiVia_t* pVia = oszalloc(sizeof(sipHdrMultiVia_t), sipHdrMultiVia_cleanup);
 	if(!pVia)
 	{
 		return NULL;
@@ -464,7 +464,7 @@ osStatus_e sipHdrVia_generateBranchId(osPointerLen_t* pBranch, char* pExtraInfo)
 	srand(tp.tv_nsec);
 	int randValue=rand();
 
-	branchValue = osMem_alloc(SIP_MAX_VIA_BRANCH_ID_LEN, NULL);
+	branchValue = osmalloc(SIP_MAX_VIA_BRANCH_ID_LEN, NULL);
     if(branchValue == NULL)
     {
         logError("allocate branchId fails.");
@@ -494,7 +494,7 @@ osStatus_e sipHdrVia_generateBranchId(osPointerLen_t* pBranch, char* pExtraInfo)
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(branchValue);
+		osfree(branchValue);
 		pBranch->p = NULL;
     	pBranch->l = 0;
 	}
@@ -604,7 +604,7 @@ osStatus_e sipHdrVia_getPeerTransportFromRaw(sipMsgDecodedRawHdr_t* pReqDecodedR
         		else
         		{
             		//get the nexthop from the 2nd hdr
-					osMem_deref(hdrDecoded.decodedHdr);	//remove the memory allocated for the top hdr
+					osfree(hdrDecoded.decodedHdr);	//remove the memory allocated for the top hdr
 					hdrDecoded.decodedHdr = NULL;
             		status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->rawHdrList.head->data, &hdrDecoded, false);
 					if(status != OS_STATUS_OK)
@@ -665,6 +665,6 @@ osStatus_e sipHdrVia_getPeerTransportFromRaw(sipMsgDecodedRawHdr_t* pReqDecodedR
 	}
 
 EXIT:
-	osMem_deref(hdrDecoded.decodedHdr);
+	osfree(hdrDecoded.decodedHdr);
 	return status;
 }	

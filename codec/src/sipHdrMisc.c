@@ -303,7 +303,7 @@ osStatus_e sipParserHdr_intParam(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrIntP
 					}
 					else
 					{
-						osPointerLen_t* pl = osMem_alloc(sizeof(osPointerLen_t), NULL);
+						osPointerLen_t* pl = osmalloc(sizeof(osPointerLen_t), NULL);
 						pl->p = &pSipMsg->buf[origPos];
 						pl->l = pSipMsg->pos - origPos;
 						osPL_trimLWS(pl, true, true);
@@ -340,7 +340,7 @@ osStatus_e sipParserHdr_intParam(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrIntP
             }
             else
             {
-                osPointerLen_t* pl = osMem_alloc(sizeof(osPointerLen_t), NULL);
+                osPointerLen_t* pl = osmalloc(sizeof(osPointerLen_t), NULL);
                 pl->p = &pSipMsg->buf[origPos];
                 pl->l = pSipMsg->pos - origPos;
                 osPL_trimLWS(pl, true, true);
@@ -532,7 +532,7 @@ osStatus_e sipHdrCallId_createCallId(osPointerLen_t* pl)
 		goto EXIT;
 	}
 
-    callIdValue = osMem_alloc(SIP_MAX_CALL_ID_LEN, NULL);
+    callIdValue = osmalloc(SIP_MAX_CALL_ID_LEN, NULL);
     if(callIdValue == NULL)
     {
         logError("allocate callId memory fails.");
@@ -551,7 +551,7 @@ osStatus_e sipHdrCallId_createCallId(osPointerLen_t* pl)
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(callIdValue);
+		osfree(callIdValue);
 		pl->l = 0;
 	}
 
@@ -585,7 +585,7 @@ osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, osPointerLen_t* pCallId)
 EXIT:
 	if(!pCallId && status == OS_STATUS_OK)
 	{
-		osMem_deref((void*)pl.p);
+		osfree((void*)pl.p);
 	}
 
 	return status;
@@ -607,7 +607,7 @@ osStatus_e sipHdrCallId_getValue(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointe
 
 	*pCallId = *(osPointerLen_t*)sipHdrDecoded.decodedHdr;
 
-    osMem_deref(sipHdrDecoded.decodedHdr);
+    osfree(sipHdrDecoded.decodedHdr);
 
 EXIT:
 	return status;
@@ -635,7 +635,7 @@ osStatus_e sipHdrCSeq_getValue(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* 
 		*pMethod = ((sipHdrCSeq_t*)sipHdrDecoded.decodedHdr)->method;
 	}
 
-    osMem_deref(sipHdrDecoded.decodedHdr);
+    osfree(sipHdrDecoded.decodedHdr);
 
 EXIT:
 	return status;	

@@ -491,7 +491,7 @@ osStatus_e sipParsing_listAddParam(osList_t *pList, char* nameParam, size_t name
 //  mDEBUG_BEGIN(LM_SIPP)
     osStatus_e status = OS_STATUS_OK;
 
-    sipHdrParamNameValue_t* paramPL = osMem_alloc(sizeof(sipHdrParamNameValue_t), NULL);
+    sipHdrParamNameValue_t* paramPL = osmalloc(sizeof(sipHdrParamNameValue_t), NULL);
     if(paramPL == NULL)
     {
         logError("could not allocate memory for paramPL.");
@@ -510,7 +510,7 @@ logError("to-remove, VIA-MEMORY, pLE=%p", pLE);
     if(pLE == NULL)
     {
         logError("osList_append failure.");
-        osMem_deref(paramPL);
+        osfree(paramPL);
         status = OS_ERROR_MEMORY_ALLOC_FAILURE;
         goto EXIT;
     }

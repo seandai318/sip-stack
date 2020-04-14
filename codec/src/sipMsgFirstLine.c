@@ -926,5 +926,5 @@ void sipFirstLine_cleanup(void* pData)
 
 void* sipFirstLine_alloc()
 {
-	return osMem_alloc(sizeof(sipFirstline_t), sipFirstLine_cleanup);
+	return osmalloc(sizeof(sipFirstline_t), sipFirstLine_cleanup);
 }

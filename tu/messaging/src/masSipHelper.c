@@ -18,10 +18,10 @@ osStatus_e masSip_buildContent(osPointerLen_t* sms, osPointerLen_t* caller, osPo
 {
 	osStatus_e status = OS_STATUS_OK;
 
-    content->p = osMem_alloc(MAS_MAX_SMS_CONTENT_SIZE, NULL);
+    content->p = osmalloc(MAS_MAX_SMS_CONTENT_SIZE, NULL);
     if(!content->p)
     {
-        logError("fails to osMem_alloc for size (%d)", MAS_MAX_SMS_CONTENT_SIZE);
+        logError("fails to osmalloc for size (%d)", MAS_MAX_SMS_CONTENT_SIZE);
         status = OS_ERROR_MEMORY_ALLOC_FAILURE;
         goto EXIT;
     }
@@ -173,7 +173,7 @@ osMBuf_t* masSip_buildRequest(osPointerLen_t* user, osPointerLen_t* caller, sipU
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(pSipBuf);
+		osfree(pSipBuf);
 		pSipBuf = NULL;
 	}
 

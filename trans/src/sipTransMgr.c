@@ -128,7 +128,7 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
     osStatus_e status = OS_STATUS_OK;
 
 	sipTransInfo_t sipTransInfo;
-	sipMsgBuf_t sipMsgBuf = {sipBuf->pSipBuf, 0, 0, 0};
+	sipMsgBuf_t sipMsgBuf = {osmemref(sipBuf->pSipBuf), 0, 0, 0};
 
 	status = sipDecodeTransInfo(&sipMsgBuf, &sipTransInfo);
 	if(status != OS_STATUS_OK)
@@ -169,16 +169,16 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
 		if(sipTransInfo.isRequest)
 		{
 			//start a new transaction.
-			osHashData_t* pHashData = osMem_zalloc(sizeof(osHashData_t), sipTransHashData_delete);
+			osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), sipTransHashData_delete);
 			if(!pHashData)
 			{
 				logError("fails to allocate pHashData.");
 				status = OS_ERROR_MEMORY_ALLOC_FAILURE;
-				osMem_deref(sipBuf);
+				//osfree(sipBuf);
 				goto EXIT;
 			}
 
-			pTrans = osMem_zalloc(sizeof(sipTransaction_t), sipTrans_delete);
+			pTrans = oszalloc(sizeof(sipTransaction_t), sipTrans_delete);
             pTrans->state = SIP_TRANS_STATE_NONE;
 			pHashData->pData = pTrans;
 			pTrans->req = sipMsgBuf;
@@ -186,7 +186,7 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
             pTrans->tpInfo.tcpFd = ((sipTransportMsgBuf_t*) sipBuf)->tcpFd;
 			pTrans->tpInfo.tpType = pTrans->tpInfo.tcpFd == -1 ? SIP_TRANSPORT_TYPE_ANY : SIP_TRANSPORT_TYPE_TCP; 
 			pTrans->tpInfo.isServer = ((sipTransportMsgBuf_t*) sipBuf)->isServer;
-			char* ipaddr = osMem_zalloc(INET_ADDRSTRLEN, NULL);
+			char* ipaddr = oszalloc(INET_ADDRSTRLEN, NULL);
 			inet_ntop(AF_INET, &((sipTransportMsgBuf_t*) sipBuf)->peer.sin_addr, ipaddr, INET_ADDRSTRLEN);
 			osPL_setStr(&pTrans->tpInfo.peer.ip, ipaddr, 0);
 			pTrans->tpInfo.peer.port = ntohs(((sipTransportMsgBuf_t*) sipBuf)->peer.sin_port);
@@ -221,7 +221,7 @@ logError("to-remove, PEER, ip=%r, port=%d, ipaddr=%s", &pTrans->tpInfo.peer.ip, 
 		else
 		{
 			logInfo("receive a unknown SIP response.");
-			osMem_deref(sipBuf);
+			//osfree(sipBuf);
 			goto EXIT;
 		}
 	}
@@ -240,9 +240,19 @@ logError("to-remove, PEER, ip=%r, port=%d, ipaddr=%s", &pTrans->tpInfo.peer.ip, 
 		msg2SM.response.rspCode = sipTransInfo.rspCode;
 	}
     msg2SM.pTransId = pTrans;
+
+	//no need to add a new ref to store the sipBuf, the msg receiver just created the message, and it is the trans layer to have the ownership automatically 
+    //osmemref(sipBuf->pSipBuf);
+
 	pTrans->smOnMsg(SIP_TRANS_MSG_TYPE_PEER, &msg2SM, 0);
 
 EXIT:
+    osfree(sipBuf);
+	if(status != OS_STATUS_OK)
+	{
+		osfree(sipMsgBuf.pSipMsg);
+	}
+
 	DEBUG_END
 	return status;
 }
@@ -272,6 +282,9 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
 			pSipMsg = pSipTUMsg->response.sipTrMsgBuf.sipMsgBuf.pSipMsg;
 		}
 
+        //we do not need branchInfo any more, clear it
+        osDPL_dealloc((osDPointerLen_t*)&pSipTUMsg->request.pTransInfo->transId.viaId.branchId);
+
 		status = sipTransport_send(NULL, pTpInfo, pSipMsg);
 		goto EXIT;
 	}
@@ -282,7 +295,7 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
         if(pSipTUMsg->sipMsgType == SIP_TRANS_MSG_CONTENT_REQUEST)
         {
             //start a new transaction.
-            osHashData_t* pHashData = osMem_zalloc(sizeof(osHashData_t), sipTransHashData_delete);
+            osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), sipTransHashData_delete);
             if(!pHashData)
             {
                 logError("fails to allocate pHashData.");
@@ -290,10 +303,10 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
                 goto EXIT;
             }
 
-            sipTransaction_t* pTrans = osMem_zalloc(sizeof(sipTransaction_t), sipTrans_delete);
+            sipTransaction_t* pTrans = oszalloc(sizeof(sipTransaction_t), sipTrans_delete);
             pHashData->pData = pTrans;
             pTrans->state = SIP_TRANS_STATE_NONE;
-            pTrans->req.pSipMsg = osMem_ref(pSipTUMsg->request.sipTrMsgBuf.sipMsgBuf.pSipMsg);
+            pTrans->req.pSipMsg = osmemref(pSipTUMsg->request.sipTrMsgBuf.sipMsgBuf.pSipMsg);
 			pTrans->transId = pSipTUMsg->request.pTransInfo->transId;
 
             pHashData->hashKeyType = OSHASHKEY_INT;
@@ -301,6 +314,9 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
             pHashData->pData = pTrans;
             pTrans->pTransHashLE = osHash_add(sipTransHash, pHashData);
             debug("pTrans(%p) is created and stored in hash, key=%u (branchId=%r), pTrans->pTransHashLE=%p.", pTrans, pHashData->hashKeyInt, &pSipTUMsg->request.pTransInfo->transId.viaId.branchId, pTrans->pTransHashLE);
+	
+			//we do not need branchInfo any more, clear it	
+			osDPL_dealloc((osDPointerLen_t*)&pSipTUMsg->request.pTransInfo->transId.viaId.branchId);
 
             //forward to transaction state handler
             pSipTUMsg->pTransId = pTrans;
@@ -331,7 +347,6 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
 
 	if(pSipTUMsg->sipMsgType == SIP_TRANS_MSG_CONTENT_ACK)
 	{
-//to-do, shall we dealloc?        osMBuf_dealloc(pTrans->pACK);
 		pTrans->ack = pSipTUMsg->ack.sipTrMsgBuf.sipMsgBuf;
 
 		pTrans->smOnMsg(SIP_TRANS_MSG_TYPE_PEER, pSipTUMsg, 0);
@@ -529,7 +544,7 @@ debug("sean-remove, isReq=%d", firstLine.isReqLine);
         {
             isCSeqDecoded = true;
 
-			sipHdrCSeq_t* pDecodedCSeqHdr = sipHdrParse(pSipMsg, SIP_HDR_CSEQ, sipHdr.valuePos, sipHdr.value.l);
+			pDecodedCSeqHdr = sipHdrParse(pSipMsg, SIP_HDR_CSEQ, sipHdr.valuePos, sipHdr.value.l);
 #if 0
             osMBuf_t pSipMsgHdr;
             osMBuf_allocRef1(&pSipMsgHdr, pSipMsg, sipHdr.valuePos, sipHdr.value.l);
@@ -562,8 +577,8 @@ debug("sean-remove, isReq=%d", firstLine.isReqLine);
 EXIT:
 	pSipMsg->pos = 0;
 
-    osMem_deref(pDecodedViaHdr);
-    osMem_deref(pDecodedCSeqHdr);
+    osfree(pDecodedViaHdr);
+    osfree(pDecodedCSeqHdr);
 
 	if(status == OS_STATUS_OK)
 	{
@@ -578,6 +593,8 @@ EXIT:
 
 static void sipTrans_delete(void* pData)
 {
+	DEBUG_BEGIN
+
 	if(!pData)
 	{
 		return;
@@ -591,8 +608,11 @@ static void sipTrans_delete(void* pData)
 
 	osDPL_dealloc((osDPointerLen_t*)&pTrans->tpInfo.peer.ip);
 	osDPL_dealloc((osDPointerLen_t*)&pTrans->tpInfo.local.ip);
+	//the request.pTransInfo->transId.viaId.branchId is a little bit complicated.  For a SIP message from TU, the branchId is a dedicated allocated memory, has to be released as a standalone action.  for a SIP message from peer, the branchId is in the top via, which does not need to be released as a stadalobe action.  As a result, we do not release here, instead, we release the TU one as soon as it is not needed any more
 	//no need to stop the timers, they shall be stopped in the state machine.
 	//no need to free pTransHashLE as it is freed as part of delete a hash entry.  as a matter of fact, sipTrans is freed inside pTransHashLE free
+	
+	DEBUG_END
 }
 
 
@@ -604,6 +624,6 @@ static void sipTransHashData_delete(void* pData)
     }
 
 	osHashData_t* pHashData = pData;
-	osMem_deref(pHashData->pData);
+	osfree(pHashData->pData);
 }
 

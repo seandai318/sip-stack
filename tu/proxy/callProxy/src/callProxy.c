@@ -255,7 +255,7 @@ osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t
     }
 
 	//assemble the session info
-    pCallInfo = osMem_zalloc(sizeof(callProxyInfo_t), callProxyInfo_cleanup);
+    pCallInfo = oszalloc(sizeof(callProxyInfo_t), callProxyInfo_cleanup);
 	
     osPointerLen_t callId;
     status = sipHdrCallId_getValue(pReqDecodedRaw, &callId);
@@ -267,7 +267,7 @@ osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t
     //for now, the proxy does not initiate BYE. when reg is gone, simply drop all sessions.  Otherwise, has to store from, to seq, route set etc.
 
 	//add the session to the hash
-    osHashData_t* pHashData = osMem_zalloc(sizeof(osHashData_t), NULL);
+    osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), NULL);
     if(!pHashData)
     {
         logError("fails to allocate pHashData.");
@@ -277,7 +277,7 @@ osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t
         goto EXIT;
     }
 
-    proxyInfo_t* pProxyInfo = osMem_zalloc(sizeof(proxyInfo_t), NULL);
+    proxyInfo_t* pProxyInfo = oszalloc(sizeof(proxyInfo_t), NULL);
     pProxyInfo->proxyOnMsg = callProxy_onSipTUMsg;
     pProxyInfo->pCallInfo = pCallInfo;
 	pCallInfo->pProxyInfo = pProxyInfo;
@@ -379,7 +379,7 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
 	}
 
 #if 0
-    pCallInfo = osMem_zalloc(sizeof(callProxyInfo_t), callProxyInfo_cleanup);
+    pCallInfo = oszalloc(sizeof(callProxyInfo_t), callProxyInfo_cleanup);
 
     osPointerLen_t callId;
 	status = sipHdrCallId_getValue(pReqDecodedRaw, &callId);
@@ -410,7 +410,7 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
 
 #if 0
     //now add callInfo to callHash
-    osHashData_t* pHashData = osMem_zalloc(sizeof(osHashData_t), NULL);
+    osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), NULL);
     if(!pHashData)
     {
         logError("fails to allocate pHashData.");
@@ -419,7 +419,7 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
         goto EXIT;
     }
 
-    proxyInfo_t* pProxyInfo = osMem_zalloc(sizeof(proxyInfo_t), NULL);
+    proxyInfo_t* pProxyInfo = oszalloc(sizeof(proxyInfo_t), NULL);
     pProxyInfo->proxyOnMsg = callProxy_onSipTUMsg;
     pProxyInfo->pCallInfo = pCallInfo;
     pHashData->pData = pProxyInfo;
@@ -453,10 +453,10 @@ logError("to-remvoe, just to check the creation of a address.");
 EXIT:
 	if(status != OS_STATUS_OK && pCallInfo && pCallInfo->state == SIP_CALLPROXY_STATE_NONE)
 	{
-		osMem_deref(pCallInfo);
+		osfree(pCallInfo);
 	}
 
-	osMem_deref(pReqDecodedRaw);
+	osfree(pReqDecodedRaw);
 	DEBUG_END;
 	return status;
 }
@@ -585,7 +585,7 @@ osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRa
 	}
 
 EXIT:
-    osMem_deref(pReqDecodedRaw);
+    osfree(pReqDecodedRaw);
 
 	DEBUG_END
 	return status;
@@ -692,13 +692,19 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 
 				callProxyEnterState(SIP_CALLPROXY_STATE_BYE, pCallInfo);
 			}
-			else if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_ACK && seqNum == pCallInfo->seqNum)
+			else if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_ACK)
 			{
-                osStopTimer(pCallInfo->timerIdWaitAck);
-                pCallInfo->timerIdWaitAck = 0;
+                //need to free the buf allocated for the ACK message after forwarding the request.
+                osfree(pSipTUMsg->pSipMsgBuf->pSipMsg);
 
-				sipProxy_removePairTrInfo(&pCallInfo->proxyTransInfo, NULL, true);
-				callProxyEnterState(SIP_CALLPROXY_STATE_INIT_ACK_RECEIVED, pCallInfo);
+				if(seqNum == pCallInfo->seqNum)
+				{
+                	osStopTimer(pCallInfo->timerIdWaitAck);
+                	pCallInfo->timerIdWaitAck = 0;
+
+					sipProxy_removePairTrInfo(&pCallInfo->proxyTransInfo, NULL, true);
+					callProxyEnterState(SIP_CALLPROXY_STATE_INIT_ACK_RECEIVED, pCallInfo);
+				}
 			}
 			else
 			{
@@ -717,7 +723,6 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 				if(pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_300)
 				{
 					isPrimary = true;
-					
 				}
 				else
 				{
@@ -739,7 +744,7 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 	}
 
 EXIT:
-    osMem_deref(pReqDecodedRaw);
+    osfree(pReqDecodedRaw);
 
 	DEBUG_END
 	return status;	
@@ -793,7 +798,7 @@ osStatus_e callProxyStateInitAck_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHd
     }
 
 EXIT:
-    osMem_deref(pReqDecodedRaw);
+    osfree(pReqDecodedRaw);
 
 	DEBUG_END
     return status;
@@ -846,7 +851,7 @@ osStatus_e callProxyStateBye_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t*
 	}
 
 EXIT:
-    osMem_deref(pReqDecodedRaw);
+    osfree(pReqDecodedRaw);
 
 	DEBUG_END
 	return status;
@@ -876,7 +881,7 @@ osStatus_e callProxyEnterState(sipCallProxyState_e newState, callProxyInfo_t* pC
 	switch(newState)
 	{
 		case SIP_CALLPROXY_STATE_NONE:
-			osMem_deref(pCallInfo);
+			osfree(pCallInfo);
 			break;
 		case SIP_CALLPROXY_STATE_INIT_ERROR:
 			if(pCallInfo->timerIdC !=0)
@@ -934,8 +939,8 @@ static void callProxyInfo_cleanup(void* pData)
         osHash_deleteNode(pCallInfo->pCallHashLE);
 
 		//remove memory allocated for proxyInfo_t
-		osMem_deref(((osHashData_t*)pCallInfo->pCallHashLE->data)->pData);
-		osMem_deref(pCallInfo->pCallHashLE->data);	
+		osfree(((osHashData_t*)pCallInfo->pCallHashLE->data)->pData);
+		osfree(pCallInfo->pCallHashLE->data);	
     	osfree(pCallInfo->pCallHashLE);
     	pCallInfo->pCallHashLE = NULL;
 	}
@@ -1110,7 +1115,7 @@ static osStatus_e callProxy_onSipRequest(sipTUMsg_t* pSipTUMsg)
 
 	if(!pHashLE)
 	{
-		callProxyInfo_t* pCallInfo = osMem_zalloc(sizeof(callProxyInfo_t), callProxyInfo_cleanup);
+		callProxyInfo_t* pCallInfo = oszalloc(sizeof(callProxyInfo_t), callProxyInfo_cleanup);
 		osDPL_dup(&pCallInfo->callId, &callId);
         pCallInfo->state = SIP_CALLPROXY_STATE_INIT_INVITE;
 		//for now, the proxy does not initiate BYE. when reg is gone, simply drop all sessions.  Otherwise, has to store from, to seq, route set etc.
@@ -1119,19 +1124,19 @@ static osStatus_e callProxy_onSipRequest(sipTUMsg_t* pSipTUMsg)
 		if(!pCallInfo->regId)
 		{
 			osMBuf_dealloc(pReq);
-			pCallInfo = osMem_deref(pCallInfo);
+			pCallInfo = osfree(pCallInfo);
 			rspCode = SIP_RESPONSE_500;
 			status = OS_ERROR_INVALID_VALUE;
         	goto EXIT;
     	}
 
 		//now add callInfo to callHash
-        osHashData_t* pHashData = osMem_zalloc(sizeof(osHashData_t), NULL);
+        osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), NULL);
         if(!pHashData)
         {
             logError("fails to allocate pHashData.");
             osMBuf_dealloc(pReq);
-            pCallInfo = osMem_deref(pCallInfo);
+            pCallInfo = osfree(pCallInfo);
             rspCode = SIP_RESPONSE_500;
             status = OS_ERROR_MEMORY_ALLOC_FAILURE;
             goto EXIT;
@@ -1170,7 +1175,7 @@ logError("to-remvoe, just to check the creation of a address.");
     status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);
 
 	//proxy does not need to keep pReq.  If other laters need it, it is expected they will add ref to it
-    osMem_deref(pReq);
+    osfree(pReq);
 
 	if(pCallInfo->state = SIP_CALLPROXY_STATE_INIT_INVITE)
 	{
@@ -1234,7 +1239,7 @@ BUILD_RESPONSE:
             status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);
 
 			//proxy does not need to keep pSipResp.  If other laters need it, it is expected they will add ref to it
-			osMem_deref(pSipResp);
+			osfree(pSipResp);
 		}
         else
         {
@@ -1242,8 +1247,8 @@ BUILD_RESPONSE:
             status = OS_ERROR_MEMORY_ALLOC_FAILURE;
         }
 
-		osMem_deref(viaHdr.decodedHdr);
-		osMem_deref(pReqDecodedRaw);
+		osfree(viaHdr.decodedHdr);
+		osfree(pReqDecodedRaw);
 	}
 
 EXIT:
@@ -1302,7 +1307,7 @@ static osStatus_e callProxy_onSipResponse(sipTUMsg_t* pSipTUMsg)
 
 CLEAN_UP:
     masReg_deleteAppInfo(pMasInfo->regId, pMasInfo->pSrcTransId);
-    osMem_deref(pMasInfo);
+    osfree(pMasInfo);
 
 EXIT:
 	return status;

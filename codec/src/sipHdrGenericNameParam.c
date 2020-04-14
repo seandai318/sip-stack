@@ -199,7 +199,7 @@ osStatus_e sipParserHdr_multiNameParam(osMBuf_t* pSipMsg, size_t hdrEndPos, bool
 	pMultiGNP->gnpNum = 0;
     while(pSipMsg->pos < hdrEndPos)
     {
-        sipHdrGenericNameParamDecoded_t* pNameParam = osMem_zalloc(sizeof(sipHdrGenericNameParamDecoded_t), sipHdrGenericNameParamDecoded_cleanup);
+        sipHdrGenericNameParamDecoded_t* pNameParam = oszalloc(sizeof(sipHdrGenericNameParamDecoded_t), sipHdrGenericNameParamDecoded_cleanup);
         if(!pNameParam)
         {
             logError("could not allocate memory for pNameParam.");
@@ -213,7 +213,7 @@ osStatus_e sipParserHdr_multiNameParam(osMBuf_t* pSipMsg, size_t hdrEndPos, bool
         if(status != OS_STATUS_OK)
         {
             logError("sipParserHdr_genericNameParam parsing error.");
-			osMem_deref(pNameParam);
+			osfree(pNameParam);
             goto EXIT;
         }
 		pNameParam->hdrPos.totalLen = pSipMsg->pos - pNameParam->hdrPos.startPos;
@@ -229,7 +229,7 @@ osStatus_e sipParserHdr_multiNameParam(osMBuf_t* pSipMsg, size_t hdrEndPos, bool
         	if(pLE == NULL)
         	{
             	logError("osList_append failure.");
-            	osMem_deref(pNameParam);
+            	osfree(pNameParam);
             	status = OS_ERROR_MEMORY_ALLOC_FAILURE;
             	goto EXIT;
         	}
@@ -456,7 +456,7 @@ EXIT:
 
 void* sipHdrMultiGenericNameParam_alloc()
 {
-    sipHdrMultiGenericNameParam_t* pMGNP = osMem_alloc(sizeof(sipHdrMultiGenericNameParam_t), sipHdrMultiGenericNameParam_cleanup);
+    sipHdrMultiGenericNameParam_t* pMGNP = osmalloc(sizeof(sipHdrMultiGenericNameParam_t), sipHdrMultiGenericNameParam_cleanup);
     if(!pMGNP)
     {
         return NULL;

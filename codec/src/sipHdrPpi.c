@@ -55,7 +55,7 @@ osStatus_e sipParserHdr_ppi(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrPpi_t* pP
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(pPpi);
+		osfree(pPpi);
 	}
 
 	return status;

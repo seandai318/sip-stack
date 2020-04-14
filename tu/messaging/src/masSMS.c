@@ -174,7 +174,7 @@ logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->
 //	sipTransInfo.transId.viaId.host = pCalledContactUser.hostport.host;
 //	sipTransInfo.transId.viaId.port = pCalledContactUser.hostport.portValue;
 
-	masInfo_t* pMasInfo = osMem_alloc(sizeof(masInfo_t), masInfo_cleanup);
+	masInfo_t* pMasInfo = osmalloc(sizeof(masInfo_t), masInfo_cleanup);
 	pMasInfo->pSrcTransId = pSipTUMsg->pTransId;
 	pMasInfo->smsType = MAS_SMS_TYPE_B2B;
 	osDPL_dup(&pMasInfo->uacData.user, &calledUri);
@@ -216,7 +216,7 @@ logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->
     status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);
 
 	//masSMS does not need to keep pReq.  If other laters need it, it is expected they will add ref to it
-    osMem_deref(pReq);
+    osfree(pReq);
 
 	//send 202 response to the caller.
 	rspCode = SIP_RESPONSE_202;
@@ -279,7 +279,7 @@ BUILD_RESPONSE:
             status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);
 
 			//masSMS does not need to keep pSipResp.  If other laters need it, it is expected they will add ref to it
-			osMem_deref(pSipResp);
+			osfree(pSipResp);
 		}
         else
         {
@@ -287,8 +287,8 @@ BUILD_RESPONSE:
             status = OS_ERROR_MEMORY_ALLOC_FAILURE;
         }
 
-		osMem_deref(viaHdr.decodedHdr);
-		osMem_deref(pReqDecodedRaw);
+		osfree(viaHdr.decodedHdr);
+		osfree(pReqDecodedRaw);
 	}
 
 EXIT:
@@ -347,7 +347,7 @@ static osStatus_e masSMS_onSipResponse(sipTUMsg_t* pSipTUMsg)
 
 CLEAN_UP:
     masReg_deleteAppInfo(pMasInfo->regId, pMasInfo->pSrcTransId);
-    osMem_deref(pMasInfo);
+    osfree(pMasInfo);
 
 EXIT:
 	return status;

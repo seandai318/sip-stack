@@ -449,7 +449,7 @@ static sipHdrParamNameValue_t* sipUriParamAddOther(osList_t *pList, sipHdrParamN
 	//pLE==NULL when it is for other-param name
 	if(pOther == NULL)
 	{
-		pOther = osMem_alloc(sizeof(sipHdrParamNameValue_t), NULL);
+		pOther = osmalloc(sizeof(sipHdrParamNameValue_t), NULL);
 		if(pOther == NULL)
 		{
 			logError("could not allocate memory for sipHdrParamNameValue_t.");
@@ -463,7 +463,7 @@ static sipHdrParamNameValue_t* sipUriParamAddOther(osList_t *pList, sipHdrParamN
 		if(pLE == NULL)
 		{
 			logError("osList_append failure.");
-			osMem_deref(pOther);
+			osfree(pOther);
 			goto EXIT;
 		}
 

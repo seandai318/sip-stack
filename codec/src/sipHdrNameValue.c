@@ -145,7 +145,7 @@ osStatus_e sipParserHdr_multiNameValueList(osMBuf_t* pSipMsg, size_t hdrEndPos, 
 
     while(pSipMsg->pos < hdrEndPos)
     {
-		sipHdrNameValueListDecoded_t* pNV = osMem_zalloc(sizeof(sipHdrNameValueListDecoded_t), sipHdrNameValueListDecoded_cleanup);
+		sipHdrNameValueListDecoded_t* pNV = oszalloc(sizeof(sipHdrNameValueListDecoded_t), sipHdrNameValueListDecoded_cleanup);
 		if(!pNV)
 		{
 			logError("fails to allocate sipHdrNameValueListDecoded_t* pNV.");
@@ -158,7 +158,7 @@ osStatus_e sipParserHdr_multiNameValueList(osMBuf_t* pSipMsg, size_t hdrEndPos, 
         if(status != OS_STATUS_OK)
         {
             logError("sipParserHdr_nameValueList parsing error.");
-            osMem_deref(pNV);
+            osfree(pNV);
             goto EXIT;
         }
 		pNV->hdrPos.totalLen = pSipMsg->pos - pNV->hdrPos.startPos;
@@ -173,7 +173,7 @@ osStatus_e sipParserHdr_multiNameValueList(osMBuf_t* pSipMsg, size_t hdrEndPos, 
             if(pLE == NULL)
             {
                 logError("osList_append failure.");
-                osMem_deref(pNV);
+                osfree(pNV);
                 status = OS_ERROR_MEMORY_ALLOC_FAILURE;
                 goto EXIT;
             }
@@ -183,7 +183,7 @@ osStatus_e sipParserHdr_multiNameValueList(osMBuf_t* pSipMsg, size_t hdrEndPos, 
 EXIT:
 	if(status != OS_STATUS_OK && status!= OS_ERROR_NULL_POINTER)
     {
-		osMem_deref(pMultiNVList->pNV);
+		osfree(pMultiNVList->pNV);
 		osList_delete(&pMultiNVList->nvList);
 	}
 		
@@ -291,7 +291,7 @@ osStatus_e sipParserHdr_valueParam(osMBuf_t* pSipMsg, size_t hdrEndPos, bool is4
 	} 
 
 	pVP->value = pVP->nvParamList.pNVP->name;
-	osMem_deref(pVP->nvParamList.pNVP);
+	osfree(pVP->nvParamList.pNVP);
 	--pVP->nvParamList.nvpNum;
 
     pVP->nvParamList.pNVP = sipParamNV_takeTopNVfromList(&pVP->nvParamList.nvpList, &pVP->nvParamList.nvpNum);
@@ -318,7 +318,7 @@ osStatus_e sipParserHdr_multiValueParam(osMBuf_t* pSipMsg, size_t hdrEndPos, sip
 
     while(pSipMsg->pos < hdrEndPos)
     {
-		sipHdrValueParamDecoded_t* pVP = osMem_zalloc(sizeof(sipHdrValueParamDecoded_t), sipHdrValueParamDecoded_cleanup);
+		sipHdrValueParamDecoded_t* pVP = oszalloc(sizeof(sipHdrValueParamDecoded_t), sipHdrValueParamDecoded_cleanup);
         if(!pVP)
         {
             logError("fails to allocate sipHdrValueParamDecoded_t* pVP.");
@@ -331,7 +331,7 @@ osStatus_e sipParserHdr_multiValueParam(osMBuf_t* pSipMsg, size_t hdrEndPos, sip
         if(status != OS_STATUS_OK)
         {
             logError("sipParserHdr_valueParam parsing error.");
-            osMem_deref(pVP);
+            osfree(pVP);
             goto EXIT;
         }
         pVP->hdrPos.totalLen = pSipMsg->pos - pVP->hdrPos.startPos;
@@ -346,7 +346,7 @@ osStatus_e sipParserHdr_multiValueParam(osMBuf_t* pSipMsg, size_t hdrEndPos, sip
             if(pLE == NULL)
             {
                 logError("osList_append failure.");
-                osMem_deref(pVP);
+                osfree(pVP);
                 status = OS_ERROR_MEMORY_ALLOC_FAILURE;
                 goto EXIT;
             }
@@ -356,7 +356,7 @@ osStatus_e sipParserHdr_multiValueParam(osMBuf_t* pSipMsg, size_t hdrEndPos, sip
 EXIT:
     if(status != OS_STATUS_OK && status!= OS_ERROR_NULL_POINTER)
     {
-        osMem_deref(pMultiVP->pVP);
+        osfree(pMultiVP->pVP);
         osList_delete(&pMultiVP->vpList);
     }
 
@@ -393,7 +393,7 @@ osStatus_e sipParserHdr_slashValueParam(osMBuf_t* pSipMsg, size_t hdrEndPos, boo
     osPL_split(&pSVP->paramList.pNVP->name, '/', &pSVP->mType, &pSVP->mSubType);
 	osPL_trimLWS(&pSVP->mType, true, true);
 	osPL_trimLWS(&pSVP->mSubType, true, true); 
-    osMem_deref(pSVP->paramList.pNVP);
+    osfree(pSVP->paramList.pNVP);
     --pSVP->paramList.nvpNum;
 
     pSVP->paramList.pNVP = sipParamNV_takeTopNVfromList(&pSVP->paramList.nvpList, &pSVP->paramList.nvpNum);
@@ -420,7 +420,7 @@ osStatus_e sipParserHdr_multiSlashValueParam(osMBuf_t* pSipMsg, size_t hdrEndPos
 
     while(pSipMsg->pos < hdrEndPos)
     {
-        sipHdrSlashValueParamDecoded_t* pSVP = osMem_zalloc(sizeof(sipHdrSlashValueParamDecoded_t), sipHdrSlashValueParamDecoded_cleanup);
+        sipHdrSlashValueParamDecoded_t* pSVP = oszalloc(sizeof(sipHdrSlashValueParamDecoded_t), sipHdrSlashValueParamDecoded_cleanup);
         if(!pSVP)
         {
             logError("fails to allocate sipHdrSlashValueParamDecoded_t* pSVP.");
@@ -433,7 +433,7 @@ osStatus_e sipParserHdr_multiSlashValueParam(osMBuf_t* pSipMsg, size_t hdrEndPos
         if(status != OS_STATUS_OK)
         {
             logError("sipParserHdr_slashValueParam parsing error.");
-            osMem_deref(pSVP);
+            osfree(pSVP);
             goto EXIT;
         }
         pSVP->hdrPos.totalLen = pSipMsg->pos - pSVP->hdrPos.startPos;
@@ -448,7 +448,7 @@ osStatus_e sipParserHdr_multiSlashValueParam(osMBuf_t* pSipMsg, size_t hdrEndPos
             if(pLE == NULL)
             {
                 logError("osList_append for pMultiSVP->svpList fails.");
-                osMem_deref(pSVP);
+                osfree(pSVP);
                 status = OS_ERROR_MEMORY_ALLOC_FAILURE;
                 goto EXIT;
             }
@@ -458,7 +458,7 @@ osStatus_e sipParserHdr_multiSlashValueParam(osMBuf_t* pSipMsg, size_t hdrEndPos
 EXIT:
     if(status != OS_STATUS_OK && status!= OS_ERROR_NULL_POINTER)
     {
-        osMem_deref(pMultiSVP->pSVP);
+        osfree(pMultiSVP->pSVP);
         osList_delete(&pMultiSVP->svpList);
     }
 

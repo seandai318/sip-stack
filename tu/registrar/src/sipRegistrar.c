@@ -37,7 +37,7 @@ osStatus_e masReg_init(uint32_t bucketSize)
     masRegHash = osHash_create(bucketSize);
     if(!masRegHash)
     {
-        logError("fails to create masRegHash.");
+        logError("fails to create masRegHash, bucketSize=%u.", bucketSize);
         status = OS_ERROR_MEMORY_ALLOC_FAILURE;
         goto EXIT;
     }
@@ -78,7 +78,7 @@ static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 {
 	DEBUG_BEGIN
 
-    sipHdrDecoded_t* pContactHdr=osMem_zalloc(sizeof(sipHdrDecoded_t), sipHdrDecoded_cleanup);
+    sipHdrDecoded_t* pContactHdr=oszalloc(sizeof(sipHdrDecoded_t), sipHdrDecoded_cleanup);
 //	sipRawHdrListSA_t contactRawHdrSA={};
     sipHdrDecoded_t viaHdr={};
 	
@@ -160,7 +160,7 @@ static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
         }
 
         regExpire = *(uint32_t*)expiryHdr.decodedHdr;
-        osMem_deref(expiryHdr.decodedHdr);
+        osfree(expiryHdr.decodedHdr);
 		isExpiresFound = true;
 	}
 	else
@@ -206,7 +206,7 @@ static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 			goto EXIT;
 		}
 
-    	osHashData_t* pHashData = osMem_zalloc(sizeof(osHashData_t), masHashData_cleanup);
+    	osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), NULL);
 	    if(!pHashData)
         {
             logError("fails to allocate pHashData.");
@@ -215,10 +215,10 @@ static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
            	goto EXIT;
        	}
 
-		pRegData = osMem_zalloc(sizeof(tuRegistrar_t), masRegistrar_cleanup);
+		pRegData = oszalloc(sizeof(tuRegistrar_t), masRegistrar_cleanup);
 		osDPL_dup(&pRegData->user, &sipUri);
 //		pRegData->regState = MAS_REGSTATE_REGISTERED;
-//		pRegData->pContact = osMem_ref(pContactHdr);
+//		pRegData->pContact = osmemref(pContactHdr);
 //		sipHdrDecoded_dup(&pRegData->pContact-> &contactHdr);
 
 		pHashData->hashKeyType = OSHASHKEY_INT;
@@ -307,7 +307,7 @@ logError("to-remove, masReg, pRegData=%p", pRegData);
         	status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);
 			
 			//masRegistrar does not need to keep pSipResp, if other layers need it, it is expected they will ref it
-			osMem_deref(pSipResp);
+			osfree(pSipResp);
 
 			//handle corner error case when the sending of rsp wa failed, and for normal case, start timer, set reg state, etc.
 			if(rspCode == SIP_RESPONSE_200 && pRegData)
@@ -334,15 +334,15 @@ logError("to-remove, masReg, pRegData=%p", pRegData);
 					{
 				    	if(pRegData->regState == MAS_REGSTATE_REGISTERED)
     					{
-    						osMem_deref(pRegData->pContact);
-    						pRegData->pContact = osMem_ref(pContactHdr);
+    						osfree(pRegData->pContact);
+    						pRegData->pContact = osmemref(pContactHdr);
 
         					osStopTimer(pRegData->expiryTimerId);
         					pRegData->expiryTimerId = masRegStartTimer(regExpire*1000, pRegData);
     					}
     					else
     					{
-					        pRegData->pContact = osMem_ref(pContactHdr);
+					        pRegData->pContact = osmemref(pContactHdr);
 
         					pRegData->regState = MAS_REGSTATE_REGISTERED;
 							if(pRegData->purgeTimerId)
@@ -369,10 +369,12 @@ logError("to-remove, masReg, pRegData=%p", pRegData);
 		}
 	}
 
-//	osMem_deref(pContactHdr->decodedHdr);
+//	osfree(pContactHdr->decodedHdr);
 logError("to-remove, viaHdr.decodedHdr=%p, pContactHdr=%p", viaHdr.decodedHdr, pContactHdr);
-	osMem_deref(viaHdr.decodedHdr);	
-	osMem_deref(pContactHdr);
+	osfree(viaHdr.decodedHdr);	
+	osfree(pContactHdr);
+
+    osfree(pReqDecodedRaw);
 
 //logError("to-remove, masreg1, pRegData=%p, peer-ipaddr=%p, peer=%r:%d", pRegData, ((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.host.p, &((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.host, ((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.portValue);
 
@@ -427,7 +429,7 @@ static void masReg_onTimeout(uint64_t timerId, void* data)
 	else if(timerId == pRegData->purgeTimerId)
 	{
 		pRegData->purgeTimerId = 0;
-		osMem_deref(pRegData);
+		osfree(pRegData);
 	}
 	else if(timerId == pRegData->smsQueryTimerId)
 	{
@@ -495,14 +497,14 @@ void* masReg_addAppInfo(osPointerLen_t* pSipUri, void* pMasInfo)
     osListElement_t* pHashLE = osHash_lookupByKey(masRegHash, &key, OSHASHKEY_INT);
     if(!pHashLE)
     {
-        osHashData_t* pHashData = osMem_zalloc(sizeof(osHashData_t), masHashData_cleanup);
+        osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), NULL);
         if(!pHashData)
         {
             logError("fails to allocate pHashData.");
             goto EXIT;
         }
 
-        tuRegistrar_t* pRegData = osMem_zalloc(sizeof(tuRegistrar_t), masRegistrar_cleanup);
+        tuRegistrar_t* pRegData = oszalloc(sizeof(tuRegistrar_t), masRegistrar_cleanup);
         osDPL_dup(&pRegData->user, pSipUri);
         pRegData->regState = MAS_REGSTATE_NOT_REGISTERED;
         logError("to-remove, regState, pRegData=%p, state=%d, MAS_REGSTATE_REGISTERED=%d", pRegData, pRegData->regState, MAS_REGSTATE_REGISTERED);
@@ -673,10 +675,10 @@ static void masRegistrar_cleanup(void* pData)
 		pRegData->purgeTimerId = 0;
 	}
 
-	//to-do, update so that just call one function, osMem_deref(pRegData->pContact) will clean the remaining
-//	osMem_deref(pRegData->pContact->decodedHdr);
-//	osMem_deref(pRegData->pContact->rawHdr.buf);
-    osMem_deref(pRegData->pContact);
+	//to-do, update so that just call one function, osfree(pRegData->pContact) will clean the remaining
+//	osfree(pRegData->pContact->decodedHdr);
+//	osfree(pRegData->pContact->rawHdr.buf);
+    osfree(pRegData->pContact);
 
 	osDPL_dealloc(&pRegData->user);
 	osList_delete(&pRegData->appInfoList);
@@ -687,6 +689,8 @@ static void masRegistrar_cleanup(void* pData)
 		logInfo("delete hash element, key=%ud", ((osHashData_t*)pRegData->pRegHashLE->data)->hashKeyInt);
 		osHash_deleteNode(pRegData->pRegHashLE);
 	}
+
+	osfree(pRegData->pRegHashLE->data);
 	osfree(pRegData->pRegHashLE);
 	pRegData->pRegHashLE = NULL;
 
@@ -720,7 +724,7 @@ static void masRegData_forceDelete(tuRegistrar_t* pRegData)
         pRegData->purgeTimerId = 0;
     }
 
-    osMem_deref(pRegData);
+    osfree(pRegData);
 }
 
 
@@ -732,5 +736,5 @@ static void masHashData_cleanup(void* data)
     }
 
 	osHashData_t* pHashData = data;
-	osMem_deref(pHashData->pData);
+	osfree(pHashData->pData);
 }

@@ -22,7 +22,7 @@ osStatus_e sipHdr_pani(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrPani_t* pPani)
 
     while(pSipMsg->pos < hdrEndPos)
     {
-        osList_t* pPaniElem = osMem_alloc(sizeof(osList_t), NULL);
+        osList_t* pPaniElem = osmalloc(sizeof(osList_t), NULL);
         if(!pPaniElem)
         {
             logError("could not allocate memory for pPaniElem.");
@@ -61,7 +61,7 @@ osStatus_e sipHdr_pani(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrPani_t* pPani)
         if(pLE == NULL)
         {
             logError("osList_append failure for accept contact.");
-            osMem_deref(pPaniElem);
+            osfree(pPaniElem);
             status = OS_ERROR_MEMORY_ALLOC_FAILURE;
             goto EXIT;
         }
@@ -99,7 +99,7 @@ void sipHdrPani_cleanup(void* data)
 
 void* sipHdrPani_alloc()
 {
-	sipHdrPani_t* pPani = osMem_alloc(sizeof(sipHdrPani_t), sipHdrPani_cleanup);
+	sipHdrPani_t* pPani = osmalloc(sizeof(sipHdrPani_t), sipHdrPani_cleanup);
 	if(!pPani)
 	{
 		return NULL;

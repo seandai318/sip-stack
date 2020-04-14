@@ -38,7 +38,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         //sipHdrMultiSlashValueParam_t
         case SIP_HDR_ACCEPT:
         {
-            sipHdrMultiSlashValueParam_t* pRealHdr = osMem_zalloc(sizeof(sipHdrMultiSlashValueParam_t), sipHdrMultiSlashValueParam_cleanup);
+            sipHdrMultiSlashValueParam_t* pRealHdr = oszalloc(sizeof(sipHdrMultiSlashValueParam_t), sipHdrMultiSlashValueParam_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -46,7 +46,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_multiSlashValueParam(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -76,7 +76,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 				isNameaddrOnly = true;
 			}
 
-			sipHdrMultiGenericNameParam_t* pRealHdr = osMem_zalloc(sizeof(sipHdrMultiGenericNameParam_t), sipHdrMultiGenericNameParam_cleanup);
+			sipHdrMultiGenericNameParam_t* pRealHdr = oszalloc(sizeof(sipHdrMultiGenericNameParam_t), sipHdrMultiGenericNameParam_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -84,7 +84,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_multiNameParam(pSipRawHdr, pSipRawHdr->end, isNameaddrOnly, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -103,7 +103,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         case SIP_HDR_SECURITY_SERVER:
         case SIP_HDR_SECURITY_VERIFY:
         {
-            sipHdrMultiValueParam_t* pRealHdr = osMem_zalloc(sizeof(sipHdrMultiValueParam_t), sipHdrMultiValueParam_cleanup);
+            sipHdrMultiValueParam_t* pRealHdr = oszalloc(sizeof(sipHdrMultiValueParam_t), sipHdrMultiValueParam_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -111,7 +111,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_multiValueParam(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -136,7 +136,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         case SIP_HDR_UNSUPPORTED:
         {
 			bool isCaps = false;
-            sipHdrNameList_t* pRealHdr = osMem_zalloc(sizeof(sipHdrNameList_t), sipHdrNameList_cleanup);
+            sipHdrNameList_t* pRealHdr = oszalloc(sizeof(sipHdrNameList_t), sipHdrNameList_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -149,7 +149,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_nameList(pSipRawHdr, pSipRawHdr->end, isCaps, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -171,7 +171,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         case SIP_HDR_SUBSCRIPTION_STATE:
         case SIP_HDR_TARGET_DIALOG:
         {
-            sipHdrValueParam_t* pRealHdr = osMem_zalloc(sizeof(sipHdrValueParam_t), sipHdrValueParam_cleanup);
+            sipHdrValueParam_t* pRealHdr = oszalloc(sizeof(sipHdrValueParam_t), sipHdrValueParam_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -179,7 +179,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_valueParam(pSipRawHdr, pSipRawHdr->end, false, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -192,7 +192,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         case SIP_HDR_P_CHARGING_VECTOR:
         case SIP_HDR_PRIVACY:
         {
-            sipHdrNameValueList_t* pRealHdr = osMem_zalloc(sizeof(sipHdrNameValueList_t), sipHdrNameValueList_cleanup);
+            sipHdrNameValueList_t* pRealHdr = oszalloc(sizeof(sipHdrNameValueList_t), sipHdrNameValueList_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -200,7 +200,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_nameValueList(pSipRawHdr, pSipRawHdr->end, false, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -214,7 +214,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         case SIP_HDR_PROXY_AUTHORIZATION:
         case SIP_HDR_WWW_AUTHENTICATE:
         {
-            sipHdrMethodParam_t* pRealHdr = osMem_zalloc(sizeof(sipHdrMethodParam_t), sipHdrMethodParam_cleanup);
+            sipHdrMethodParam_t* pRealHdr = oszalloc(sizeof(sipHdrMethodParam_t), sipHdrMethodParam_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -222,7 +222,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_MethodParam(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -244,7 +244,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         case SIP_HDR_TIMESTAMP:
         case SIP_HDR_USER_AGENT:
         {
-            sipHdrStr_t* pRealHdr = osMem_zalloc(sizeof(sipHdrStr_t), NULL);
+            sipHdrStr_t* pRealHdr = oszalloc(sizeof(sipHdrStr_t), NULL);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -252,7 +252,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_str(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -262,7 +262,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
         case SIP_HDR_CONTACT:
         {
-            sipHdrMultiContact_t* pRealHdr = osMem_zalloc(sizeof(sipHdrMultiContact_t), sipHdrMultiContact_cleanup);
+            sipHdrMultiContact_t* pRealHdr = oszalloc(sizeof(sipHdrMultiContact_t), sipHdrMultiContact_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -270,7 +270,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_contact(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -288,7 +288,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         case SIP_HDR_MIN_SE:
         case SIP_HDR_RSEQ:
         {
-            sipHdrInt_t* pRealHdr = osMem_zalloc(sizeof(sipHdrInt_t), NULL);
+            sipHdrInt_t* pRealHdr = oszalloc(sizeof(sipHdrInt_t), NULL);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -296,7 +296,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_lenTime(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -307,7 +307,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         //sipHdrSlashValueParam_t
         case SIP_HDR_CONTENT_TYPE:
         {
-            sipHdrSlashValueParam_t* pRealHdr = osMem_zalloc(sizeof(sipHdrSlashValueParam_t), sipHdrSlashValueParam_cleanup);
+            sipHdrSlashValueParam_t* pRealHdr = oszalloc(sizeof(sipHdrSlashValueParam_t), sipHdrSlashValueParam_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -315,7 +315,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_slashValueParam(pSipRawHdr, pSipRawHdr->end, false, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -325,7 +325,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
         case SIP_HDR_CSEQ:
         {
-			sipHdrCSeq_t* pRealHdr = osMem_zalloc(sizeof(sipHdrCSeq_t), NULL);
+			sipHdrCSeq_t* pRealHdr = oszalloc(sizeof(sipHdrCSeq_t), NULL);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -333,7 +333,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_cSeq(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -353,7 +353,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         case SIP_HDR_REPLY_TO:
         case SIP_HDR_TO:
         {
-            sipHdrGenericNameParam_t* pRealHdr = osMem_zalloc(sizeof(sipHdrGenericNameParam_t), sipHdrGenericNameParam_cleanup);
+            sipHdrGenericNameParam_t* pRealHdr = oszalloc(sizeof(sipHdrGenericNameParam_t), sipHdrGenericNameParam_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -361,7 +361,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_genericNameParam(pSipRawHdr, pSipRawHdr->end, false, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -384,7 +384,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         //sipHdrMultiNameValueList_t
         case SIP_HDR_P_CHARGING_FUNCTION_ADDRESSES:
         {
-            sipHdrMultiNameValueList_t* pRealHdr = osMem_zalloc(sizeof(sipHdrMultiNameValueList_t), sipHdrMultiNameValueList_cleanup);
+            sipHdrMultiNameValueList_t* pRealHdr = oszalloc(sizeof(sipHdrMultiNameValueList_t), sipHdrMultiNameValueList_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -392,7 +392,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_multiNameValueList(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -404,7 +404,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         case SIP_HDR_RETRY_AFTER:
         case SIP_HDR_SESSION_EXPIRES:
         {
-            sipHdrIntParam_t* pRealHdr = osMem_zalloc(sizeof(sipHdrIntParam_t), sipHdrIntParam_cleanup);
+            sipHdrIntParam_t* pRealHdr = oszalloc(sizeof(sipHdrIntParam_t), sipHdrIntParam_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -412,7 +412,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_intParam(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -423,7 +423,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
         //sipHdrMultiVia_t
         case SIP_HDR_VIA:
         {
-            sipHdrMultiVia_t* pRealHdr = osMem_zalloc(sizeof(sipHdrMultiVia_t), sipHdrMultiVia_cleanup);
+            sipHdrMultiVia_t* pRealHdr = oszalloc(sizeof(sipHdrMultiVia_t), sipHdrMultiVia_cleanup);
             if(!pRealHdr)
             {
                 goto EXIT;
@@ -431,7 +431,7 @@ void* sipHdrParseByName(osMBuf_t* pSipRawHdr, sipHdrName_e hdrNameCode)
 
             if(sipParserHdr_via(pSipRawHdr, pSipRawHdr->end, pRealHdr) != OS_STATUS_OK)
             {
-                osMem_deref(pRealHdr);
+                osfree(pRealHdr);
                 goto EXIT;
             }
 
@@ -893,7 +893,7 @@ void sipHdrNameValueList_cleanup(void* data)
         return;
     }
 
-	osMem_deref(((sipHdrNameValueList_t*)data)->pNVP);
+	osfree(((sipHdrNameValueList_t*)data)->pNVP);
 	osList_delete(&((sipHdrNameValueList_t*)data)->nvpList);
 }
 
@@ -916,7 +916,7 @@ void sipHdrMultiNameValueList_cleanup(void* data)
         return;
     }
 
-	osMem_deref(((sipHdrMultiNameValueList_t*)data)->pNV);
+	osfree(((sipHdrMultiNameValueList_t*)data)->pNV);
 	osList_delete(&((sipHdrMultiNameValueList_t*)data)->nvList);
 }
 
@@ -983,7 +983,7 @@ void sipHdrMultiSlashValueParam_cleanup(void* data)
         return;
     }
 
-	osMem_deref(&((sipHdrMultiSlashValueParam_t*)data)->pSVP);
+	osfree(&((sipHdrMultiSlashValueParam_t*)data)->pSVP);
 	osList_delete(&((sipHdrMultiSlashValueParam_t*)data)->svpList);
 }
 
@@ -1022,7 +1022,7 @@ void sipHdrMultiGenericNameParam_cleanup(void* data)
     }
 
     sipHdrMultiGenericNameParam_t* pMGNP = data;
-    osMem_deref(pMGNP->pGNP);
+    osfree(pMGNP->pGNP);
 
 	osList_delete(&pMGNP->gnpList);
 }
@@ -1035,7 +1035,7 @@ void sipHdrMultiValueParam_cleanup(void* data)
         return;
     }
 
-	osMem_deref(((sipHdrMultiValueParam_t*)data)->pVP);
+	osfree(((sipHdrMultiValueParam_t*)data)->pVP);
 	osList_delete(&((sipHdrMultiValueParam_t*)data)->vpList);
 }
 
@@ -1060,7 +1060,7 @@ void sipHdrVia_cleanup(void* data)
 
 	sipHdrVia_t* pHdr = data;
 
-	osMem_deref(pHdr->pBranch);
+	osfree(pHdr->pBranch);
 logError("to-remove, VIA-MEMORY, 5, pHdr->viaParamList.head=%p", pHdr->viaParamList.head);
 	osList_delete(&pHdr->viaParamList);
 logError("to-remove, VIA-MEMORY, 6");
@@ -1086,6 +1086,6 @@ void sipHdrMultiVia_cleanup(void* data)
     }
 
 	sipHdrMultiVia_t* pHdr = data;
-	osMem_deref(pHdr->pVia);
+	osfree(pHdr->pVia);
 	osList_delete(&pHdr->viaList);
 }

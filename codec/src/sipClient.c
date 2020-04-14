@@ -135,7 +135,7 @@ sipMsgRequest_t* sipClientBuildReq(sipRequest_e reqType, char* reqUri, char* fro
 
 	//callid
 	sipRequest_e hdrCode = SIP_HDR_CALL_ID;
-    char* callIdValue = osMem_alloc(SIP_MAX_CALL_ID_LEN, NULL);
+    char* callIdValue = osmalloc(SIP_MAX_CALL_ID_LEN, NULL);
     if(callIdValue == NULL)
     {
        	logError("allocate callId memory fails.");
@@ -155,7 +155,7 @@ sipMsgRequest_t* sipClientBuildReq(sipRequest_e reqType, char* reqUri, char* fro
     }
     else
     {
-	    char* callIdValue = osMem_alloc(SIP_MAX_CALL_ID_LEN, NULL);
+	    char* callIdValue = osmalloc(SIP_MAX_CALL_ID_LEN, NULL);
     	if(callIdValue == NULL)
     	{
         	logError("allocate callId memory fails.");
@@ -173,7 +173,7 @@ sipMsgRequest_t* sipClientBuildReq(sipRequest_e reqType, char* reqUri, char* fro
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osMem_deref(pReq);
+		osfree(pReq);
 		pReq = NULL;
 	}
 

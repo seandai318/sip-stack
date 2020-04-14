@@ -88,7 +88,7 @@ static osStatus_e sipParsing_setCTypeParsingInfo(sipParsing_param_e paramName, s
 
 void* sipHdrContentType_alloc()
 {
-	sipHdrContentType_t* pCType = osMem_alloc(sizeof(sipHdrContentType_t), sipHdrContentType_cleanup);
+	sipHdrContentType_t* pCType = osmalloc(sizeof(sipHdrContentType_t), sipHdrContentType_cleanup);
 	if(!pCType)
 	{
 		return NULL;

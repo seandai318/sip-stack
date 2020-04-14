@@ -70,6 +70,7 @@ void* sipTransportClientStart(void* pData)
 
 	sipTcmInit(sipTpNotifyTcpConnUser);
 
+logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BUCKET_SIZE);
     sipTransInit(SIP_CONFIG_TRANSACTION_HASH_BUCKET_SIZE);
 
 	//app startup function
