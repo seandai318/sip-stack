@@ -1,0 +1,17 @@
+#ifndef _TRANSPORT_INTF_H
+#define _TRANSPORT_INTF_H
+
+
+
+typedef enum {
+	TRANSPORT_STATUS_UDP,
+	TRANSPORT_STATUS_TCP_OK,
+	TRANSPORT_STATUS_TCP_CONN,	//TCP CONN establish is ongoing
+	TRANSPORT_STATUS_TCP_FAIL,
+	TRANSPORT_STATUS_FAIL,
+} transportStatus_e;
+
+
+
+
+#endif
