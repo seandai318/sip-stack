@@ -30,7 +30,7 @@ libsms.a: $(obj)
 
 .PHONY: clean
 clean:
-	rm -f $(obj) sgsn
+	rm -f $(obj) *.o
 	rm -f $(dep)
 
 .PHONY: cleandep

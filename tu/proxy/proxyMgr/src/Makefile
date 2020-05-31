@@ -16,7 +16,7 @@ endif
 
 LDFLAGS = -lpthread
 
-libproxy.a: $(obj)
+libproxymgr.a: $(obj)
 	$(AR) -cr $@ $^
 
 -include $(dep)   # include all dep files in the makefile
@@ -30,7 +30,7 @@ libproxy.a: $(obj)
 
 .PHONY: clean
 clean:
-	rm -f $(obj) sgsn
+	rm -f $(obj) *.a
 	rm -f $(dep)
 
 .PHONY: cleandep

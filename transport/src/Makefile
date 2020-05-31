@@ -1,5 +1,5 @@
 PROJECT_DIR = /home/ama/project
-IDIR = $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/tu/tuMgr/include  $(PROJECT_DIR)/sip-stack/transport/include
+IDIR = $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/tu/tuMgr/include  $(PROJECT_DIR)/sip-stack/transport/include $(PROJECT_DIR)/diameter/common/include
 #INC=$(foreach d, $(IDIR), -I$d)
 INC=$(IDIR:%=-I%)
 AR=ar
@@ -30,7 +30,7 @@ libtransport.a: $(obj)
 
 .PHONY: clean
 clean:
-	rm -f $(obj) sgsn
+	rm -f $(obj) *.a
 	rm -f $(dep)
 
 .PHONY: cleandep

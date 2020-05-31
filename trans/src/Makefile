@@ -30,7 +30,7 @@ libtrans.a: $(obj)
 
 .PHONY: clean
 clean:
-	rm -f $(obj) sgsn
+	rm -f $(obj) *.a
 	rm -f $(dep)
 
 .PHONY: cleandep
