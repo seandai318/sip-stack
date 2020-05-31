@@ -1,4 +1,4 @@
-#define _GNU_SOURCE
+#define _GNU_SOURCE		//for pipe2()
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/epoll.h>
@@ -24,9 +24,10 @@
 #include "sipUriparam.h"
 #include "sipTransMgr.h"
 #include "sipTransportIntf.h"
-#include "sipTransportClient.h"
-#include "sipTcm.h"
-#include "sipTransportLib.h"
+#include "sipAppMain.h"
+#include "tcm.h"
+#include "transportLib.h"
+#include "diaIntf.h"
 
 
 
@@ -34,13 +35,14 @@ static __thread sipTransportClientSetting_t tpSetting;
 static __thread int udpFd=-1, tpEpFd=-1;
 
 static void sipTpClientOnIpcMsg(osIPCMsg_t* pIpcMsg);
-static osStatus_e sipTpClientSendTcp(void* pTrId, sipTransportInfo_t* pTpInfo, osMBuf_t* pSipBuf, sipTransportStatus_e* pTransport);
-static osStatus_e sipTpCreateTcp(void* appId, sipTransportIpPort_t* peer, sipTransportIpPort_t* local, sipTpTcm_t* pTcm);
-static void sipTpNotifyTcpConnUser(osListPlus_t* pList, sipTransMsgType_e msgType, int tcpfd);
+static osStatus_e sipTpClientSendTcp(void* pTrId, transportInfo_t* pTpInfo, osMBuf_t* pSipBuf, sipTransportStatus_e* pTransport);
+//static osStatus_e sipTpCreateTcp(void* appId, transportIpPort_t* peer, transportIpPort_t* local, tpTcm_t* pTcm);
+//static void sipTpNotifyTcpConnUser(transportAppType_e appType, osListPlus_t* pList, transportStatus_e msgType, int tcpfd);
 static void sipTpClientTimeout(uint64_t timerId, void* ptr);
+static osStatus_e tpClientProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len);
 
 
-osStatus_e sipTransportClientInit(int pipefd[2])
+osStatus_e sipAppMainInit(int pipefd[2])
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -57,7 +59,7 @@ EXIT:
 }
 
 
-void* sipTransportClientStart(void* pData)
+void* sipAppMainStart(void* pData)
 {
 	struct sockaddr_in localAddr;
 	struct epoll_event event, events[SYS_MAX_EPOLL_WAIT_EVENTS];
@@ -68,7 +70,10 @@ void* sipTransportClientStart(void* pData)
 
 	osTimerInit(tpSetting.timerfd, tpSetting.ownIpcFd[1], SIP_CONFIG_TIMEOUT_MULTIPLE, sipTpClientTimeout);
 
-	sipTcmInit(sipTpNotifyTcpConnUser);
+	notifyTcpConnUser_h notifier[TRANSPORT_APP_TYPE_COUNT] = {};
+	notifier[TRANSPORT_APP_TYPE_SIP] = sipTpNotifyTcpConnUser;
+	notifier[TRANSPORT_APP_TYPE_DIAMETER] = diaTpNotifyTcpConnUser;
+	tcmInit(notifier, TRANSPORT_APP_TYPE_COUNT);
 
 logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BUCKET_SIZE);
     sipTransInit(SIP_CONFIG_TRANSACTION_HASH_BUCKET_SIZE);
@@ -97,9 +102,9 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
     memset(&localAddr, 0, sizeof(localAddr));
 //    memset(&peerAddr, 0, sizeof(peerAddr));
 
-	if(sipTpConvertPLton(&tpSetting.local, false, &localAddr) != OS_STATUS_OK)
+	if(tpConvertPLton(&tpSetting.local, false, &localAddr) != OS_STATUS_OK)
 	{
-		logError("fails to sipTpConvertPLton for udp, IP=%r, port=%d.", &tpSetting.local.ip, tpSetting.local.port);
+		logError("fails to tpConvertPLton for udp, IP=%r, port=%d.", &tpSetting.local.ip, tpSetting.local.port);
     // Filling server information
 //    localAddr.sin_family    = AF_INET; // IPv4
 //    localAddr.sin_addr.s_addr = tpSetting.local.ip;
@@ -113,14 +118,17 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 		goto EXIT;
     } 
 
-    // Bind the socket with the server address 
+    // Bind the socket with the client address 
     if(bind(udpFd, (const struct sockaddr *)&localAddr, sizeof(localAddr)) < 0 ) 
     { 
         logError("udpSocket bind fails, local IP=%r, udpSocketfd=%d, errno=%d.", &tpSetting.local.ip, udpFd, errno); 
 		goto EXIT;
     } 
 
-    logInfo("UDP FD=%d is created, local ip=%s, port=%d", udpFd, inet_ntoa(localAddr.sin_addr), ntohs(localAddr.sin_port));
+    logInfo("UDP FD=%d is created, local=%A", udpFd, &localAddr);
+
+    //to-do: may need to move this function to other module, like masMain(). that requires the synchronization so that when dia starts to do connection, the epoll in tpMain is ready.
+	dia_init();
 
 	//in transport layer, do not do UDP listening, neither we do TCP listening for the new connection, they are the responsible of com.  it only does ipc and tcp client connection listening.  whoever creates the tcp connection will add the connection fd to the tpEpFd. 
 	ssize_t len;
@@ -158,7 +166,7 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 					if(events[i].events & EPOLLERR)
 					{
 						close(events[i].data.fd);	
-                        sipTpDeleteTcm(events[i].data.fd);
+                        tpDeleteTcm(events[i].data.fd);
 					}
 					else
 					{
@@ -168,12 +176,12 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
                     	event.data.fd = events[i].data.fd;
                     	epoll_ctl(tpEpFd, EPOLL_CTL_MOD, events[i].data.fd, &event);
 
-						sipTpTcmUpdateConn(events[i].data.fd, true);
+						tpTcmUpdateConn(events[i].data.fd, true);
 					}
 					continue;
 				}
 
-				sipTpTcm_t* pTcm = sipTpGetConnectedTcm(events[i].data.fd);
+				tpTcm_t* pTcm = tpGetConnectedTcm(events[i].data.fd);
 				if(!pTcm)
 				{
 					logError("received a TCP message from tcpfd (%d) that does not have TCM.", events[i].data.fd);
@@ -184,14 +192,21 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 				//pSipMsgBuf->end = the end of last received bytes
             	while (1) 
 				{
-                	buffer = &pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->buf[pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->end];
-                	bufLen = pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->size - pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->end;
-					if(bufLen == 0)
-					{
-                        logError("something is wrong on message received from tcpFd(%d), the message size exceeds the allowed SIP MESSAGE SIZE.", events[i].data.fd);
-						sipTpTcmBufInit(&pTcm->tcpKeepAlive.sipBuf, false);
-						buffer = pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->buf;
-						bufLen = pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->size;
+					switch(pTcm->appType)
+                    {
+                        case TRANSPORT_APP_TYPE_SIP:
+                			buffer = &pTcm->msgConnInfo.pMsgBuf->buf[pTcm->msgConnInfo.pMsgBuf->end];
+                			bufLen = pTcm->msgConnInfo.pMsgBuf->size - pTcm->msgConnInfo.pMsgBuf->end;
+							if(bufLen == 0)
+							{
+                        		logError("something is wrong on message received from tcpFd(%d), the message size exceeds the allowed SIP MESSAGE SIZE.", events[i].data.fd);
+								tpTcmBufInit(pTcm, false);
+								buffer = pTcm->msgConnInfo.pMsgBuf->buf;
+								bufLen = pTcm->msgConnInfo.pMsgBuf->size;
+							}
+							break;
+						default:
+							goto EXIT;
 					}
 
                 	len = recv(events[i].data.fd, (char *)buffer, bufLen, MSG_DONTWAIT);
@@ -209,22 +224,24 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 							//close the fd
 							mdebug(LM_TRANSPORT, "peer closed the TCP connection for tcpfd (%d).", events[i].data.fd);
 							close(events[i].data.fd);
-							sipTpDeleteTcm(events[i].data.fd);
+							tpDeleteTcm(events[i].data.fd);
 						}
 						break;
 					}	
 
+					tpClientProcessSipMsg(pTcm, events[i].data.fd, len);
+#if 0
 					//basic sanity check to remove leading \r\n.  here we also ignore other invalid chars, 3261 only says \r\n
-					if(pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->pos == 0 && (pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->buf[0] < 'A' || pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->buf[0] > 'Z'))
+					if(pTcm->msgConnInfo.pMsgBuf->pos == 0 && (pTcm->msgConnInfo.pMsgBuf->buf[0] < 'A' || pTcm->msgConnInfo.pMsgBuf->buf[0] > 'Z'))
 					{
-                        mdebug(LM_TRANSPORT, "received pkg proceeded with invalid chars, char[0]=0x%x, len=%d.", pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->buf[0],len); 
-						if(sipTpSafeGuideMsg(pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf, len))
+                        mdebug(LM_TRANSPORT, "received pkg proceeded with invalid chars, char[0]=0x%x, len=%d.", pTcm->msgConnInfo.pMsgBuf->buf[0],len); 
+						if(sipTpSafeGuideMsg(pTcm->msgConnInfo.pMsgBuf, len))
 						{
 							continue;
 						}
 					}
 					size_t nextStart = 0;
-					ssize_t remaining = sipTpAnalyseMsg(&pTcm->tcpKeepAlive.sipBuf, len, &nextStart);
+					ssize_t remaining = sipTpAnalyseMsg(&pTcm->msgConnInfo. len, &nextStart);
 					if(remaining < 0)
 					{
                         mdebug(LM_TRANSPORT, "remaining=%d, less than 0.", remaining);
@@ -232,9 +249,9 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 					}
 					else
 					{
-						osMBuf_t* pCurSipBuf = pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf;
-						bool isBadMsg = pTcm->tcpKeepAlive.sipBuf.state.isBadMsg;	
-						if(!sipTpTcmBufInit(&pTcm->tcpKeepAlive.sipBuf, isBadMsg ? false : true))
+						osMBuf_t* pCurSipBuf = pTcm->msgConnInfo.pMsgBuf;
+						bool isBadMsg = pTcm->msgConnInfo.state.isBadMsg;	
+						if(!tpTcmBufInit(&pTcm->msgConnInfo. isBadMsg ? false : true))
 						{
 							logError("fails to init a TCM pSipMsgBuf.");
 							goto EXIT;
@@ -242,10 +259,10 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 
 						if(remaining > 0)
 						{
-							memcpy(pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->buf, &pCurSipBuf->buf[nextStart], remaining);
+							memcpy(pTcm->msgConnInfo.pMsgBuf->buf, &pCurSipBuf->buf[nextStart], remaining);
 						}
-						pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->end = remaining;
-						pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf->pos = 0;
+						pTcm->msgConnInfo.pMsgBuf->end = remaining;
+						pTcm->msgConnInfo.pMsgBuf->pos = 0;
 
 						if(!isBadMsg)
 						{
@@ -253,7 +270,7 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
     						inet_ntop(AF_INET, &pTcm->peer.sin_addr, ip, INET_ADDRSTRLEN);
 							mlogInfo(LM_TRANSPORT, "received a sip Msg from fd(%d) %s:%d, the msg=\n%M", pTcm->sockfd, ip, ntohs(pTcm->peer.sin_port), pCurSipBuf);
 
-							pTcm->tcpKeepAlive.isUsed = true;
+							pTcm->sipTcpInfo.isUsed = true;
 
 							sipTransportMsgBuf_t sipTpMsg;
 							sipTpMsg.pSipBuf = pCurSipBuf;
@@ -267,6 +284,7 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
                             mdebug(LM_TRANSPORT, "received a bad msg, drop.");
                         }
 					}
+#endif
 				}
 			}
         }
@@ -284,7 +302,7 @@ EXIT:
         close(udpFd);
 	}
 
-	sipTpDeleteAllTcm();
+	tpDeleteAllTcm();
 
 	if(tpEpFd >= 0)
 	{
@@ -295,10 +313,10 @@ EXIT:
 }
 
 
-sipTransportStatus_e sipTpClient_send(void* pTrId, sipTransportInfo_t* pTpInfo, osMBuf_t* pSipBuf)
+sipTransportStatus_e sipTpClient_send(void* pTrId, transportInfo_t* pTpInfo, osMBuf_t* pSipBuf)
 {
 	osStatus_e status = OS_STATUS_OK;
-	sipTransportStatus_e tpStatus = SIP_TRANSPORT_STATUS_UDP;
+	sipTransportStatus_e tpStatus = TRANSPORT_STATUS_UDP;
 
 	if(!pTpInfo || !pSipBuf)
 	{
@@ -311,15 +329,15 @@ sipTransportStatus_e sipTpClient_send(void* pTrId, sipTransportInfo_t* pTpInfo, 
 	int sockfd;
 	if(pTpInfo->tpType == SIP_TRANSPORT_TYPE_TCP && pTpInfo->tcpFd != -1)
 	{
-		tpStatus = SIP_TRANSPORT_STATUS_TCP_OK;
+		tpStatus = TRANSPORT_STATUS_TCP_OK;
 
-        if(pTpInfo->viaProtocolPos != 0)
+        if(pTpInfo->protocolUpdatePos != 0)
         {
-            osMBuf_modifyStr(pSipBuf, "TCP", 3, pTpInfo->viaProtocolPos);
+            osMBuf_modifyStr(pSipBuf, "TCP", 3, pTpInfo->protocolUpdatePos);
         }
 
 		//use this fd
-        logInfo("send a SIP message via TCP FD=%d, dest ip=%r, port=%d, sip message=\n%M", pTpInfo->tcpFd, &pTpInfo->peer.ip, pTpInfo->peer.port, pSipBuf);
+        logInfo("send a SIP message via TCP FD=%d, dest=%A, sip message=\n%M", pTpInfo->tcpFd, &pTpInfo->peer, pSipBuf);
 		len = write(pTpInfo->tcpFd, pSipBuf->buf, pSipBuf->end);
 		if(len == -1 || len != pSipBuf->end)
 		{
@@ -353,21 +371,21 @@ sipTransportStatus_e sipTpClient_send(void* pTrId, sipTransportInfo_t* pTpInfo, 
 	if(pTpInfo->tpType == SIP_TRANSPORT_TYPE_UDP)
 	{
         tpStatus = SIP_TRANSPORT_TYPE_UDP;
-        if(pTpInfo->viaProtocolPos != 0)
+        if(pTpInfo->protocolUpdatePos != 0)
         {
-            osMBuf_modifyStr(pSipBuf, "UDP", 3, pTpInfo->viaProtocolPos);
+            osMBuf_modifyStr(pSipBuf, "UDP", 3, pTpInfo->protocolUpdatePos);
         }
-
+#if 0	//use network address
 	    struct sockaddr_in dest;
-		status = sipTpConvertPLton(&pTpInfo->peer, true, &dest);
+		status = tpConvertPLton(&pTpInfo->peer, true, &dest);
 		if(status != OS_STATUS_OK)
 		{
-			logError("fails to perform sipTpConvertPLton.");
+			logError("fails to perform tpConvertPLton.");
 			goto EXIT;
 		}
-
-		logInfo("send a SIP message via UDP FD=%d, dest ip=%r, port=%d, sip message=\n%M", udpFd, &pTpInfo->peer.ip, pTpInfo->peer.port, pSipBuf);
-        len = sendto(udpFd, pSipBuf->buf, pSipBuf->end, 0, (const struct sockaddr*) &dest, sizeof(dest));
+#endif
+		logInfo("send a SIP message via UDP FD=%d, dest=%A, sip message=\n%M", udpFd, &pTpInfo->peer, pSipBuf);
+        len = sendto(udpFd, pSipBuf->buf, pSipBuf->end, 0, (const struct sockaddr*) &pTpInfo->peer, sizeof(struct sockaddr_in));
 //        len = sendto(udpFd, "hello", 5, 0, (const struct sockaddr*) &dest, sizeof(dest));
         if(len != pSipBuf->end || len == -1)
         {
@@ -383,7 +401,7 @@ sipTransportStatus_e sipTpClient_send(void* pTrId, sipTransportInfo_t* pTpInfo, 
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		tpStatus = SIP_TRANSPORT_STATUS_FAIL;
+		tpStatus = TRANSPORT_STATUS_FAIL;
 	}
 
 	return tpStatus;
@@ -401,6 +419,9 @@ static void sipTpClientOnIpcMsg(osIPCMsg_t* pIpcMsg)
 		case OS_SIP_TRANSPORT_SERVER:
 			sipTrans_onMsg(SIP_TRANS_MSG_TYPE_PEER, pIpcMsg->pMsg, 0);
 			break;
+		case OS_DIA_TRANSPORT:
+			diaMgr_onMsg(pIpcMsg->pMsg);
+			break;
 		default:
 			logError("received ipc message from unknown interface (%d).", pIpcMsg->interface);
 			break;
@@ -409,77 +430,99 @@ static void sipTpClientOnIpcMsg(osIPCMsg_t* pIpcMsg)
 
 
 //send a packet when transaction does not specify the sending fd	
-static osStatus_e sipTpClientSendTcp(void* pTrId, sipTransportInfo_t* pTpInfo, osMBuf_t* pSipBuf, sipTransportStatus_e* pTransport)
+static osStatus_e sipTpClientSendTcp(void* pTrId, transportInfo_t* pTpInfo, osMBuf_t* pSipBuf, sipTransportStatus_e* pTransport)
 {
 	osStatus_e status = OS_STATUS_OK;
     int locValue;
 
-	*pTransport = SIP_TRANSPORT_STATUS_TCP_OK;
-	
-    struct sockaddr_in peer = {};
-    struct sockaddr_in local = {};
+	*pTransport = TRANSPORT_STATUS_TCP_OK;
 
+#if 0   //use network address	
+    struct sockaddr_in peer = {};
+//    struct sockaddr_in local = {};
+
+#if 0
 	//do not bind port, use ephemeral port.
-	if(sipTpConvertPLton(&pTpInfo->local, false, &local) != OS_STATUS_OK)
+	if(tpConvertPLton(&pTpInfo->local, false, &local) != OS_STATUS_OK)
 	{
-        logError("fails to sipTpConvertPLton for local IP=%r, errno=%d.", pTpInfo->local.ip, errno);
+        logError("fails to tpConvertPLton for local IP=%r, errno=%d.", pTpInfo->local.ip, errno);
         status = OS_ERROR_INVALID_VALUE;
         goto EXIT;
     }
-
-    if(sipTpConvertPLton(&pTpInfo->peer, true, &peer) != OS_STATUS_OK)
+#endif
+    if(tpConvertPLton(&pTpInfo->peer, true, &peer) != OS_STATUS_OK)
     {
-        logError("fails to sipTpConvertPLton for peer IP=%r, errno=%d.", pTpInfo->peer.ip, errno);
+        logError("fails to tpConvertPLton for peer IP=%r, errno=%d.", pTpInfo->peer.ip, errno);
         status = OS_ERROR_INVALID_VALUE;
         goto EXIT;
     }
 
 	//first check if there is already a TCP connection exists
-	sipTpTcm_t* pTcm = sipTpGetTcm(peer, true);
+	tpTcm_t* pTcm = tpGetTcm(peer, TRANSPORT_APP_TYPE_SIP, true);
+#else
+    //first check if there is already a TCP connection exists
+    tpTcm_t* pTcm = tpGetTcm(pTpInfo->peer, TRANSPORT_APP_TYPE_SIP, true);
+#endif
 	if(!pTcm)
 	{
-		logError("fails to sipTpGetTcm for ip=%s, port=%d.", pTpInfo->peer.ip, pTpInfo->peer.port);
+		logError("fails to tpGetTcm for peer(%A).", &pTpInfo->peer);
 		status = OS_ERROR_SYSTEM_FAILURE;
 		goto EXIT;
 	}
 
-	if(!pTcm->isUsing)
+	if(pTcm->sockfd == -1)
 	{
 		//check if the peer under quarantine
-		if(sipTpIsInQList(peer))
+		if(tpIsInQList(pTpInfo->peer))
 		{
-			*pTransport = SIP_TRANSPORT_STATUS_TCP_FAIL;
+			*pTransport = TRANSPORT_STATUS_TCP_FAIL;
 			goto EXIT;
 		}
 
-		status = sipTpCreateTcp(pTrId, &pTpInfo->peer, &pTpInfo->local, pTcm);
+		int connStatus;
+		status = tpCreateTcp(tpEpFd, &pTpInfo->peer, &pTpInfo->local, &pTcm->sockfd, &connStatus);
 		if(status != OS_STATUS_OK)
 		{
+            tpReleaseTcm(pTcm);
 			goto EXIT;
 		}
+
+    	if(connStatus == 0)
+    	{
+        	pTcm->isTcpConnDone = true;
+    	}
+    	else
+    	{
+        	pTcm->isTcpConnDone = false;
+        	osListPlus_append(&pTcm->tcpConn.appIdList, pTrId);
+logError("to-remove, TCM2, appId=%p", pTrId);
+    	}
+//  pTcm->tcpConn.tcpConnTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_TIMEOUT, sipTransport_onTimeout, tcpMapElement);
+
+    	mdebug(LM_TRANSPORT, "sockfd(%d) connStatus=%d, pTcm=%p", pTcm->sockfd, connStatus, pTcm);
 
 		if(!pTcm->isTcpConnDone)
 		{
-			*pTransport = SIP_TRANSPORT_STATUS_TCP_CONN; 
+			*pTransport = TRANSPORT_STATUS_TCP_CONN; 
 			goto EXIT;
 		}
 	}
 
 	if(pTcm->isTcpConnDone)
 	{
-		*pTransport = SIP_TRANSPORT_STATUS_TCP_OK;
+		*pTransport = TRANSPORT_STATUS_TCP_OK;
 
-        if(pTpInfo->viaProtocolPos != 0)
+        if(pTpInfo->protocolUpdatePos != 0)
         {
-            osMBuf_modifyStr(pSipBuf, "TCP", 3, pTpInfo->viaProtocolPos);
+            osMBuf_modifyStr(pSipBuf, "TCP", 3, pTpInfo->protocolUpdatePos);
         }
 
-        logInfo("send a SIP message via TCP FD=%d, dest ip=%r, port=%d, sip message=\n%M", pTcm->sockfd, &pTpInfo->peer.ip, pTpInfo->peer.port, pSipBuf);
+        logInfo("send a SIP message via TCP FD=%d, dest=%A, sip message=\n%M", pTcm->sockfd, &pTpInfo->peer, pSipBuf);
         int len = write(pTcm->sockfd, pSipBuf->buf, pSipBuf->end);
         if(len == 0 || len == pSipBuf->end)
         {
 			//update the tcp connection's keep alive
-            pTcm->tcpKeepAlive.isUsed = true;
+            pTcm->msgConnInfo.isUsed = true;
         }
         else if(len == -1)
         {
@@ -494,16 +537,16 @@ static osStatus_e sipTpClientSendTcp(void* pTrId, sipTransportInfo_t* pTpInfo, o
 	}
 	else
 	{
-		sipTpTcmAddUser(pTcm, pTrId);
-		*pTransport = SIP_TRANSPORT_STATUS_TCP_CONN;
+		tpTcmAddUser(pTcm, pTrId);
+		*pTransport = TRANSPORT_STATUS_TCP_CONN;
 	}
 
 EXIT:
 	return status;
 }
 
-
-static osStatus_e sipTpCreateTcp(void* appId, sipTransportIpPort_t* peer, sipTransportIpPort_t* local, sipTpTcm_t* pTcm)
+#if 0
+static osStatus_e sipTpCreateTcp(void* appId, transportIpPort_t* peer, transportIpPort_t* local, tpTcm_t* pTcm)
 {
 	osStatus_e status = OS_STATUS_OK;
 	int sockfd;
@@ -516,17 +559,17 @@ static osStatus_e sipTpCreateTcp(void* appId, sipTransportIpPort_t* peer, sipTra
     }
 
     struct sockaddr_in src;
-    status = sipTpConvertPLton(local, false, &src);
+    status = tpConvertPLton(local, false, &src);
 	if(status != OS_STATUS_OK)
     {
-        logError("fails to perform sipTpConvertPLton for local.");
+        logError("fails to perform tpConvertPLton for local.");
 		goto EXIT;
     }
 
-    status = sipTpConvertPLton(peer, true, &pTcm->peer);
+    status = tpConvertPLton(peer, true, &pTcm->peer);
     if(status != OS_STATUS_OK)
     {
-        logError("fails to perform sipTpConvertPLton for peer.");
+        logError("fails to perform tpConvertPLton for peer.");
         goto EXIT;
     }
 
@@ -561,7 +604,7 @@ static osStatus_e sipTpCreateTcp(void* appId, sipTransportIpPort_t* peer, sipTra
 	else
 	{
 		pTcm->isTcpConnDone = false;
-		osListPlus_append(&pTcm->tcpConn.sipTrIdList, appId);
+		osListPlus_append(&pTcm->tcpConn.appIdList, appId);
 logError("to-remove, TCM2, appId=%p", appId);
 	}
 //	pTcm->tcpConn.tcpConnTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_TIMEOUT, sipTransport_onTimeout, tcpMapElement);
@@ -570,50 +613,126 @@ logError("to-remove, TCM2, appId=%p", appId);
 EXIT:
 	return status;
 }
+#endif
 
-
+#if 0
 //if msgType != SIP_TRANS_MSG_TYPE_TX_TCP_READY, set tcpfd=-1
-static void sipTpNotifyTcpConnUser(osListPlus_t* pList, sipTransMsgType_e msgType, int tcpfd)
+static void sipTpNotifyTcpConnUser(transportAppType_e appType, osListPlus_t* pList, transportStatus_e tpMsgType, int tcpfd)
 {
-	sipTransportStatusMsg_t sipTpMsg;
-//    sipTransMsg_t sipTrMsg;
-
-	if(msgType == SIP_TRANS_MSG_TYPE_TX_TCP_READY)
+	switch (appType)
 	{
-//    	sipTrMsg.sipMsgType = msgType;
-    	sipTpMsg.tcpFd = tcpfd;
-	}
-	else
-	{
-		sipTpMsg.tcpFd = -1;
-	}
-
-logError("to-remove, TCM3, pList->num=%d", pList->num);
-	if(pList->first)
-	{
-		sipTpMsg.pTransId = pList->first;
-logError("to-remove, TCM1, pTransId=%p", sipTpMsg.pTransId);
-		sipTrans_onMsg(msgType, &sipTpMsg, 0);
-	}
-
-	if(pList->num > 1)
-	{
-		osListElement_t* pLE = pList->more.head;
-		while(pLE)
+		case TRANSPORT_APP_TYPE_SIP:
 		{
-			sipTpMsg.pTransId = pLE->data;
-logError("to-remove, TCM2, pTransId=%p", sipTpMsg.pTransId);
-	        sipTrans_onMsg(msgType, &sipTpMsg, 0);
-			pLE = pLE->next;
+			sipTransportStatusMsg_t sipTpMsg;
+			sipTransMsgType_e msgType;
+
+			if(tpMsgType = TRANSPORT_STATUS_TCP_OK)
+			{
+				msgType = SIP_TRANS_MSG_TYPE_TX_TCP_READY;
+				sipTpMsg.tcpFd = tcpfd;
+			}
+			else
+			{
+				msgType = SIP_TRANS_MSG_TYPE_TX_FAILED;
+                sipTpMsg.tcpFd = -1;
+			}
+
+			if(pList->first)
+			{
+				sipTpMsg.pTransId = pList->first;
+				sipTrans_onMsg(msgType, &sipTpMsg, 0);
+			}
+
+			if(pList->num > 1)
+			{
+				osListElement_t* pLE = pList->more.head;
+				while(pLE)
+				{
+					sipTpMsg.pTransId = pLE->data;
+	        		sipTrans_onMsg(msgType, &sipTpMsg, 0);
+					pLE = pLE->next;
+				}
+			}
+			break;
 		}
+		default:
+			logInfo("appType(%d) is unhandled now.", appType);
+			break;
 	}
 
-    //clear sipTrIdList
+    //clear appIdList
 	osListPlus_clear(pList);
 }
-
+#endif
 
 static void sipTpClientTimeout(uint64_t timerId, void* ptr)
 {
 	logInfo("received timeout for timerId=%d.", timerId);
+}
+
+
+static osStatus_e tpClientProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+    //mdebug(LM_TRANSPORT, "received TCP message, len=%d from fd(%d), bufLen=%ld, msg=\n%r", len, events[i].data.fd, bufLen, &dbgPL);
+    //basic sanity check to remove leading \r\n.  here we also ignore other invalid chars, 3261 only says \r\n
+    if(pTcm->msgConnInfo.pMsgBuf->pos == 0 && (pTcm->msgConnInfo.pMsgBuf->buf[0] < 'A' || pTcm->msgConnInfo.pMsgBuf->buf[0] > 'Z'))
+    {
+        mdebug(LM_TRANSPORT, "received pkg proceeded with invalid chars, char[0]=0x%x, len=%d.", pTcm->msgConnInfo.pMsgBuf->buf[0], len);
+        if(sipTpSafeGuideMsg(pTcm->msgConnInfo.pMsgBuf, len))
+        {
+            goto EXIT;
+        }
+    }
+    size_t nextStart = 0;
+    ssize_t remaining = sipTpAnalyseMsg(pTcm->msgConnInfo.pMsgBuf, &pTcm->msgConnInfo.sipState, len, &nextStart);
+    if(remaining < 0)
+    {
+        mdebug(LM_TRANSPORT, "remaining=%d, less than 0.", remaining);
+        goto EXIT;
+    }
+    else
+    {
+        osMBuf_t* pCurSipBuf = pTcm->msgConnInfo.pMsgBuf;
+        bool isBadMsg = pTcm->msgConnInfo.sipState.isBadMsg;
+        //if isBadMsg, drop the current received sip message, and reuse the pSipMsgBuf
+        if(!tpTcmBufInit(pTcm, isBadMsg ? false : true))
+        {
+            logError("fails to init a TCM pSipMsgBuf.");
+            status = OS_ERROR_SYSTEM_FAILURE;
+            goto EXIT;
+        }
+
+        //copy the next sip message pieces that have been read into the newly allocated pSipMsgBuf
+        if(remaining > 0)
+        {
+            memcpy(pTcm->msgConnInfo.pMsgBuf->buf, &pCurSipBuf->buf[nextStart], remaining);
+        }
+        pTcm->msgConnInfo.pMsgBuf->end = remaining;
+        pTcm->msgConnInfo.pMsgBuf->pos = 0;
+
+        if(!isBadMsg)
+        {
+			char ip[INET_ADDRSTRLEN]={};
+			inet_ntop(AF_INET, &pTcm->peer.sin_addr, ip, INET_ADDRSTRLEN);
+			mlogInfo(LM_TRANSPORT, "received a sip Msg from fd(%d) %s:%d, the msg=\n%M", pTcm->sockfd, ip, ntohs(pTcm->peer.sin_port), pCurSipBuf);
+
+			pTcm->msgConnInfo.isUsed = true;
+
+			sipTransportMsgBuf_t sipTpMsg;
+			sipTpMsg.pSipBuf = pCurSipBuf;
+			sipTpMsg.tcpFd = -1;
+			sipTpMsg.isCom = false;
+			//sipTpMsg.tpId = NULL;
+			sipTrans_onMsg(SIP_TRANS_MSG_TYPE_PEER, &sipTpMsg, 0);
+        }
+        else
+        {
+            mdebug(LM_TRANSPORT, "received a bad msg, drop.");
+        }
+    }
+
+EXIT:
+    return status;
 }

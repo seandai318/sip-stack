@@ -24,7 +24,10 @@
 //#include "sipTransMgr.h"
 //#include "sipTransportMgr.h"
 #include "sipTransportIntf.h"
-#include "sipTcm.h"
+#include "tcm.h"
+#include "transportConfig.h"
+#include "transportIntf.h"
+
 
 
 static void sipTpOnKATimeout(uint64_t timerId, void* ptr);
@@ -32,28 +35,37 @@ static void sipTpOnQTimeout(uint64_t timerId, void* ptr);
 
 
 //this is shared by both server and client/transport threads
-static sipTpTcm_t sipTCM[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
+static tpTcm_t sipTCM[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
 static uint8_t sipTcmMaxNum = 0;
 
-//in TpServer.c, pTcm->tcpKeepAlive is modified and is not Rwlock protected, it is assumed nobody messes with this field except TpServer.c, the same for TpClient.c
+//in TpServer.c, pTcm->msgConnInfo.is modified and is not Rwlock protected, it is assumed nobody messes with this field except TpServer.c, the same for TpClient.c
 static pthread_rwlock_t tcmRwlock;
-static __thread sipTpQuarantine_t sipTpQList[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
+static __thread tpQuarantine_t sipTpQList[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
 static __thread uint8_t sipTpMaxQNum = 0;
-static __thread notifyTcpConnUser_h notifyTcpConnUser = NULL;
+static  notifyTcpConnUser_h notifyTcpConnUser[TRANSPORT_APP_TYPE_COUNT];
 
 
-void sipTcmInit(notifyTcpConnUser_h notifier)
+void tcmInit(notifyTcpConnUser_h notifier[], int notifyNum)
 {
-	notifyTcpConnUser = notifier;
+	if(notifyNum > TRANSPORT_APP_TYPE_COUNT)
+	{
+		logError("notifyNum(%d) exceeds the allowed value(%d).", notifyNum, TRANSPORT_APP_TYPE_COUNT);
+		return;
+	}
+
+	for(int i=0; i<notifyNum; i++)
+	{
+		notifyTcpConnUser[i] = notifier[i];
+	}
 
 	pthread_rwlock_init(&tcmRwlock,NULL);
 }
 
 
 //isReserveOne=true will reserve a tcm if a matching is not found
-sipTpTcm_t* sipTpGetTcm(struct sockaddr_in peer, bool isReseveOne)
+tpTcm_t* tpGetTcm(struct sockaddr_in peer, transportAppType_e appType, bool isReseveOne)
 {
-	sipTpTcm_t* pTcm = NULL;
+	tpTcm_t* pTcm = NULL;
 
 #if 0
     struct sockaddr_in peer = {};
@@ -84,14 +96,15 @@ sipTpTcm_t* sipTpGetTcm(struct sockaddr_in peer, bool isReseveOne)
 			continue;
 		}
 
-		if((sipTCM[i].peer.sin_port == peer.sin_port) && (sipTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr))
+		if((sipTCM[i].peer.sin_port == peer.sin_port) && (sipTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr) && (sipTCM[i].appType == appType))
 		{
 			pTcm = &sipTCM[i];
+			isMatch = true;
 			goto EXIT;
 		}
 	}
 
-	if(!pTcm)
+	if(!pTcm && isReseveOne)
 	{
 		if(sipTcmMaxNum < SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM)
 		{
@@ -99,15 +112,50 @@ sipTpTcm_t* sipTpGetTcm(struct sockaddr_in peer, bool isReseveOne)
 		}
 	}
 
+	//new reserved TCP set to isUsing = true
+	if(pTcm)
+	{
+		pTcm->peer = peer;
+		pTcm->sockfd = -1;
+		pTcm->isUsing = true;
+	}
+
 EXIT:
 	pthread_rwlock_unlock(&tcmRwlock);
+
+	if(!isMatch && pTcm != NULL)
+	{
+		pTcm->appType = appType;
+	}
+
 	return pTcm;
 }
 
 
-sipTpTcm_t* sipTpGetTcmByFd(int tcpFd, struct sockaddr_in peer)
+void tpReleaseTcm(tpTcm_t* pTcm)
 {
-    sipTpTcm_t* pTcm = NULL;
+	if(!pTcm)
+	{
+		return;
+	}
+
+    if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
+    {
+        logError("fails to acquire rdlock for tcmRwlock.");
+        return;
+    }
+
+	pTcm->isUsing = false;
+	pTcm->sockfd = -1;
+
+    pthread_rwlock_unlock(&tcmRwlock);
+}
+
+
+
+tpTcm_t* tpGetTcmByFd(int tcpFd, struct sockaddr_in peer)
+{
+    tpTcm_t* pTcm = NULL;
 
 #if 0
     struct sockaddr_in peer = {};
@@ -146,9 +194,9 @@ EXIT:
 }
 
 
-sipTpTcm_t* sipTpGetConnectedTcm(int tcpFd)
+tpTcm_t* tpGetConnectedTcm(int tcpFd)
 {
-    sipTpTcm_t* pTcm = NULL;
+    tpTcm_t* pTcm = NULL;
 
     if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
     {
@@ -167,12 +215,12 @@ sipTpTcm_t* sipTpGetConnectedTcm(int tcpFd)
         if(sipTCM[i].sockfd = tcpFd)
         {
             pTcm = &sipTCM[i];
-			if(!pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf)
+			if(!pTcm->msgConnInfo.pMsgBuf)
 			{
-				pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
-				if(!pTcm->tcpKeepAlive.sipBuf.pSipMsgBuf)
+				pTcm->msgConnInfo.pMsgBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
+				if(!pTcm->msgConnInfo.pMsgBuf)
 				{
-					logError("fails to allocate memory for pTcm->tcpKeepAlive.sipBuf->pSipMsgBuf.");
+					logError("fails to allocate memory for pTcm->msgConnInfo.sipBuf->pMsgBuf.");
 					pTcm = NULL;
 				}
 			}
@@ -186,7 +234,7 @@ EXIT:
 }	
 
 
-osStatus_e sipTpDeleteTcm(int tcpfd)
+osStatus_e tpDeleteTcm(int tcpfd)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -209,22 +257,27 @@ osStatus_e sipTpDeleteTcm(int tcpfd)
 			logError("to-remove, tcm, sipTCM[%d].isUsing = false", i);
 			if(sipTCM[i].isTcpConnDone)
 			{
-				osStopTimer(sipTCM[i].tcpKeepAlive.keepAliveTimerId);
-				sipTCM[i].tcpKeepAlive.keepAliveTimerId = 0;
-				if(sipTCM[i].tcpKeepAlive.sipBuf.pSipMsgBuf)
+				osStopTimer(sipTCM[i].msgConnInfo.keepAliveTimerId);
+				sipTCM[i].msgConnInfo.keepAliveTimerId = 0;
+				if(sipTCM[i].msgConnInfo.pMsgBuf)
 				{
-					osMBuf_dealloc(sipTCM[i].tcpKeepAlive.sipBuf.pSipMsgBuf);
-					sipTCM[i].tcpKeepAlive.sipBuf.pSipMsgBuf = NULL;
+					osMBuf_dealloc(sipTCM[i].msgConnInfo.pMsgBuf);
+					sipTCM[i].msgConnInfo.pMsgBuf = NULL;
 				}
 
 				sipTCM[i].isTcpConnDone = false;
 			}
 			else
 			{
-				//do nothing, to-do, shall we notify tcp conn user?
+logError("to-remove, sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i);
+
+    			if(notifyTcpConnUser[sipTCM[i].appType])
+    			{
+        			notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, tcpfd, NULL);
+    			}
 			}
 
-			memset(&sipTCM[i], 0, sizeof(sipTpTcm_t));
+			memset(&sipTCM[i], 0, sizeof(tpTcm_t));
 			sipTCM[i].sockfd = -1;
 
             goto EXIT;
@@ -240,7 +293,7 @@ EXIT:
 }
 
 
-void sipTpDeleteAllTcm()
+void tpDeleteAllTcm()
 {
     if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
     {
@@ -260,24 +313,29 @@ void sipTpDeleteAllTcm()
 
         if(sipTCM[i].isTcpConnDone)
         {
-            osStopTimer(sipTCM[i].tcpKeepAlive.keepAliveTimerId);
-            sipTCM[i].tcpKeepAlive.keepAliveTimerId = 0;
-            if(sipTCM[i].tcpKeepAlive.sipBuf.pSipMsgBuf)
+            osStopTimer(sipTCM[i].msgConnInfo.keepAliveTimerId);
+            sipTCM[i].msgConnInfo.keepAliveTimerId = 0;
+            if(sipTCM[i].msgConnInfo.pMsgBuf)
             {
-                osMBuf_dealloc(sipTCM[i].tcpKeepAlive.sipBuf.pSipMsgBuf);
-                sipTCM[i].tcpKeepAlive.sipBuf.pSipMsgBuf = NULL;
+                osMBuf_dealloc(sipTCM[i].msgConnInfo.pMsgBuf);
+                sipTCM[i].msgConnInfo.pMsgBuf = NULL;
         	}  
 
             sipTCM[i].isTcpConnDone = false;
 		}
         else
         {
-            //do nothing, to-do, shall we notify tcp conn user?
+logError("to-remove, sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i);
+
+	        if(notifyTcpConnUser[sipTCM[i].appType])
+            {
+                notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, -1, NULL);
+            }
         }
 
 		close(sipTCM[i].sockfd);
 
-        memset(&sipTCM[i], 0, sizeof(sipTpTcm_t));
+        memset(&sipTCM[i], 0, sizeof(tpTcm_t));
         sipTCM[i].sockfd = -1;
     }
 
@@ -285,7 +343,7 @@ void sipTpDeleteAllTcm()
 }
 
 
-osStatus_e sipTpTcmAddUser(sipTpTcm_t* pTcm, void* pTrId)
+osStatus_e tpTcmAddUser(tpTcm_t* pTcm, void* pTrId)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -309,7 +367,7 @@ osStatus_e sipTpTcmAddUser(sipTpTcm_t* pTcm, void* pTrId)
         goto EXIT;
     }
 
-	osListPlus_append(&pTcm->tcpConn.sipTrIdList, pTrId);
+	osListPlus_append(&pTcm->tcpConn.appIdList, pTrId);
 
 EXIT:
     pthread_rwlock_unlock(&tcmRwlock);
@@ -317,10 +375,10 @@ EXIT:
 }
 
 
-osStatus_e sipTpTcmAddFd(int tcpfd, struct sockaddr_in* peer)
+osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, transportAppType_e appType)
 {
     osStatus_e status = OS_STATUS_OK;
-	sipTpTcm_t* pTcm = NULL;
+	tpTcm_t* pTcm = NULL;
 
 	if(!peer)
 	{
@@ -355,15 +413,26 @@ osStatus_e sipTpTcmAddFd(int tcpfd, struct sockaddr_in* peer)
 	{
 		pTcm->isUsing = true;
 		pTcm->isTcpConnDone = true;
+		pTcm->appType = appType;
 logError("to-remove, PTCM, pTcm=%p set to true", pTcm);
 		pTcm->sockfd = tcpfd;
 		pTcm->peer = *peer;
-		pTcm->tcpKeepAlive.isUsed = false;
-//		sipTpTcmBufInit(&pTcm->tcpKeepAlive.sipBuf, false);
-        sipTpTcmBufInit(&pTcm->tcpKeepAlive.sipBuf, true);
-		pTcm->tcpKeepAlive.keepAliveTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE, sipTpOnKATimeout, pTcm);
+//		tpTcmBufInit(&pTcm->msgConnInfo.sipBuf, false);
+        tpTcmBufInit(pTcm, true);
+		switch(appType)
+		{
+			case TRANSPORT_APP_TYPE_SIP:
+				pTcm->msgConnInfo.isPersistent = false;
+				pTcm->msgConnInfo.isUsed = false;
+				pTcm->msgConnInfo.keepAliveTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE, sipTpOnKATimeout, pTcm);
+				break;
+			case TRANSPORT_APP_TYPE_DIAMETER:
+			default:
+				pTcm->msgConnInfo.isPersistent = true;
+				break;
+		}
 
-		mdebug(LM_TRANSPORT, "tcpfd(%d, %s:%d) is added to pTcm(%p)", tcpfd, inet_ntoa(peer->sin_addr), ntohs(peer->sin_port), pTcm);  
+		mdebug(LM_TRANSPORT, "tcpfd(%d, %A) is added to pTcm(%p)", tcpfd, &peer, pTcm);  
 		goto EXIT;
 	}
 
@@ -371,13 +440,21 @@ logError("to-remove, PTCM, pTcm=%p set to true", pTcm);
 
 EXIT:
     pthread_rwlock_unlock(&tcmRwlock);
-	sipTpListUsedTcm();
+	tpListUsedTcm();
+
+logError("to-remove, pTcm->appType=%d, notifyTcpConnUser[pTcm->appType]=%p.", pTcm->appType, notifyTcpConnUser[pTcm->appType]);
+
+	if(notifyTcpConnUser[pTcm->appType])
+    {
+    	notifyTcpConnUser[pTcm->appType](&pTcm->tcpConn.appIdList, TRANSPORT_STATUS_TCP_SERVER_OK, tcpfd, peer);
+    }
+
 	return status;
 }
 
 
 //update TCM conn status for a waiting for conn TCM
-osStatus_e sipTpTcmUpdateConn(int tcpfd, bool isConnEstablished)
+osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished)
 {
 	osStatus_e status = OS_STATUS_OK;
 
@@ -396,7 +473,7 @@ osStatus_e sipTpTcmUpdateConn(int tcpfd, bool isConnEstablished)
 
         if(sipTCM[i].sockfd == tcpfd)
         {
-			if(sipTCM[i].isTcpConnDone)
+			if(sipTCM[i].isTcpConnDone && isConnEstablished)
 			{
 				logError("try to update a TCP connection status for fd (%d), but tcm(%p) shows isTcpConnDone = true.", tcpfd, &sipTCM[i]);
 				status = OS_ERROR_INVALID_VALUE;
@@ -407,24 +484,33 @@ osStatus_e sipTpTcmUpdateConn(int tcpfd, bool isConnEstablished)
 			{
 				sipTCM[i].isTcpConnDone = true;
 
-				if(notifyTcpConnUser)
+logError("to-remove, sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i); 
+				if(notifyTcpConnUser[sipTCM[i].appType])
 				{
-					notifyTcpConnUser(&sipTCM[i].tcpConn.sipTrIdList, SIP_TRANS_MSG_TYPE_TX_TCP_READY, tcpfd);
+					notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_OK, tcpfd, &sipTCM[i].peer);
 				}
-				sipTCM[i].tcpKeepAlive.sipBuf.pSipMsgBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
-				sipTCM[i].tcpKeepAlive.keepAliveTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE, sipTpOnKATimeout, &sipTCM[i]);
+				sipTCM[i].msgConnInfo.pMsgBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
+				if(sipTCM[i].appType == TRANSPORT_APP_TYPE_SIP)
+				{
+                	sipTCM[i].msgConnInfo.isPersistent = false;
+					sipTCM[i].msgConnInfo.keepAliveTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE, sipTpOnKATimeout, &sipTCM[i]);
+				}
+				else
+				{
+					sipTCM[i].msgConnInfo.isPersistent = true;
+				}
 			}
 			else
 			{
-				if(notifyTcpConnUser)
+				if(notifyTcpConnUser[sipTCM[i].appType])
 				{
-                	notifyTcpConnUser(&sipTCM[i].tcpConn.sipTrIdList, SIP_TRANS_MSG_TYPE_TX_FAILED, 0);
+                	notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, -1, &sipTCM[i].peer);
 				}
 
             	sipTCM[i].isUsing = false;
 logError("to-remove, tcm, sipTCM[%d].isUsing = false", i);
 
-            	memset(&sipTCM[i], 0, sizeof(sipTpTcm_t));
+            	memset(&sipTCM[i], 0, sizeof(tpTcm_t));
             	sipTCM[i].sockfd = -1;
 
 				//update quarantine list
@@ -469,7 +555,7 @@ EXIT:
 }
 
 
-bool sipTpIsInQList(struct sockaddr_in peer)
+bool tpIsInQList(struct sockaddr_in peer)
 {
 	bool isFound = false;
 
@@ -500,7 +586,7 @@ bool sipTpIsInQList(struct sockaddr_in peer)
 
 static void sipTpOnKATimeout(uint64_t timerId, void* ptr)
 {
-    sipTpTcm_t* pTcm = ptr;
+    tpTcm_t* pTcm = ptr;
 
 	mdebug(LM_TRANSPORT, "timerId=0x%x expired.", timerId);
 
@@ -510,18 +596,18 @@ static void sipTpOnKATimeout(uint64_t timerId, void* ptr)
         return;
     }
 
-    if(pTcm->tcpKeepAlive.keepAliveTimerId != timerId)
+    if(pTcm->msgConnInfo.keepAliveTimerId != timerId)
     {
-        logError("timeout, but the returned timerId (%ld) does not match the local timerId (%ld).", timerId, pTcm->tcpKeepAlive.keepAliveTimerId);
+        logError("timeout, but the returned timerId (%ld) does not match the local timerId (%ld).", timerId, pTcm->msgConnInfo.keepAliveTimerId);
         goto EXIT;
     }
 
-    if(pTcm->tcpKeepAlive.isUsed)
+    if(pTcm->msgConnInfo.isUsed)
     {
 		mdebug(LM_TRANSPORT, "tcpFd(%d) was used during the keep alive period.", pTcm->sockfd);
 
-        pTcm->tcpKeepAlive.isUsed = false;
-        pTcm->tcpKeepAlive.keepAliveTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE, sipTpOnKATimeout, pTcm);
+        pTcm->msgConnInfo.isUsed = false;
+        pTcm->msgConnInfo.keepAliveTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE, sipTpOnKATimeout, pTcm);
     }
     else
     {
@@ -532,7 +618,7 @@ logError("to-remove, tcm, sipTCM.isUsing = false");
 		close(pTcm->sockfd);
 
 		//re-initiate the pTcm to all 0
-		memset(pTcm, 0, sizeof(sipTpTcm_t));
+		memset(pTcm, 0, sizeof(tpTcm_t));
 		pTcm->sockfd = -1;
     }
 
@@ -542,31 +628,57 @@ EXIT:
 }
 
 
-osMBuf_t* sipTpTcmBufInit(sipTpBuf_t* pTpBuf, bool isAllocSipBuf)
+osMBuf_t* tpTcmBufInit(tpTcm_t* pTcm, bool isAllocBuf)
 {
-    pTpBuf->state.eomPattern = SIP_TRANSPORT_EOM_OTHER;
-    pTpBuf->state.clValue = -1;
-    pTpBuf->state.isBadMsg = false;
+	pTcm->msgConnInfo.pMsgBuf = NULL;
 
-	pTpBuf->pSipMsgBuf = isAllocSipBuf ? osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE) : NULL;
-
-	if(!pTpBuf->pSipMsgBuf)
+	size_t bufSize = 0;
+	switch(pTcm->appType)
 	{
-		logError("pTpBuf->pSipMsgBuf is NULL.");
-	}
-	else
-	{
-		pTpBuf->pSipMsgBuf->pos = 0;
-		pTpBuf->pSipMsgBuf->end = 0;
+		case TRANSPORT_APP_TYPE_SIP:
+		{
+	    	pTcm->msgConnInfo.sipState.eomPattern = SIP_TRANSPORT_EOM_OTHER;
+    		pTcm->msgConnInfo.sipState.clValue = -1;
+    		pTcm->msgConnInfo.sipState.isBadMsg = false;
+
+			bufSize = SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE;
+			break;
+		}
+		case TRANSPORT_APP_TYPE_DIAMETER:
+		{
+			pTcm->msgConnInfo.diaState.isBadMsg = false;
+			pTcm->msgConnInfo.diaState.msgLen = 0;
+			pTcm->msgConnInfo.diaState.receivedBytes = 0;
+
+			bufSize = DIA_CONFIG_TCP_BUFFER_SIZE;
+            break;
+        }
+		default:
+			logError("appType(%d) is not handled.", pTcm->appType);
+			goto EXIT;
+			break;
 	}
 
-    return pTpBuf->pSipMsgBuf;
+    pTcm->msgConnInfo.pMsgBuf = isAllocBuf ? osMBuf_alloc(bufSize) : NULL;
+
+    if(!pTcm->msgConnInfo.pMsgBuf)
+    {
+        logError("fails to allocate pTcm->msgConnInfo.pMsgBuf.");
+    }
+    else
+    {
+        pTcm->msgConnInfo.pMsgBuf->pos = 0;
+        pTcm->msgConnInfo.pMsgBuf->end = 0;
+    }
+
+EXIT:
+	return pTcm->msgConnInfo.pMsgBuf;
 }
 
 
 static void sipTpOnQTimeout(uint64_t timerId, void* ptr)
 {
-    sipTpQuarantine_t* pTpQ = ptr;
+    tpQuarantine_t* pTpQ = ptr;
     if(!pTpQ)
     {
         logError("null pointer, ptr.");
@@ -597,14 +709,14 @@ EXIT:
 
 
 //only list if the LM_TRANSPORT is configured on DEBUG level
-void sipTpListUsedTcm()
+void tpListUsedTcm()
 {
     if(osDbg_isBypass(DBG_DEBUG, LM_TRANSPORT))
     {
         return;
     }
 
-    sipTpTcm_t* pTcm = NULL;
+    tpTcm_t* pTcm = NULL;
 
 #if 0
     struct sockaddr_in peer = {};

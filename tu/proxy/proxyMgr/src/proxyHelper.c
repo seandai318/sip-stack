@@ -1,6 +1,7 @@
 #include "osTypes.h"
 #include "osDebug.h"
 #include "osMemory.h"
+#include "osSockAddr.h"
 
 #include "sipConfig.h"
 #include "sipMsgRequest.h"
@@ -10,16 +11,16 @@
 #include "sipTUIntf.h"
 #include "sipTU.h"
 #include "sipTUMisc.h"
-#include "sipTransport.h"
+#include "transportIntf.h"
 #include "proxyHelper.h"
 
 
 //proxy forwards the request
-osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipUri_t* pTargetUri,  bool isAddRR, sipTransportIpPort_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId)
+osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipUri_t* pTargetUri,  bool isAddRR, transportIpPort_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId)
 
 {
 	osStatus_e status = OS_STATUS_OK;
-	sipTransportIpPort_t nextHop;
+	transportIpPort_t nextHop;
 	osMBuf_t* pReq = NULL;
 
 	if(!pSipTUMsg || !pReqDecodedRaw || !proxyInfo)
@@ -40,9 +41,16 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
     size_t topViaProtocolPos = 0;
     sipTransInfo_t sipTransInfo;
     sipTransViaInfo_t viaId;
+#if 0	//use network address
     viaId.host = pSipTUMsg->pPeer->ip;
     viaId.port = pSipTUMsg->pPeer->port;
-logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->pPeer->port);
+#else
+	osIpPort_t osPeer;
+	osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
+	viaId.host = osPeer.ip;
+	viaId.port = osPeer.port;
+#endif
+//logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->pPeer->port);
 
     //prepare message forwarding
     sipHdrRawValueId_t delList = {SIP_HDR_ROUTE, true};
@@ -117,7 +125,7 @@ EXIT:
 osStatus_e sipProxy_forwardResp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, void* pTransId, void* proxyInfo)
 {
     osStatus_e status = OS_STATUS_OK;
-    sipTransportIpPort_t nextHop;
+    transportIpPort_t nextHop;
     osMBuf_t* pResp = NULL;
 
     if(pSipTUMsg->pSipMsgBuf->isRequest)
@@ -164,9 +172,15 @@ osStatus_e sipProxy_uasResponse(sipResponse_e rspCode, sipTUMsg_t* pSipTUMsg, si
 		sipHdrDecoded_t viaHdr={};
         status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr, &viaHdr, false);
 
+#if 0	//use network address
         sipHostport_t peer;
         peer.host = pSipTUMsg->pPeer->ip;
         peer.portValue = pSipTUMsg->pPeer->port;
+#else
+		osIpPort_t osPeer;
+		osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
+		sipHostport_t peer = {osPeer.ip, osPeer.port};
+#endif
         status = sipHdrVia_rspEncode(pSipResp, viaHdr.decodedHdr,  pReqDecodedRaw, &peer);
         osfree(viaHdr.decodedHdr);
 
@@ -189,7 +203,7 @@ EXIT:
 }
 
 
-osStatus_e sipProxy_getNextHopFrom2ndHdrValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipTransportIpPort_t* pNextHop)
+osStatus_e sipProxy_getNextHopFrom2ndHdrValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, transportIpPort_t* pNextHop)
 {
 	osStatus_e status = OS_STATUS_OK;
 

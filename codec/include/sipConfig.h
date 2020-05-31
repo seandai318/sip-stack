@@ -1,6 +1,8 @@
 #ifndef _SIP_CONFIG_H
 #define _SIP_CONFIG_H
 
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 #include "osPL.h"
 #include "sipUriparam.h"
@@ -48,7 +50,7 @@
 #define SIP_CONFIG_USE_IMS_CLIENT						true
 
 //#define SIP_CONFIG_LOCAL_IP		"192.168.56.101"
-#define SIP_CONFIG_LOCAL_IP			"192.168.1.83"
+#define SIP_CONFIG_LOCAL_IP			"192.168.1.86"
 #define SIP_CONFIG_LISTEN_PORT	5061
 
 
@@ -56,6 +58,7 @@ char* sipConfig_getHostIP();
 int sipConfig_getHostPort();
 void sipConfig_getHostStr(char** ppHost, int* port);
 void sipConfig_getHost(osPointerLen_t* host, int* port);
+void sipConfig_getHost1(struct sockaddr_in* pHost);
 sipTransport_e sipConfig_getTransport(osPointerLen_t* ip, int port);
 
 #endif

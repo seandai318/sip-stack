@@ -125,14 +125,19 @@ osStatus_e sipTransNICStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uin
 
 //    pTrans->tpInfo.pTrId = pTrans;
 	//shall not use request.pTransInfo->transId.viaId.host/port here, as this is the request top via's host/ip, which is own host/ip
+#if 0	//use network address
 	osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip);
 	//pTrans->tpInfo.peer.ip = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip;
 	pTrans->tpInfo.peer.port = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.port;
     osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local.ip);
     pTrans->tpInfo.local.port = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local.port;
-	pTrans->tpInfo.viaProtocolPos = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.viaProtocolPos;
+#else
+	pTrans->tpInfo.peer = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer;
+	pTrans->tpInfo.local = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local;
+#endif
+	pTrans->tpInfo.protocolUpdatePos = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.protocolUpdatePos;
 
-	pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_ANY;
+	pTrans->tpInfo.tpType = TRANSPORT_TYPE_ANY;
     pTrans->tpInfo.tcpFd = -1;
 
     sipTransNICEnterState(SIP_TRANS_STATE_TRYING, msgType, pTrans);
@@ -150,7 +155,7 @@ osStatus_e sipTransNICStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 
     if(!pMsg)
     {
-        logError("null pointer, pTrans.");
+        logError("null pointer, pMsg.");
         status = OS_ERROR_NULL_POINTER;
         goto EXIT;
     }
@@ -167,7 +172,7 @@ osStatus_e sipTransNICStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
                 logInfo("timer E expires, resend the request.");
 
 				sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
-	            if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+	            if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
     	        {
         	        logError("fails to send request.");
             	    sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
@@ -175,15 +180,15 @@ osStatus_e sipTransNICStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
                 	goto EXIT;
             	}
 
-	        	if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
+	        	if(tpStatus == TRANSPORT_STATUS_UDP)
     	    	{
-					pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_UDP;
+					pTrans->tpInfo.tpType = TRANSPORT_TYPE_UDP;
         	    	pTrans->timerAEGValue = osMinInt(pTrans->timerAEGValue*2, SIP_TIMER_T2);
             		pTrans->sipTransNICTimer.timerIdE = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
         		}
 				else
 				{
-					pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+					pTrans->tpInfo.tpType = TRANSPORT_TYPE_TCP;
 				}
     		}
     		else if(pTrans->sipTransNICTimer.timerIdF == timerId)
@@ -254,11 +259,11 @@ logError("to-remove, TCP, rspCode=%d", rspCode);
 		case SIP_TRANS_MSG_TYPE_TX_TCP_READY:
 		{
             sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*) pMsg)->pTransId;
-			pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+			pTrans->tpInfo.tpType = TRANSPORT_TYPE_TCP;
 			pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*) pMsg)->tcpFd;
 
 			sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
-			if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+			if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
             {
                 logError("fails to send request.");
                 sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
@@ -312,7 +317,7 @@ osStatus_e sipTransNICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
                 logInfo("timer E expires, resend the request.");
 
                 sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
-                if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+                if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
                 {
                     logError("fails to send request.");
                     sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
@@ -321,15 +326,15 @@ osStatus_e sipTransNICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
                 }
 
 				//this is a redundant check as timeout implies the UDP is used
-                if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
+                if(tpStatus == TRANSPORT_STATUS_UDP)
                 {
-                    pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_UDP;
+                    pTrans->tpInfo.tpType = TRANSPORT_TYPE_UDP;
                     pTrans->timerAEGValue = SIP_TIMER_T2;
                     pTrans->sipTransNICTimer.timerIdE = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
                 }
 				else
 				{
-                    pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+                    pTrans->tpInfo.tpType = TRANSPORT_TYPE_TCP;
 				}
             }
             else if(pTrans->sipTransNICTimer.timerIdF == timerId)
@@ -391,11 +396,11 @@ osStatus_e sipTransNICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMs
         case SIP_TRANS_MSG_TYPE_TX_TCP_READY:
         {
             sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*) pMsg)->pTransId;
-            pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+            pTrans->tpInfo.tpType = TRANSPORT_TYPE_TCP;
             pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*) pMsg)->tcpFd;
 
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
-            if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+            if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
             {
                 logError("fails to send request.");
                 sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
@@ -482,7 +487,7 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
     {
         case SIP_TRANS_STATE_TRYING:
             tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
-			if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+			if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
 			{
                 logError("fails to send SIP message out, tpStatus=%d.", tpStatus);
                 sipTransNICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_INTERNAL_ERROR, pTrans);
@@ -499,9 +504,9 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
                 goto EXIT;
             }
 
-            if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
+            if(tpStatus == TRANSPORT_STATUS_UDP)
             {
-                pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_UDP;
+                pTrans->tpInfo.tpType = TRANSPORT_TYPE_UDP;
 
                 pTrans->timerAEGValue = SIP_TIMER_T1;
                 pTrans->sipTransNICTimer.timerIdE = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
@@ -515,7 +520,7 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
             }
 			else
 			{
-                pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
+                pTrans->tpInfo.tpType = TRANSPORT_TYPE_TCP;
 			}
             break;
         case SIP_TRANS_STATE_PROCEEDING:
@@ -533,7 +538,7 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
             }
 
 logError("to-remove, TCP, tpType=%d", pTrans->tpInfo.tpType);
-            if(pTrans->tpInfo.tpType != SIP_TRANSPORT_TYPE_TCP)
+            if(pTrans->tpInfo.tpType != TRANSPORT_TYPE_TCP)
             {
                 pTrans->sipTransNICTimer.timerIdK = sipTransStartTimer(SIP_TIMER_K, pTrans);
             }

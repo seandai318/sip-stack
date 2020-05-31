@@ -32,7 +32,7 @@ typedef struct callProxyInfo {
 	osListElement_t* pCallHashLE;
 	uint32_t seqNum;
 	osDPointerLen_t callId;
-	sipTransportIpPort_t cancelNextHop;		//make sure the ip is cleaned up when this data structure is reclaimed
+	transportIpPort_t cancelNextHop;		//make sure the ip is cleaned up when this data structure is reclaimed
 	uint64_t timerIdC;
 	uint64_t timerIdWaitAck;
 	osListPlus_t proxyTransInfo;

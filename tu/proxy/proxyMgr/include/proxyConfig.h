@@ -2,7 +2,7 @@
 #define _PROXY_CONFIG_H
 
 #include "osTypes.h"
-#include "sipTransport.h"
+#include "transportIntf.h"
 
 
 #define PROXY_CONFIG_HAS_REGISTRAR	1
@@ -13,7 +13,7 @@
 
 
 bool proxyConfig_hasRegistrar();
-bool proxyConfig_getNextHop(sipTransportIpPort_t* pNextHop);
+bool proxyConfig_getNextHop(transportIpPort_t* pNextHop);
 
 
 #endif

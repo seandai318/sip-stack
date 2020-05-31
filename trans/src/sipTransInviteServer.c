@@ -114,12 +114,12 @@ osStatus_e sipTransISStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uint
     		status = sipTransIS_build100Trying(&pTrans->req, &pTrans->resp);
 
     		sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-			if(tpStatus == SIP_TRANSPORT_STATUS_UDP || tpStatus == SIP_TRANSPORT_STATUS_TCP_OK)
+			if(tpStatus == TRANSPORT_STATUS_UDP || tpStatus == TRANSPORT_STATUS_TCP_OK)
 			{
-				pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+				pTrans->tpInfo.tpType = (tpStatus == TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
     			sipTransISEnterState(SIP_TRANS_STATE_PROCEEDING, msgType, pTrans);
 			}
-    		else if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+    		else if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
     		{
         		sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
     		}
@@ -138,12 +138,12 @@ osStatus_e sipTransISStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uint
 			pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
 			pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*) pMsg)->tcpFd;
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_OK)
+            if(tpStatus == TRANSPORT_STATUS_TCP_OK)
             {
 				pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
                 sipTransISEnterState(SIP_TRANS_STATE_PROCEEDING, msgType, pTrans);
             }
-            else if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+            else if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
             {
                 sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
             }
@@ -180,7 +180,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 			sipTransaction_t* pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
 
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
             {
                 //notify TU
                 sipTUMsg_t sipTUMsg;
@@ -194,7 +194,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
                 goto EXIT;
             }
 
-            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+            pTrans->tpInfo.tpType = (tpStatus == TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
 	
 			break;
 		}
@@ -211,18 +211,26 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
             //the peer address from TU is the address in the top via, may be different from the real address used by the peer.  if the request message was received via TCP, the real peer has been saved when transaction was created, only reset when the message was received via UDP.
             if(pTrans->tpInfo.tcpFd < 0)
             {
+#if 0	//use struct sockaddr_in
                 //no need to reallocate memory for peer using osDPL_dup, it has been done in transMgr via osPL_setStr when a message is first received from peer
                 osPL_plcpy(&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer.ip);
                 pTrans->tpInfo.peer.port = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer.port;
+#else
+				pTrans->tpInfo.peer = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer;
+#endif
+
             }
 
+#if 0	//use struct sockaddr_in
 			//only copy if the local address has not been stored.		
 			if(pTrans->tpInfo.local.ip.l == 0)
 			{	
             	osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.local.ip);
             	pTrans->tpInfo.local.port = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.local.port;
 			}
-
+#else
+			pTrans->tpInfo.local = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.local;
+#endif
 			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
             pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
             sipResponse_e rspCode = ((sipTransMsg_t*)pMsg)->response.rspCode;
@@ -230,7 +238,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 			pTrans->resp.pSipMsg = osmemref(((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
 
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
             {
                 //notify TU
                 sipTUMsg_t sipTUMsg;
@@ -243,13 +251,13 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
                 sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
                 goto EXIT;
             }
-            else if(tpStatus == SIP_TRANSPORT_STATUS_TCP_CONN)
+            else if(tpStatus == TRANSPORT_STATUS_TCP_CONN)
             {
 				pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
                 goto EXIT;
             }
 
-            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+            pTrans->tpInfo.tpType = (tpStatus == TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
 
             if(rspCode >= 100 && rspCode < 200)
             {
@@ -278,7 +286,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
             pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
             pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*)pMsg)->tcpFd;
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
             {
 				//notify TU
 	            sipTUMsg_t sipTUMsg;
@@ -291,7 +299,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
                 goto EXIT;
             }
 
-            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+            pTrans->tpInfo.tpType = (tpStatus == TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
 
             if(pTrans->resp.rspCode >= 100 && pTrans->resp.rspCode <=199)
             {
@@ -356,13 +364,13 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
 			if(((sipTransMsg_t*)pMsg)->sipMsgType == SIP_MSG_REQUEST)
 			{
 	            sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-	            if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+	            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
     	        {
         	        sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
             	    goto EXIT;
             	}
 
-	            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+	            pTrans->tpInfo.tpType = (tpStatus == TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
 
 			}
 			else if(((sipTransMsg_t*)pMsg)->sipMsgType == SIP_MSG_ACK)
@@ -385,16 +393,16 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
                 logInfo("timer G expires, retransmit the request.");
 
                 sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-                if(tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL || tpStatus == SIP_TRANSPORT_STATUS_FAIL)
+                if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
                 {
                     logError("fails to send request.");
                     sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
                     goto EXIT;
                 }
 
-	            pTrans->tpInfo.tpType = (tpStatus == SIP_TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
+	            pTrans->tpInfo.tpType = (tpStatus == TRANSPORT_STATUS_UDP) ? SIP_TRANSPORT_TYPE_UDP :SIP_TRANSPORT_TYPE_TCP;
 
-				if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
+				if(tpStatus == TRANSPORT_STATUS_UDP)
                 {
                     pTrans->timerAEGValue = osMinInt(pTrans->timerAEGValue*2, SIP_TIMER_T2);
                     pTrans->sipTransISTimer.timerIdG = sipTransStartTimer(pTrans->timerAEGValue, pTrans);

@@ -1,13 +1,14 @@
 #include "osTypes.h"
 #include "osDebug.h"
+#include "osSockAddr.h"
 
 #include "sipConfig.h"
 #include "sipTransIntf.h"
-#include "sipTransport.h"
+#include "transportIntf.h"
 #include "sipHdrVia.h"
 
 
-void* sipTU_sendReq2Tr(sipRequest_e nameCode, osMBuf_t* pReq, sipTransViaInfo_t* pViaId, sipTransportIpPort_t* nextHop, bool isTpDirect, sipTuAppType_e appType, size_t topViaProtocolPos, void* pTuInfo)
+void* sipTU_sendReq2Tr(sipRequest_e nameCode, osMBuf_t* pReq, sipTransViaInfo_t* pViaId, transportIpPort_t* nextHop, bool isTpDirect, sipTuAppType_e appType, size_t topViaProtocolPos, void* pTuInfo)
 {
 	osStatus_e status = OS_STATUS_OK;
     sipTransInfo_t sipTransInfo;
@@ -26,10 +27,15 @@ void* sipTU_sendReq2Tr(sipRequest_e nameCode, osMBuf_t* pReq, sipTransViaInfo_t*
     sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.isRequest = true;
     sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.hdrStartPos = 0;
     sipTransMsg.request.pTransInfo = &sipTransInfo;
+#if 0	//use entwork address
     sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.ip = nextHop->ip;
     sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.port = nextHop->port;
     sipConfig_getHost(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.request.sipTrMsgBuf.tpInfo.local.port);
-    sipTransMsg.request.sipTrMsgBuf.tpInfo.viaProtocolPos = topViaProtocolPos;
+#else
+	osConvertPLton((osIpPort_t*)nextHop, true, &sipTransMsg.request.sipTrMsgBuf.tpInfo.peer);
+	sipConfig_getHost1(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local);
+#endif
+    sipTransMsg.request.sipTrMsgBuf.tpInfo.protocolUpdatePos = topViaProtocolPos;
     sipTransMsg.pTransId = NULL;
     sipTransMsg.pSenderId = pTuInfo;
 
@@ -54,10 +60,16 @@ osStatus_e sipTU_sendRsp2Tr(sipResponse_e rspCode, osMBuf_t* pResp, sipMsgDecode
   	sipHdrVia_getPeerTransportFromRaw(pReqDecodedRaw, peerViaIdx, &peerHostPort, &peerTpProtocol);
 
     sipTransMsg.response.sipTrMsgBuf.tpInfo.tpType = peerTpProtocol;
+#if 0   //use network address
     sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.ip = peerHostPort.host;
     sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.port = peerHostPort.portValue;
     sipConfig_getHost(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.response.sipTrMsgBuf.tpInfo.local.port);
-    sipTransMsg.response.sipTrMsgBuf.tpInfo.viaProtocolPos = 0;
+#else
+	osIpPort_t ipPort = {peerHostPort.host, peerHostPort.portValue};
+	osConvertPLton(&ipPort, true, &sipTransMsg.response.sipTrMsgBuf.tpInfo.peer);
+	sipConfig_getHost1(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local);
+#endif
+    sipTransMsg.response.sipTrMsgBuf.tpInfo.protocolUpdatePos = 0;
 
     //fill the other info
     sipTransMsg.sipMsgType = SIP_TRANS_MSG_CONTENT_RESPONSE;

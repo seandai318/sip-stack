@@ -8,7 +8,7 @@
 #include "sipMsgFirstLine.h"
 
 #include "sipTransIntf.h"
-
+#include "transportIntf.h"
 
 
 typedef enum {
@@ -67,7 +67,7 @@ typedef struct sipTransaction {
     sipMsgBuf_t resp;	//will be updated each time a new response is received
 	sipMsgBuf_t ack;
 	sipTransId_t transId;	//content is based on pReq
-	sipTransportInfo_t tpInfo;	//ctrl;		
+	transportInfo_t tpInfo;	//ctrl;		
 	union {
 		sipTransICTimer_t sipTransICTimer;
 		sipTransNICTimer_t sipTransNICTimer;

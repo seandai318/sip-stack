@@ -1,4 +1,5 @@
 #include <string.h>
+#include <arpa/inet.h>
 
 #include "sipConfig.h"
 #include "sipConfigPriv.h"
@@ -21,6 +22,14 @@ void sipConfig_getHost(osPointerLen_t* host, int* port)
 	host->p = SIP_CONFIG_LOCAL_IP;
 	host->l = strlen(SIP_CONFIG_LOCAL_IP);
 	*port = SIP_CONFIG_LISTEN_PORT;
+}
+
+
+void sipConfig_getHost1(struct sockaddr_in* pHost)
+{
+	pHost->sin_family = AF_INET;
+	inet_pton(AF_INET, SIP_CONFIG_LOCAL_IP, &pHost->sin_addr);
+	pHost->sin_port = htons(SIP_CONFIG_LISTEN_PORT);
 }
 
 

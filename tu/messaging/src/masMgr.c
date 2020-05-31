@@ -13,8 +13,8 @@
 #include "masConfig.h"
 #include "sipTransIntf.h"
 #include "sipTUIntf.h"
-#include "sipTransportServer.h"
-#include "sipTransportClient.h"
+#include "transportCom.h"
+#include "sipAppMain.h"
 #include "masMgr.h"
 #include "masDb.h"
 

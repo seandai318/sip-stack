@@ -6,7 +6,7 @@
 #include "sipHeaderMisc.h"
 #include "sipHdrMisc.h"
 
-#include "sipTransport.h"
+#include "transportIntf.h"
 #include "sipTUIntf.h"
 #include "sipTU.h"
 #include "sipTransIntf.h"
@@ -321,7 +321,7 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
     //to-do, for now, we do not check if the top route is this proxy, just assume it is, and remove it
     bool isMultiRoute = sipMsg_isHdrMultiValue(SIP_HDR_ROUTE, pReqDecodedRaw, false, NULL);
 
-    sipTransportIpPort_t nextHop;
+    transportIpPort_t nextHop;
     if(!isMultiRoute)
     {
         bool isNextHopDone = false;
@@ -1034,7 +1034,7 @@ static osStatus_e callProxy_onSipRequest(sipTUMsg_t* pSipTUMsg)
     //to-do, for now, we do not check if the top route is this proxy, just assume it is, and remove it
 	bool isMultiRoute = sipMsg_isHdrMultiValue(SIP_HDR_ROUTE, pReqDecodedRaw, false, NULL);
 
-	sipTransportIpPort_t nextHop;
+	transportIpPort_t nextHop;
 	if(!isMultiRoute)
 	{
 		bool isNextHopDone = false;

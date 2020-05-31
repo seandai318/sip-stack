@@ -2,11 +2,13 @@
 #define _SIP_TU_INTF_H
 
 
+#include <netinet/in.h>
+
 #include "osList.h"
 #include "sipMsgRequest.h"
 #include "sipMsgFirstLine.h"
-
-#include "sipTransport.h" 
+#include "transportIntf.h"
+//#include "sipTransport.h" 
 
 
 typedef enum {
@@ -28,7 +30,8 @@ typedef enum {
 typedef struct sipTUMsg {
     sipMsgType_e sipMsgType;
 	sipTuAppType_e appType;
-    sipTransportIpPort_t* pPeer;
+	struct sockaddr_in* pPeer;
+//    transportIpPort_t* pPeer;
     sipMsgBuf_t* pSipMsgBuf;		//contains raw sip buffer
 //	int tcpFd;						//tcp fd of the received message when > 0
 	void* pTransId;

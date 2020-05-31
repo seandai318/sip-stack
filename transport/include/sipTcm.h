@@ -4,10 +4,13 @@
 
 #include <netinet/in.h>
 
+#include "osTypes.h"
 #include "osList.h"
 
 #include "sipTransIntf.h"
-#include "sipTransport.h"
+//#include "sipTransport.h"
+#include "transportIntf.h"
+
 
 
 typedef enum {
@@ -25,38 +28,25 @@ typedef struct sipTpMsgState {
     bool isBadMsg;      //bad msg format, or pSipMsgBuf is full, still not found a sip packet
 } sipTpMsgState_t;
 
-
+#if 0
 typedef struct sipTpBuf {
     osMBuf_t* pSipMsgBuf;
     sipTpMsgState_t state;
 } sipTpBuf_t;
+#endif
 
 
-typedef struct tcpKeepAliveInfo {
+#if 0
+typedef struct {
     uint64_t keepAliveTimerId;
     bool isPersistent;  //if isPersistent, keepAliveTimerId shall not be lauched, the connection shall be kept as long as possible
     bool isUsed;    //if this TCP connection is ever used during the keepalive period
-    sipTpBuf_t sipBuf;
-} tcpKeepAliveInfo_t;
+	sipTpMsgState_t state;
+//    sipTpBuf_t sipBuf;
+} sipTcpInfo_t;			//used to be tcpKeepAliveInfo_t;
+#endif
 
-
-typedef struct tcpConnInfo {
-    osListPlus_t sipTrIdList;
-} tcpConnInfo_t;
-
-
-typedef struct sipTpTcm {
-    bool isUsing;       //if this slot is current used
-    bool isTcpConnDone; //if true, TCP connection has established
-    int sockfd;         //tcp fd
-    struct sockaddr_in peer;
-    union {
-        tcpConnInfo_t tcpConn;              //when isTcpConn = false
-        tcpKeepAliveInfo_t tcpKeepAlive;    //when isTcpConn = true
-    };
-} sipTpTcm_t;
-
-
+#if 0
 typedef struct sipTpQuarantine {
     bool isUsing;
     struct sockaddr_in peer;
@@ -64,22 +54,25 @@ typedef struct sipTpQuarantine {
     uint64_t qTimerId;
 } sipTpQuarantine_t;
 
+#endif
 
-typedef void (*notifyTcpConnUser_h)(osListPlus_t* pList, sipTransMsgType_e msgType, int tcpfd);
+
+struct tpTcm;
+
+/*extract Content-Length and EOM from a newly received message piece
+  pSipMsgBuf_pos = end of bytes processed.
+  pSipMsgBuf->end = end of bytes received, except when a sip packet is found, which pSipMsgBuf->end = end of the sip packet
+  if a sip packet does not contain Content-Length header, assume Content length = 0
+  pNextStart: if there is extra bytes, the position in the buf that the extra bytes starts
+  return value: -1: expect more read() for the current  sip packet, 0: exact sip packet, >1 extra bytes for next sip packet.
+ */
+ssize_t sipTpAnalyseMsg(osMBuf_t* pSipMsg, sipTpMsgState_t* pMsgState, size_t chunkLen, size_t* pNextStart);
+//osStatus_e tpProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len);
+osStatus_e tpProcessSipMsg(struct tpTcm* pTcm, int tcpFd, ssize_t len, bool* isForwardMsg);
+//return value: true: discard msg, false, keep msg
+bool sipTpSafeGuideMsg(osMBuf_t* sipBuf, size_t len);
+void sipTpNotifyTcpConnUser(osListPlus_t* pList, transportStatus_e connStatus, int tcpfd, struct sockaddr_in* pPeer);
 
 
-void sipTcmInit(notifyTcpConnUser_h notifier);
-sipTpTcm_t* sipTpGetTcm(struct sockaddr_in peer, bool isReseveOne);
-sipTpTcm_t* sipTpGetTcmByFd(int tcpFd, struct sockaddr_in peer);
-osStatus_e sipTpTcmAddFd(int tcpfd, struct sockaddr_in* peer);
-sipTpTcm_t* sipTpGetConnectedTcm(int tcpFd);
-osStatus_e sipTpDeleteTcm(int tcpfd);
-void sipTpDeleteAllTcm();
-osStatus_e sipTpTcmAddUser(sipTpTcm_t* pTcm, void* pTrId);
-osStatus_e sipTpTcmUpdateConn(int tcpfd, bool isConnEstablished);
-bool sipTpIsInQList(struct sockaddr_in peer);
-osMBuf_t* sipTpTcmBufInit(sipTpBuf_t* pTpBuf, bool isAllocSipBuf);
-//only usable when LM_TRANSPORT module is set to DEBUG level
-void sipTpListUsedTcm();
 
 #endif

@@ -7,7 +7,8 @@
 #include "sipMsgRequest.h"
 #include "sipMsgFirstLine.h"
 #include "sipTUIntf.h"
-#include "sipTransport.h"
+//#include "sipTransport.h"
+#include "transportIntf.h"
 
 
 typedef enum {
@@ -52,7 +53,7 @@ typedef struct sipTransInfo {
 
 typedef struct sipTransMsgBuf {
     sipMsgBuf_t sipMsgBuf;
-	sipTransportInfo_t tpInfo;
+	transportInfo_t tpInfo;
 #if 0
 	sipTransport_e tpType;
 	uint64_t tcpFd;

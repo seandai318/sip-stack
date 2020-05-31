@@ -2,6 +2,7 @@
 
 #include "osHash.h"
 #include "osTimer.h"
+#include "osSockAddr.h"
 
 #include "sipConfig.h"
 #include "sipHeaderMisc.h"
@@ -242,9 +243,17 @@ logError("to-remvoe, just to check the creation of a address.");
 
 EXIT:
 	{
-		sipHostport_t peer;
-		peer.host = pSipTUMsg->pPeer->ip;
-		peer.portValue = pSipTUMsg->pPeer->port;
+#if 0	//use network address
+        sipHostport_t peer;
+        peer.host = pSipTUMsg->pPeer->ip;
+        peer.portValue = pSipTUMsg->pPeer->port;
+#else
+		osIpPort_t osPeer;
+		osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
+        sipHostport_t peer;
+		peer.host = osPeer.ip;
+		peer.portValue = osPeer.port;
+#endif
 
 		osMBuf_t* pSipResp = NULL;
     	sipHdrName_e sipHdrArray[] = {SIP_HDR_FROM, SIP_HDR_TO, SIP_HDR_CALL_ID, SIP_HDR_CSEQ};
@@ -290,10 +299,16 @@ logError("to-remove, masReg, pRegData=%p", pRegData);
 
             sipTransMsg.response.sipTrMsgBuf.tpInfo.tpType = peerTpProtocol;
 //            sipTransMsg.response.sipTrMsgBuf.tpInfo.tcpFd = pSipTUMsg->tcpFd;
+#if 0	//use network address
             sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.ip = peerHostPort.host;
             sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.port = peerHostPort.portValue;
 			sipConfig_getHost(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.response.sipTrMsgBuf.tpInfo.local.port); 
-            sipTransMsg.response.sipTrMsgBuf.tpInfo.viaProtocolPos = 0;
+#else
+			osIpPort_t ipPort ={peerHostPort.host, peerHostPort.portValue};
+			osConvertPLton(&ipPort, true, &sipTransMsg.response.sipTrMsgBuf.tpInfo.peer);
+			sipConfig_getHost1(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local);
+#endif
+            sipTransMsg.response.sipTrMsgBuf.tpInfo.protocolUpdatePos = 0;
 
 			//fill the other info
         	sipTransMsg.sipMsgType = SIP_TRANS_MSG_CONTENT_RESPONSE;

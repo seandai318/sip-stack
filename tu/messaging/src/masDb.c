@@ -7,6 +7,7 @@
 #include "osPrintf.h"
 #include "osTimer.h"
 #include "osPL.h"
+#include "osSockAddr.h"
 
 #include "sipConfig.h"
 #include "sipMsgRequest.h"
@@ -448,11 +449,11 @@ logError("to-remove, sms, userPL=%r", &userPL);
 //	osPointerLen_t called = {pRow[MASDB_SMS_QUERY_USER], strlen(pRow[MASDB_SMS_QUERY_USER])};
     osPointerLen_t caller = {pRow[MASDB_SMS_QUERY_CALLER], strlen(pRow[MASDB_SMS_QUERY_CALLER])};
     sipTransInfo_t sipTransInfo;
-	size_t viaProtocolPos;
+	size_t protocolUpdatePos;
 	osPointerLen_t sms = {pRow[MASDB_SMS_QUERY_CONTENT], strlen(pRow[MASDB_SMS_QUERY_CONTENT])};
-	osMBuf_t* pSipBuf = masSip_buildRequest(&userPL, &caller, pCalledContactUser, &sms, &sipTransInfo.transId.viaId, &viaProtocolPos);
+	osMBuf_t* pSipBuf = masSip_buildRequest(&userPL, &caller, pCalledContactUser, &sms, &sipTransInfo.transId.viaId, &protocolUpdatePos);
 #if 0
-	osMBuf_t* pSipBuf = sipTU_uacBuildRequest(SIP_METHOD_MESSAGE, pCalledContactUser, &userPL, &caller, &sipTransInfo.transId.viaId, &viaProtocolPos);
+	osMBuf_t* pSipBuf = sipTU_uacBuildRequest(SIP_METHOD_MESSAGE, pCalledContactUser, &userPL, &caller, &sipTransInfo.transId.viaId, &protocolUpdatePos);
 	if(!pSipBuf)
 	{
 		logError("fails to sipTU_uacBuildRequest for a SMS from(%s) to(%s).", pRow[MASDB_SMS_QUERY_CALLER], pRow[MASDB_SMS_QUERY_USER]);
@@ -524,10 +525,16 @@ logError("to-remove, sms, userPL=%r", &userPL);
     sipTransInfo.isRequest = true;
     sipTransInfo.transId.reqCode = SIP_METHOD_MESSAGE;
     sipTransMsg.request.pTransInfo = &sipTransInfo;
+#if 0	//use network address
     sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.ip = pCalledContactUser->hostport.host;
     sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.port = pCalledContactUser->hostport.portValue;
     sipConfig_getHost(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.request.sipTrMsgBuf.tpInfo.local.port);
-    sipTransMsg.request.sipTrMsgBuf.tpInfo.viaProtocolPos = viaProtocolPos;
+#else
+	osIpPort_t osPeer = {pCalledContactUser->hostport.host, pCalledContactUser->hostport.portValue};
+	osConvertPLton(&osPeer, true, &sipTransMsg.request.sipTrMsgBuf.tpInfo.peer);
+	sipConfig_getHost1(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local);
+#endif
+    sipTransMsg.request.sipTrMsgBuf.tpInfo.protocolUpdatePos = protocolUpdatePos;
     sipTransMsg.pTransId = NULL;
     sipTransMsg.pSenderId = pMasInfo;
 

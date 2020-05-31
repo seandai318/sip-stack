@@ -146,13 +146,16 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
 		ackMsg2TU.pSipMsgBuf->reqCode = SIP_METHOD_ACK;
 		
 		//for ACK, we do not need to store peer address	
+#if 0	//use network address
         char ipaddr[INET_ADDRSTRLEN]={};
-		sipTransportIpPort_t peer;
+		transportIpPort_t peer;
         inet_ntop(AF_INET, &((sipTransportMsgBuf_t*) sipBuf)->peer.sin_addr, (char*)&ipaddr, INET_ADDRSTRLEN);
         osPL_setStr(&peer.ip, (const char *)&ipaddr, 0);
         peer.port = ntohs(((sipTransportMsgBuf_t*) sipBuf)->peer.sin_port);
 		ackMsg2TU.pPeer = &peer;
-	
+#else
+		ackMsg2TU.pPeer = &((sipTransportMsgBuf_t*) sipBuf)->peer;
+#endif	
 		sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &ackMsg2TU);
 		goto EXIT;
 	}
@@ -185,14 +188,19 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
 			pTrans->transId = sipTransInfo.transId;
             pTrans->tpInfo.tcpFd = ((sipTransportMsgBuf_t*) sipBuf)->tcpFd;
 			pTrans->tpInfo.tpType = pTrans->tpInfo.tcpFd == -1 ? SIP_TRANSPORT_TYPE_ANY : SIP_TRANSPORT_TYPE_TCP; 
-			pTrans->tpInfo.isServer = ((sipTransportMsgBuf_t*) sipBuf)->isServer;
+			pTrans->tpInfo.isCom = ((sipTransportMsgBuf_t*) sipBuf)->isCom;
+#if 0	//ipPort_t to struct sockaddr_in
 			char* ipaddr = oszalloc(INET_ADDRSTRLEN, NULL);
 			inet_ntop(AF_INET, &((sipTransportMsgBuf_t*) sipBuf)->peer.sin_addr, ipaddr, INET_ADDRSTRLEN);
 			osPL_setStr(&pTrans->tpInfo.peer.ip, ipaddr, 0);
 			pTrans->tpInfo.peer.port = ntohs(((sipTransportMsgBuf_t*) sipBuf)->peer.sin_port);
-            debug("to-remove, pTrans=%p, received (sipTransportMsgBuf_t*) sipBuf=%p, tcpFd=%d, isServer=%d, pTrans->tpInfo.tcpFd=%d, pTrans->tpInfo.tpType=%d.", pTrans, sipBuf, ((sipTransportMsgBuf_t*) sipBuf)->tcpFd, ((sipTransportMsgBuf_t*) sipBuf)->isServer, pTrans->tpInfo.tcpFd, pTrans->tpInfo.tpType);
+            debug("to-remove, pTrans=%p, received (sipTransportMsgBuf_t*) sipBuf=%p, tcpFd=%d, isCom=%d, pTrans->tpInfo.tcpFd=%d, pTrans->tpInfo.tpType=%d.", pTrans, sipBuf, ((sipTransportMsgBuf_t*) sipBuf)->tcpFd, ((sipTransportMsgBuf_t*) sipBuf)->isCom, pTrans->tpInfo.tcpFd, pTrans->tpInfo.tpType);
 logError("to-remove, PEER, ip=%r, port=%d, ipaddr=%s", &pTrans->tpInfo.peer.ip, pTrans->tpInfo.peer.port, ipaddr);
-
+#else
+            pTrans->tpInfo.peer = ((sipTransportMsgBuf_t*) sipBuf)->peer;
+            debug("to-remove, pTrans=%p, received (sipTransportMsgBuf_t*) sipBuf=%p, tcpFd=%d, isCom=%d, pTrans->tpInfo.tcpFd=%d, pTrans->tpInfo.tpType=%d.", pTrans, sipBuf, ((sipTransportMsgBuf_t*) sipBuf)->tcpFd, ((sipTransportMsgBuf_t*) sipBuf)->isCom, pTrans->tpInfo.tcpFd, pTrans->tpInfo.tpType);
+logError("to-remove, PEER=%A", &pTrans->tpInfo.peer);
+#endif
             pHashData->hashKeyType = OSHASHKEY_INT;
             pHashData->hashKeyInt = hashKey;
             pHashData->pData = pTrans;
@@ -269,7 +277,7 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
 	{
 		debug("isTpDirect=%d", pSipTUMsg->isTpDirect);
 
-		sipTransportInfo_t* pTpInfo;
+		transportInfo_t* pTpInfo;
 		osMBuf_t* pSipMsg;
 		if(pSipTUMsg->sipMsgType != SIP_TRANS_MSG_CONTENT_RESPONSE )
 		{
@@ -606,8 +614,10 @@ static void sipTrans_delete(void* pData)
 	osMBuf_dealloc(pTrans->resp.pSipMsg);
 	osMBuf_dealloc(pTrans->ack.pSipMsg);
 
+#if 0	//ipPort_t to struct sockaddr_in
 	osDPL_dealloc((osDPointerLen_t*)&pTrans->tpInfo.peer.ip);
 	osDPL_dealloc((osDPointerLen_t*)&pTrans->tpInfo.local.ip);
+#endif
 	//the request.pTransInfo->transId.viaId.branchId is a little bit complicated.  For a SIP message from TU, the branchId is a dedicated allocated memory, has to be released as a standalone action.  for a SIP message from peer, the branchId is in the top via, which does not need to be released as a stadalobe action.  As a result, we do not release here, instead, we release the TU one as soon as it is not needed any more
 	//no need to stop the timers, they shall be stopped in the state machine.
 	//no need to free pTransHashLE as it is freed as part of delete a hash entry.  as a matter of fact, sipTrans is freed inside pTransHashLE free

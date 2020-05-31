@@ -8,8 +8,9 @@
 
 typedef struct sipHostport {
 	osPointerLen_t host;
-	osPointerLen_t port;
+	//osPointerLen_t port;
 	uint32_t portValue;	//if the value is 0, the port shall not be encoded
+	osPointerLen_t port;	//this needs to be at the bottom of the data structure(to make possible of direct initialization)
 } sipHostport_t;
 
 

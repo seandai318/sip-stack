@@ -119,8 +119,10 @@ osStatus_e sipTransICStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uint
 	}
 
 	pTrans->tpInfo = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo;
+#if 0	//use network address
     osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip);
     osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local.ip);
+#endif
     pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_ANY;
     pTrans->tpInfo.tcpFd = -1;
 
@@ -157,7 +159,7 @@ osStatus_e sipTransICStateCalling_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 
 				pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_UDP;
             	sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
-            	if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+            	if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
             	{
                 	logError("fails to send request.");
                 	sipTransICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
@@ -252,10 +254,10 @@ osStatus_e sipTransICStateCalling_onMsg(sipTransMsgType_e msgType, void* pMsg, u
                 pTrans->ack.pSipMsg = pAckMsg;
                 logInfo("the ACK message =\n%M", pAckMsg);
 
-                //per 3261, the ACK by transaction has to be sent to the same peer IP/port/transport, the SIP_TRANSPORT_STATUS_TCP_CONN case shall not occur
+                //per 3261, the ACK by transaction has to be sent to the same peer IP/port/transport, the TRANSPORT_STATUS_TCP_CONN case shall not occur
                 sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->ack.pSipMsg);
 
-                if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+                if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
                 {
                     logError("fails to send request.");
                     //notify TU about the ACK failure, to-do
@@ -266,13 +268,13 @@ osStatus_e sipTransICStateCalling_onMsg(sipTransMsgType_e msgType, void* pMsg, u
                     status = OS_ERROR_NETWORK_FAILURE;
                     goto EXIT;
                 }
-                else if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
+                else if(tpStatus == TRANSPORT_STATUS_UDP)
                 {
                     pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_UDP;
                     pTrans->sipTransICTimer.timerIdD = sipTransStartTimer(SIP_TIMER_D, pTrans);
                     sipTransICEnterState(SIP_TRANS_STATE_COMPLETED, msgType, pTrans);
                 }
-                else if(tpStatus == SIP_TRANSPORT_STATUS_TCP_OK)
+                else if(tpStatus == TRANSPORT_STATUS_TCP_OK)
                 {
                     sipTransICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
                     goto EXIT;
@@ -286,7 +288,7 @@ osStatus_e sipTransICStateCalling_onMsg(sipTransMsgType_e msgType, void* pMsg, u
             pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
             pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*) pMsg)->tcpFd;
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
-            if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+            if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
             {
                 logError("fails to send request.");
                 sipTransICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
@@ -382,9 +384,9 @@ osStatus_e sipTransICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 
 				logInfo("the ACK message =\n%M", pAckMsg);
 
-                //per 3261, the ACK by transaction has to be sent to the same peer IP/port/transport, the SIP_TRANSPORT_STATUS_TCP_CONN case shall not occur
+                //per 3261, the ACK by transaction has to be sent to the same peer IP/port/transport, the TRANSPORT_STATUS_TCP_CONN case shall not occur
 	            sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->ack.pSipMsg);
-    	        if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+    	        if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
         	    {
             	    logError("fails to send request.");
 					//notify TU about the ACK failure, to-do
@@ -395,13 +397,13 @@ osStatus_e sipTransICStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
                 	status = OS_ERROR_NETWORK_FAILURE;
                 	goto EXIT;
             	}
-				else if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
+				else if(tpStatus == TRANSPORT_STATUS_UDP)
 				{
 					pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_UDP; 
             		pTrans->sipTransICTimer.timerIdD = sipTransStartTimer(SIP_TIMER_D, pTrans);
                 	sipTransICEnterState(SIP_TRANS_STATE_COMPLETED, msgType, pTrans);
 				}
-				else if(tpStatus == SIP_TRANSPORT_STATUS_TCP_OK)
+				else if(tpStatus == TRANSPORT_STATUS_TCP_OK)
 				{
 					sipTransICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
 					goto EXIT;
@@ -483,7 +485,7 @@ osStatus_e sipTransICStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
             {
                 //ACK must have been built, reuse
                 sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->ack.pSipMsg);
-                if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+                if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
                 {
                     logError("fails to send request.");
                     sipTransICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
@@ -537,7 +539,7 @@ osStatus_e sipTransICEnterState(sipTransState_e newState, sipTransMsgType_e msgT
         case SIP_TRANS_STATE_CALLING:
 		{
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->req.pSipMsg);
-            if(tpStatus == SIP_TRANSPORT_STATUS_FAIL || tpStatus == SIP_TRANSPORT_STATUS_TCP_FAIL)
+            if(tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_TCP_FAIL)
 			{
 				logError("fails to start timerE.");
                 sipTransICEnterState(SIP_TRANS_STATE_TERMINATED, SIP_TRANS_MSG_TYPE_TX_FAILED, pTrans);
@@ -554,7 +556,7 @@ osStatus_e sipTransICEnterState(sipTransState_e newState, sipTransMsgType_e msgT
                 goto EXIT;
             }
 
-            if(tpStatus == SIP_TRANSPORT_STATUS_UDP)
+            if(tpStatus == TRANSPORT_STATUS_UDP)
             {
                 pTrans->timerAEGValue = SIP_TIMER_T1;
                 pTrans->sipTransICTimer.timerIdA = sipTransStartTimer(pTrans->timerAEGValue, pTrans);
