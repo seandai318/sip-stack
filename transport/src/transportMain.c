@@ -168,10 +168,19 @@ void* transportMainStart(void* pData)
 			goto EXIT;
 		}
 
-		tpListenerInfo_t appListener = {tcpListenFd, tpSetting.serverTcpInfo[i].appType};
-		osList_append(&tpListenerList, &appListener);
+		tpListenerInfo_t* pAppListener = osmalloc(sizeof(tpListenerInfo_t), NULL);
+		if(!pAppListener)
+		{
+			logError("fails to osmalloc for pAppListener, fd=%d, appType=%d.", tcpListenFd, tpSetting.serverTcpInfo[i].appType);
+			goto EXIT;
+		}
+
+		pAppListener->tcpFd = tcpListenFd;
+		pAppListener->appType = tpSetting.serverTcpInfo[i].appType;
+		osList_append(&tpListenerList, pAppListener);
 
 #else
+/*
     if((tcpListenFd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)) < 0)
     {
         logError("fails to create TCP socket.");
@@ -204,8 +213,9 @@ void* transportMainStart(void* pData)
         logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", sipUdpFd, tpEpFd, errno);
         goto EXIT;
     }
+*/
 #endif
-    	debug("tcp listening fd =%d (ip=%r, port=%d) is added into epoll fd (%d).", tcpListenFd, &tpSetting.serverTcpInfo[i].local.ip, tpSetting.serverTcpInfo[i].local.port, tpEpFd);
+    	debug("tcp listening fd =%d (ip=%r, port=%d, appType=%d) is added into epoll fd (%d).", tcpListenFd, &tpSetting.serverTcpInfo[i].local.ip, tpSetting.serverTcpInfo[i].local.port, tpSetting.serverTcpInfo[i].appType, tpEpFd);
 	}
 
 	transportAppType_e appType;
