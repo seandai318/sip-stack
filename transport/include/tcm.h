@@ -67,7 +67,7 @@ tpTcm_t* tpGetTcm(struct sockaddr_in peer, transportAppType_e appType, bool isRe
 tpTcm_t* tpGetTcmByFd(int tcpFd, struct sockaddr_in peer);
 osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, transportAppType_e appType);
 tpTcm_t* tpGetConnectedTcm(int tcpFd);
-osStatus_e tpDeleteTcm(int tcpfd);
+osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp);
 void tpDeleteAllTcm();
 osStatus_e tpTcmAddUser(tpTcm_t* pTcm, void* pTrId);
 osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished);
@@ -76,5 +76,6 @@ osMBuf_t* tpTcmBufInit(tpTcm_t* pTcm, bool isAllocSipBuf);
 //only usable when LM_TRANSPORT module is set to DEBUG level
 void tpListUsedTcm();
 void tpReleaseTcm(tpTcm_t* pTcm);
+osStatus_e tpTcmCloseTcpConn(int tpEpFd, int tcpFd, bool isNotifyApp);
 
 #endif

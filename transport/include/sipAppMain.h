@@ -18,6 +18,7 @@ typedef struct sipTransportClientSetting {
 osStatus_e sipAppMainInit(int pipefd[2]);
 void* sipAppMainStart(void* pData);
 sipTransportStatus_e sipTpClient_send(void* pTrId, transportInfo_t* pTpInfo, osMBuf_t* pSipBuf);
+int appMain_getTpFd();
 
 
 #endif

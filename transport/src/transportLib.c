@@ -431,7 +431,7 @@ osStatus_e tpCreateTcp(int tpEpFd, struct sockaddr_in* peer, struct sockaddr_in*
     *connStatus = connect(*sockfd, (struct sockaddr*)peer, sizeof(struct sockaddr_in));
     if(*connStatus != 0 && errno != EINPROGRESS)
     {
-        logError("fails to connect() for peer(%A).", peer);
+        logError("fails to connect() for peer(%A), errno=%d.", peer, errno);
         status = OS_ERROR_NETWORK_FAILURE;
         goto EXIT;
     }

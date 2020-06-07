@@ -326,10 +326,13 @@ void* transportMainStart(void* pData)
 				//if waiting for TCP connection establishment for a locally initiated connection
                 if(events[i].events & EPOLLOUT)
                 {
-                    if(events[i].events & EPOLLERR)
+					//if was found that events may return 0x14, 0x201c, and tcp connect() may still return properly.  Also, return from epoll_wait() may be before or after connect() return() (probably due to multi threads) 
+                    if(events[i].events & (EPOLLERR|EPOLLHUP))
                     {
-                        close(events[i].data.fd);
-                        tpDeleteTcm(events[i].data.fd);
+						debug("received event=0x%x, close the connection (fd=%d), notifying app.", events[i].events, events[i].data.fd);
+						tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
+                        //close(events[i].data.fd);
+                        //tpDeleteTcm(events[i].data.fd);
                     }
                     else
                     {
@@ -347,7 +350,7 @@ void* transportMainStart(void* pData)
 				//for all other already established TCP connections
 				if(events[i].events & EPOLLERR)
 				{
-					com_closeTcpConn(events[i].data.fd);
+					tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
 					continue;
 				}
 
@@ -401,8 +404,9 @@ void* transportMainStart(void* pData)
 						{
 							//it was noticed that len=-1 and errno = 14 (EFAULT) was received
 							logError("len=-1, errno=%d.", errno);
-		                    close(events[i].data.fd);
-        		            tpDeleteTcm(events[i].data.fd);
+	                        tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
+		                    //close(events[i].data.fd);
+        		            //tpDeleteTcm(events[i].data.fd);
 
 							break;
 						}
@@ -413,8 +417,9 @@ void* transportMainStart(void* pData)
 						{
 							//close the fd
 							debug("peer closed the TCP connection for tcpfd (%d).", events[i].data.fd);
-							close(events[i].data.fd);
-							tpDeleteTcm(events[i].data.fd);
+                            tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
+							//close(events[i].data.fd);
+							//tpDeleteTcm(events[i].data.fd);
 						}
 						break;
 					}
@@ -689,12 +694,12 @@ int getLbFd()
 	return lbFd[0];
 }
 
-
-osStatus_e com_closeTcpConn(int tcpFd)
+#if 0 
+osStatus_e com_closeTcpConn(int tcpFd, bool isNotifyApp)
 {
 	DEBUG_BEGIN
 
-	osStatus_e status = tpDeleteTcm(tcpFd);
+	osStatus_e status = tpDeleteTcm(tcpFd, isNotifyApp);
 	if(status  == OS_STATUS_OK)
 	{
 		debug("tcpFd=%d is closed.", tcpFd);
@@ -717,7 +722,7 @@ EXIT:
 	DEBUG_END
 	return status;
 }
-
+#endif
 
 #if 0
 static void sipTpServerForwardMsg(osMBuf_t* pSipBuf, int tcpFd, struct sockaddr_in* peer)
@@ -1237,5 +1242,10 @@ EXIT:
     return tpStatus;
 }
 
+
+int com_getTpFd()
+{
+	return tpEpFd;
+}
 
 //static transportStatus_e TpCreateAndSendUdp(transportAppType_e appType, void* appId, transportInfo_t* pTpInfo, osMBuf_t* pBuf, int* fd)

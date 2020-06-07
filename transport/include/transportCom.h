@@ -34,8 +34,9 @@ void* transportMainStart(void* pData);
 osStatus_e tpStartTcpConn(transportIpPort_t* local, transportIpPort_t* peer, bool isAnyLocalPort);
 //send TCP/UDP message, create TCP/UDP if necessary
 transportStatus_e com_send(transportAppType_e appType, void* appId, transportInfo_t* pTpInfo, osMBuf_t* pBuf, int* fd);
-osStatus_e com_closeTcpConn(int tcpFd);
+//osStatus_e com_closeTcpConn(int tcpFd);
 int getLbFd();
+int com_getTpFd();
 
 
 #endif

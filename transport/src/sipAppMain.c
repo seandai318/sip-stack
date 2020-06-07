@@ -163,10 +163,12 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 			{
 				if(events[i].events & EPOLLOUT)
 				{
-					if(events[i].events & EPOLLERR)
+					if(events[i].events & (EPOLLERR|EPOLLHUP))
 					{
-						close(events[i].data.fd);	
-                        tpDeleteTcm(events[i].data.fd);
+						tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
+						logInfo("received events(%0x%x), close connection(fd=%d), notify app.", events[i].events, tpEpFd);
+						//close(events[i].data.fd);	
+                        //tpDeleteTcm(events[i].data.fd);
 					}
 					else
 					{
@@ -223,8 +225,9 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 						{
 							//close the fd
 							mdebug(LM_TRANSPORT, "peer closed the TCP connection for tcpfd (%d).", events[i].data.fd);
-							close(events[i].data.fd);
-							tpDeleteTcm(events[i].data.fd);
+	                        tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
+							//close(events[i].data.fd);
+							//tpDeleteTcm(events[i].data.fd);
 						}
 						break;
 					}	
@@ -736,3 +739,10 @@ static osStatus_e tpClientProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len)
 EXIT:
     return status;
 }
+
+
+int appMain_getTpFd()
+{
+    return tpEpFd;
+}
+

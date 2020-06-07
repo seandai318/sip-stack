@@ -11,6 +11,7 @@
 //#include <errno.h>
 #include <pthread.h>
 #include <string.h>
+#include <sys/epoll.h>
 
 #include "osDebug.h"
 #include "osMBuf.h"
@@ -236,7 +237,7 @@ EXIT:
 }	
 
 
-osStatus_e tpDeleteTcm(int tcpfd)
+osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -273,7 +274,7 @@ osStatus_e tpDeleteTcm(int tcpfd)
 			{
 logError("to-remove, sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i);
 
-    			if(notifyTcpConnUser[sipTCM[i].appType])
+    			if(isNotifyApp && notifyTcpConnUser[sipTCM[i].appType])
     			{
         			notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, tcpfd, NULL);
     			}
@@ -767,4 +768,33 @@ void tpListUsedTcm()
 	}
 
     pthread_rwlock_unlock(&tcmRwlock);
+}
+
+
+osStatus_e tpTcmCloseTcpConn(int tpEpFd, int tcpFd, bool isNotifyApp)
+{
+    DEBUG_BEGIN
+
+    osStatus_e status = tpDeleteTcm(tcpFd, isNotifyApp);
+    if(status  == OS_STATUS_OK)
+    {
+        debug("tcpFd=%d is closed.", tcpFd);
+        struct epoll_event event;
+        if(epoll_ctl(tpEpFd, EPOLL_CTL_DEL, tcpFd, &event))
+        {
+            logError("fails to delete file descriptor (%d) to epoll(%d), errno=%d.", tcpFd, tpEpFd, errno);
+            status = OS_ERROR_SYSTEM_FAILURE;
+            goto EXIT;
+        }
+        if(close(tcpFd) == -1)
+        {
+            logError("fails to close fd(%d), errno=%d.", tpEpFd, errno);
+            status = OS_ERROR_SYSTEM_FAILURE;
+            goto EXIT;
+        }
+    }
+
+EXIT:
+    DEBUG_END
+    return status;
 }

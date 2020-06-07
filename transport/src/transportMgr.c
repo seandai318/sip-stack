@@ -11,6 +11,7 @@
 #include "transportCom.h"
 #include "sipAppMain.h"
 #include "transportConfig.h"
+#include "tcm.h"
 
 
 
@@ -119,7 +120,17 @@ osStatus_e transport_closeTcpConn(int tcpFd, bool isCom)
 		goto EXIT;
 	}
 
-	status = com_closeTcpConn(tcpFd);
+	int epFd = -1;
+	if(isCom)
+	{
+		epFd = com_getTpFd();
+	}
+	else
+	{
+		epFd = appMain_getTpFd();
+	}
+
+	status = tpTcmCloseTcpConn(epFd, tcpFd, false);
 
 EXIT:
 	return status;
