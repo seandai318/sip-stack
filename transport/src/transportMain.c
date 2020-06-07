@@ -19,6 +19,7 @@
 #include "osMBuf.h"
 #include "osConfig.h"
 #include "osResourceMgmt.h"
+#include "osHexDump.h"
 
 #include "sipConfig.h"
 #include "sipMsgFirstLine.h"
@@ -234,7 +235,7 @@ void* transportMainStart(void* pData)
 		{
 			if(events[i].data.fd != tpSetting.ownIpcFd[0])
 			{
-				logError("to-remove, fd=%d", events[i].data.fd);
+				logInfo("received a socket message, fd=%d", events[i].data.fd);
 			}
 			if(events[i].data.fd == tpSetting.ownIpcFd[0])
 			{
@@ -357,6 +358,10 @@ void* transportMainStart(void* pData)
 				{
 					logError("received a TCP message from tcpfd (%d) that does not have TCM.", events[i].data.fd);
 					appType = TRANSPORT_APP_TYPE_UNKNOWN;
+				}
+				else
+				{
+					appType = pTcm->appType;
 				}
 				
 				//pSipMsgBuf->pos = the end of processed received bytes 
@@ -797,8 +802,15 @@ static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int t
 #endif
     char ip[INET_ADDRSTRLEN]={};
     inet_ntop(AF_INET, &peer->sin_addr, ip, INET_ADDRSTRLEN);
-    mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), the msg=\n%M", ip, appType, ntohs(peer->sin_port), pBuf);
-
+	if(appType == TRANSPORT_APP_TYPE_DIAMETER)
+	{
+		mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), the msg=", ip, appType, ntohs(peer->sin_port));
+		hexdump(stdout, pBuf->buf, pBuf->end);
+	}
+	else
+	{ 
+    	mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), the msg=\n%M", ip, appType, ntohs(peer->sin_port), pBuf);
+	}
     //to-do, need to go to hash table, to find the destination ipc id, for now, just forward to the first one.
     write(lbFd[0], (void*) &ipcMsg, sizeof(osIPCMsg_t));
 }

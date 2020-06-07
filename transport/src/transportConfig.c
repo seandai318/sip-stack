@@ -1,3 +1,6 @@
+#include "sipConfig.h"
+#include "diaConfig.h"
+
 #include "transportIntf.h"
 #include "transportConfig.h"
 
@@ -26,3 +29,25 @@ transportType_e tpConfig_getTransport(transportAppType_e appType, osPointerLen_t
 
 	return tpType;
 }
+
+
+int tpGetBufSize(transportAppType_e appType)
+{
+    switch(appType)
+    {
+        case TRANSPORT_APP_TYPE_SIP:
+            return SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE;
+            break;
+        case TRANSPORT_APP_TYPE_DIAMETER:
+			return DIA_CONFIG_TRANSPORT_TCP_BUFFER_SIZE;
+            break;
+        case TRANSPORT_APP_TYPE_DNS:
+        case TRANSPORT_APP_TYPE_UNKNOWN:
+        default:
+            break;
+    }
+
+    return SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE;
+}
+
+

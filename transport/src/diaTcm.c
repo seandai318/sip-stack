@@ -69,55 +69,44 @@ osStatus_e tpProcessDiaMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len, bool* isForwar
 	*isForwardMsg = false;
     size_t nextStart = 0;
 
-    ssize_t remaining = 0;
-    while((remaining = diaTpAnalyseMsg(pTcm->msgConnInfo.pMsgBuf, &pTcm->msgConnInfo.diaState, len, &nextStart)) >= 0)
-    {
-        //remaining <0 when the pBuf only contins part of a message, that does not necessary the message is bigger than pBuf->size, rather the whole message has not been received, pBuf only partly filled
-#if 0
+    ssize_t remaining = diaTpAnalyseMsg(pTcm->msgConnInfo.pMsgBuf, &pTcm->msgConnInfo.diaState, len, &nextStart);
+logError("to-remove, remaining=%d", remaining);
+        
+	//remaining <0 when the pBuf only contins part of a message, that does not necessary the message is bigger than pBuf->size, rather the whole message has not been received, pBuf only partly filled
     if(remaining < 0)
     {
         mdebug(LM_TRANSPORT, "remaining=%d, less than 0.", remaining);
         goto EXIT;
     }
+        
+	osMBuf_t* pCurDiaBuf = pTcm->msgConnInfo.pMsgBuf;
+    bool isBadMsg = pTcm->msgConnInfo.diaState.isBadMsg;
+    //if isBadMsg, drop the current received dia message, and reuse the pDiaMsgBuf
+    if(!tpTcmBufInit(pTcm, isBadMsg ? false : true))
+    {
+        logError("fails to init a TCM pDiaMsgBuf.");
+        status = OS_ERROR_SYSTEM_FAILURE;
+        goto EXIT;
+    }
+
+    //copy the next sip message pieces that have been read into the newly allocated pSipMsgBuf
+    if(remaining > 0)
+    {
+        memcpy(pTcm->msgConnInfo.pMsgBuf->buf, &pCurDiaBuf->buf[nextStart], remaining);
+        pTcm->msgConnInfo.pMsgBuf->end = remaining;
+        pTcm->msgConnInfo.pMsgBuf->pos = 0;
+    }
+
+    if(!isBadMsg)
+    {
+        pTcm->msgConnInfo.isUsed = true;
+
+		*isForwardMsg = true;
+        //tpServerForwardMsg(TRANSPORT_APP_TYPE_SIP, pCurSipBuf, tcpFd, &pTcm->peer);
+    }
     else
     {
-#endif
-        osMBuf_t* pCurDiaBuf = pTcm->msgConnInfo.pMsgBuf;
-        bool isBadMsg = pTcm->msgConnInfo.diaState.isBadMsg;
-        //if isBadMsg, drop the current received dia message, and reuse the pDiaMsgBuf
-        if(!tpTcmBufInit(pTcm, isBadMsg ? false : true))
-        {
-            logError("fails to init a TCM pDiaMsgBuf.");
-            status = OS_ERROR_SYSTEM_FAILURE;
-            goto EXIT;
-        }
-
-        //copy the next sip message pieces that have been read into the newly allocated pSipMsgBuf
-        if(remaining > 0)
-        {
-            memcpy(pTcm->msgConnInfo.pMsgBuf->buf, &pCurDiaBuf->buf[nextStart], remaining);
-            pTcm->msgConnInfo.pMsgBuf->end = remaining;
-            pTcm->msgConnInfo.pMsgBuf->pos = 0;
-        }
-
-        if(!isBadMsg)
-        {
-            pTcm->msgConnInfo.isUsed = true;
-
-			*isForwardMsg = true;
-            //tpServerForwardMsg(TRANSPORT_APP_TYPE_SIP, pCurSipBuf, tcpFd, &pTcm->peer);
-        }
-        else
-        {
-            mdebug(LM_TRANSPORT, "received a bad msg, drop.");
-            break;
-        }
-
-        //no left over
-        if(remaining <= 0)
-        {
-            break;
-        }
+        mdebug(LM_TRANSPORT, "received a bad msg, drop.");
     }
 
 EXIT:
@@ -133,6 +122,11 @@ void diaTpNotifyTcpConnUser(osListPlus_t* pList, transportStatus_e connStatus, i
 	pTpMsg->tpMsgType = DIA_TRANSPORT_MSG_TYPE_TCP_CONN_STATUS;
 	pTpMsg->connStatusMsg.connStatus = connStatus;
 	pTpMsg->connStatusMsg.fd = tcpfd;
+	if(connStatus == TRANSPORT_STATUS_TCP_SERVER_OK && pList)
+	{
+		logError("A diameter server gets TRANSPORT_STATUS_TCP_SERVER_OK, but pList for diaId is not NULL.")
+		pList = NULL;
+	}
 	pTpMsg->diaId = pList ? pList->first : NULL;		//for TRANSPORT_STATUS_TCP_SERVER_OK, this shall be NULL
 	if(pPeer)
 	{

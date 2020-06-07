@@ -13,6 +13,7 @@
 
 
 transportType_e tpConfig_getTransport(transportAppType_e appType, osPointerLen_t* ip, int port, size_t msgSize);
+int tpGetBufSize(transportAppType_e appType);
 
 
 #endif

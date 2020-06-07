@@ -147,6 +147,7 @@ void tpReleaseTcm(tpTcm_t* pTcm)
 
 	pTcm->isUsing = false;
 	pTcm->sockfd = -1;
+    memset(pTcm, 0, sizeof(tpTcm_t));
 
     pthread_rwlock_unlock(&tcmRwlock);
 }
@@ -194,6 +195,7 @@ EXIT:
 }
 
 
+
 tpTcm_t* tpGetConnectedTcm(int tcpFd)
 {
     tpTcm_t* pTcm = NULL;
@@ -217,7 +219,7 @@ tpTcm_t* tpGetConnectedTcm(int tcpFd)
             pTcm = &sipTCM[i];
 			if(!pTcm->msgConnInfo.pMsgBuf)
 			{
-				pTcm->msgConnInfo.pMsgBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
+				pTcm->msgConnInfo.pMsgBuf = osMBuf_alloc(tpGetBufSize(pTcm->appType));
 				if(!pTcm->msgConnInfo.pMsgBuf)
 				{
 					logError("fails to allocate memory for pTcm->msgConnInfo.sipBuf->pMsgBuf.");
@@ -419,6 +421,15 @@ logError("to-remove, PTCM, pTcm=%p set to true", pTcm);
 		pTcm->peer = *peer;
 //		tpTcmBufInit(&pTcm->msgConnInfo.sipBuf, false);
         tpTcmBufInit(pTcm, true);
+
+logError("to-remove, pTcm->appType=%d, notifyTcpConnUser[pTcm->appType]=%p.", pTcm->appType, notifyTcpConnUser[pTcm->appType]);
+
+	    if(notifyTcpConnUser[pTcm->appType])
+    	{
+			//for TRANSPORT_STATUS_TCP_SERVER_OK, there is no appId, as it is server receiving the connection request
+        	notifyTcpConnUser[pTcm->appType](NULL, TRANSPORT_STATUS_TCP_SERVER_OK, tcpfd, peer);
+    	}
+
 		switch(appType)
 		{
 			case TRANSPORT_APP_TYPE_SIP:
@@ -441,13 +452,6 @@ logError("to-remove, PTCM, pTcm=%p set to true", pTcm);
 EXIT:
     pthread_rwlock_unlock(&tcmRwlock);
 	tpListUsedTcm();
-
-logError("to-remove, pTcm->appType=%d, notifyTcpConnUser[pTcm->appType]=%p.", pTcm->appType, notifyTcpConnUser[pTcm->appType]);
-
-	if(notifyTcpConnUser[pTcm->appType])
-    {
-    	notifyTcpConnUser[pTcm->appType](&pTcm->tcpConn.appIdList, TRANSPORT_STATUS_TCP_SERVER_OK, tcpfd, peer);
-    }
 
 	return status;
 }
@@ -489,7 +493,7 @@ logError("to-remove, sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=
 				{
 					notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_OK, tcpfd, &sipTCM[i].peer);
 				}
-				sipTCM[i].msgConnInfo.pMsgBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
+				sipTCM[i].msgConnInfo.pMsgBuf = osMBuf_alloc(tpGetBufSize(sipTCM[i].appType));
 				if(sipTCM[i].appType == TRANSPORT_APP_TYPE_SIP)
 				{
                 	sipTCM[i].msgConnInfo.isPersistent = false;
@@ -641,7 +645,6 @@ osMBuf_t* tpTcmBufInit(tpTcm_t* pTcm, bool isAllocBuf)
     		pTcm->msgConnInfo.sipState.clValue = -1;
     		pTcm->msgConnInfo.sipState.isBadMsg = false;
 
-			bufSize = SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE;
 			break;
 		}
 		case TRANSPORT_APP_TYPE_DIAMETER:
@@ -650,7 +653,6 @@ osMBuf_t* tpTcmBufInit(tpTcm_t* pTcm, bool isAllocBuf)
 			pTcm->msgConnInfo.diaState.msgLen = 0;
 			pTcm->msgConnInfo.diaState.receivedBytes = 0;
 
-			bufSize = DIA_CONFIG_TCP_BUFFER_SIZE;
             break;
         }
 		default:
@@ -659,7 +661,7 @@ osMBuf_t* tpTcmBufInit(tpTcm_t* pTcm, bool isAllocBuf)
 			break;
 	}
 
-    pTcm->msgConnInfo.pMsgBuf = isAllocBuf ? osMBuf_alloc(bufSize) : NULL;
+    pTcm->msgConnInfo.pMsgBuf = isAllocBuf ? osMBuf_alloc(tpGetBufSize(pTcm->appType)) : NULL;
 
     if(!pTcm->msgConnInfo.pMsgBuf)
     {

@@ -49,12 +49,12 @@ typedef struct tpTcm {
     bool isTcpConnDone; 				//if true, TCP connection has established
     int sockfd;         				//tcp fd
     struct sockaddr_in peer;
-    union {
-        tcpConnInfo_t tcpConn;          //when isTcpConn = false
-        tpTcpMsgConnInfo_t msgConnInfo;		//when isTcpConn = true, contains info about received message and the monitoring of active conn
+	union {
+    	tcpConnInfo_t tcpConn;          	//when sockfd < 0, contains the appIds who requested to initiate the tcp connection as a client.
+    	tpTcpMsgConnInfo_t msgConnInfo;		//when sockfd >0, contains info about received message and the monitoring of active conn
+	};
 //		sipTcpInfo_t sipTcpInfo;		//tcpKeepAlive;//when isTcpConn = true, appType = TP_APP_TYPE_SIP
 //		diaTcpInfo_t diaTcpInfo;		//when isTcpConn = true, appType = TP_APP_TYPE_DIAMETER
-    };
 } tpTcm_t;
 
 
