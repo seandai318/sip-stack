@@ -257,7 +257,7 @@ osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp)
         if(sipTCM[i].sockfd = tcpfd)
         {
 			sipTCM[i].isUsing = false;
-			logError("to-remove, tcm, sipTCM[%d].isUsing = false", i);
+			debug("set sipTCM[%d].isUsing = false", i);
 			if(sipTCM[i].isTcpConnDone)
 			{
 				osStopTimer(sipTCM[i].msgConnInfo.keepAliveTimerId);
