@@ -296,6 +296,10 @@ osStatus_e tpProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len, bool* isForwar
         pTcm->msgConnInfo.pMsgBuf->end = remaining;
         pTcm->msgConnInfo.pMsgBuf->pos = 0;
 
+	    //prepare the current buf to be forwarded
+    	pCurSipBuf->pos = 0;
+    	pCurSipBuf->end = nextStart;
+
         if(!isBadMsg)
         {
             pTcm->msgConnInfo.isUsed = true;

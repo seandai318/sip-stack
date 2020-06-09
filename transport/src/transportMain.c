@@ -366,7 +366,8 @@ void* transportMainStart(void* pData)
 				{
 					appType = pTcm->appType;
 				}
-				
+			
+				osMBuf_t* aMsg = NULL;	
 				//pSipMsgBuf->pos = the end of processed received bytes 
 				//pSipMsgBuf->end = the end of last received bytes
             	while (1) 
@@ -384,6 +385,7 @@ void* transportMainStart(void* pData)
                             	buffer = pTcm->msgConnInfo.pMsgBuf->buf;
                             	bufLen = pTcm->msgConnInfo.pMsgBuf->size;
                         	}
+							aMsg = pTcm->msgConnInfo.pMsgBuf;
 							break;
                     	case TRANSPORT_APP_TYPE_UNKNOWN:
 							buffer = dumbBuf;
@@ -425,6 +427,7 @@ void* transportMainStart(void* pData)
 					}
 
 					bool isForwardMsg = false;
+					debug("received message for appType=%d, len=%d.", pTcm->appType, len);
 					switch(pTcm->appType)
 					{
                         case TRANSPORT_APP_TYPE_SIP:
@@ -445,9 +448,8 @@ void* transportMainStart(void* pData)
 
 					if(isForwardMsg)
 					{
-                    	osMBuf_t* pCurSipBuf = pTcm->msgConnInfo.pMsgBuf;
                     	int tcpFd = events[i].data.fd;
-                    	tpServerForwardMsg(pTcm->appType, pCurSipBuf, tcpFd, &pTcm->peer);	
+                    	tpServerForwardMsg(pTcm->appType, aMsg, tcpFd, &pTcm->peer);	
 					}
 				}
         	}

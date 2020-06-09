@@ -20,6 +20,7 @@ ssize_t diaTpAnalyseMsg(osMBuf_t* pDiaMsg, diaTpMsgState_t* pMsgState, size_t ch
         return -1;
     }
 
+logError("to-remove, pMsgState->msgLen=%d, pMsgState->receivedBytes=%d", pMsgState->msgLen, pMsgState->receivedBytes);
     int remaining = -1;
     *pNextStart = 0;
     if(pMsgState->msgLen == 0)
@@ -30,12 +31,12 @@ ssize_t diaTpAnalyseMsg(osMBuf_t* pDiaMsg, diaTpMsgState_t* pMsgState, size_t ch
 
     if(chunkLen >= (pMsgState->msgLen - pMsgState->receivedBytes))
     {
+        remaining = chunkLen - (pMsgState->msgLen - pMsgState->receivedBytes);
+        *pNextStart = pMsgState->msgLen - pMsgState->receivedBytes;
+
         //reset state
         pMsgState->receivedBytes = 0;
         pMsgState->msgLen = 0;
-
-        remaining = chunkLen - (pMsgState->msgLen - pMsgState->receivedBytes);
-        *pNextStart = pMsgState->msgLen - pMsgState->receivedBytes;
         goto EXIT;
     }
     else
@@ -96,6 +97,10 @@ logError("to-remove, remaining=%d", remaining);
         pTcm->msgConnInfo.pMsgBuf->end = remaining;
         pTcm->msgConnInfo.pMsgBuf->pos = 0;
     }
+
+	//prepare the current buf to be forwarded
+	pCurDiaBuf->pos = 0;
+	pCurDiaBuf->end = nextStart;
 
     if(!isBadMsg)
     {
