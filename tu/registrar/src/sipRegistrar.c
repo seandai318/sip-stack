@@ -251,7 +251,7 @@ EXIT:
 		osIpPort_t osPeer;
 		osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
         sipHostport_t peer;
-		peer.host = osPeer.ip;
+		peer.host = osPeer.ip.pl;
 		peer.portValue = osPeer.port;
 #endif
 

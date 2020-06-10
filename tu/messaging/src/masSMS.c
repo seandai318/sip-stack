@@ -160,7 +160,7 @@ logError("to-remove, calledContact, host=%r, port=%d", &pCalledContactUser->host
 #else
 	osIpPort_t osIpPort;
 	osConvertntoPL(pSipTUMsg->pPeer, &osIpPort);
-	sipTransInfo.transId.viaId.host = osIpPort.ip;
+	sipTransInfo.transId.viaId.host = osIpPort.ip.pl;
 	sipTransInfo.transId.viaId.port = osIpPort.port;
 #endif	
 logError("to-remove, PEER=%A", pSipTUMsg->pPeer); 
@@ -249,7 +249,7 @@ BUILD_RESPONSE:
 #else
 		osIpPort_t osPeer;
 		osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
-		sipHostport_t peer = {osPeer.ip, osPeer.port};
+		sipHostport_t peer = {osPeer.ip.pl, osPeer.port};
 #endif
 	    sipHdrDecoded_t viaHdr={};
     	status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr, &viaHdr, false);

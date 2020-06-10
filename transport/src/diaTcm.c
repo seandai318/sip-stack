@@ -71,7 +71,7 @@ osStatus_e tpProcessDiaMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len, bool* isForwar
     size_t nextStart = 0;
 
     ssize_t remaining = diaTpAnalyseMsg(pTcm->msgConnInfo.pMsgBuf, &pTcm->msgConnInfo.diaState, len, &nextStart);
-logError("to-remove, remaining=%d", remaining);
+	debug("remaining=%d", remaining);
         
 	//remaining <0 when the pBuf only contins part of a message, that does not necessary the message is bigger than pBuf->size, rather the whole message has not been received, pBuf only partly filled
     if(remaining < 0)

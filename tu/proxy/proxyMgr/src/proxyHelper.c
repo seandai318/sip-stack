@@ -47,7 +47,7 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 #else
 	osIpPort_t osPeer;
 	osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
-	viaId.host = osPeer.ip;
+	viaId.host = osPeer.ip.pl;
 	viaId.port = osPeer.port;
 #endif
 //logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->pPeer->port);
@@ -179,7 +179,7 @@ osStatus_e sipProxy_uasResponse(sipResponse_e rspCode, sipTUMsg_t* pSipTUMsg, si
 #else
 		osIpPort_t osPeer;
 		osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
-		sipHostport_t peer = {osPeer.ip, osPeer.port};
+		sipHostport_t peer = {osPeer.ip.pl, osPeer.port};
 #endif
         status = sipHdrVia_rspEncode(pSipResp, viaHdr.decodedHdr,  pReqDecodedRaw, &peer);
         osfree(viaHdr.decodedHdr);

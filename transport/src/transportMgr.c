@@ -22,7 +22,7 @@ transportStatus_e transport_send(transportAppType_e appType, void* appId, transp
     {
 		osIpPort_t osPeer;
 		osConvertntoPL(&pTpInfo->peer, &osPeer);
-		pTpInfo->tpType = tpConfig_getTransport(appType, &osPeer.ip, osPeer.port, pBuf->size);
+		pTpInfo->tpType = tpConfig_getTransport(appType, &osPeer.ip.pl, osPeer.port, pBuf->size);
 		if(pTpInfo->tpType = TRANSPORT_TYPE_ANY)
 		{
 			pTpInfo->tpType == TRANSPORT_STATUS_UDP;
@@ -62,7 +62,7 @@ sipTransportStatus_e sipTransport_send(void* pTrId, transportInfo_t* pTpInfo, os
     bool isUDP = true;
     osIpPort_t osPeer;
     osConvertntoPL(&pTpInfo->peer, &osPeer);
-	switch(sipConfig_getTransport(&osPeer.ip, osPeer.port))
+	switch(sipConfig_getTransport(&osPeer.ip.pl, osPeer.port))
     //switch(sipConfig_getTransport(&pTpInfo->peer.ip, pTpInfo->peer.port))
     {
         case SIP_TRANSPORT_TYPE_TCP:
