@@ -128,7 +128,7 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
     logInfo("UDP FD=%d is created, local=%A", udpFd, &localAddr);
 
     //to-do: may need to move this function to other module, like masMain(). that requires the synchronization so that when dia starts to do connection, the epoll in tpMain is ready.
-	dia_init();
+	dia_init("/home/ama/project/app/mas/config");
 
 	//in transport layer, do not do UDP listening, neither we do TCP listening for the new connection, they are the responsible of com.  it only does ipc and tcp client connection listening.  whoever creates the tcp connection will add the connection fd to the tpEpFd. 
 	ssize_t len;

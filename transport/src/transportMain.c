@@ -811,12 +811,12 @@ static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int t
     inet_ntop(AF_INET, &peer->sin_addr, ip, INET_ADDRSTRLEN);
 	if(appType == TRANSPORT_APP_TYPE_DIAMETER)
 	{
-		mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), the msg=", ip, appType, ntohs(peer->sin_port));
+		mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), the msg=", ip, ntohs(peer->sin_port), appType);
 		hexdump(stdout, pBuf->buf, pBuf->end);
 	}
 	else
 	{ 
-    	mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), the msg=\n%M", ip, appType, ntohs(peer->sin_port), pBuf);
+    	mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), the msg=\n%M", ip, ntohs(peer->sin_port), appType, pBuf);
 	}
     //to-do, need to go to hash table, to find the destination ipc id, for now, just forward to the first one.
     write(lbFd[0], (void*) &ipcMsg, sizeof(osIPCMsg_t));
