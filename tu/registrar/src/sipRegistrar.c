@@ -304,7 +304,7 @@ logError("to-remove, masReg, pRegData=%p", pRegData);
             sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.port = peerHostPort.portValue;
 			sipConfig_getHost(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.response.sipTrMsgBuf.tpInfo.local.port); 
 #else
-			osIpPort_t ipPort ={peerHostPort.host, peerHostPort.portValue};
+			osIpPort_t ipPort ={{peerHostPort.host}, peerHostPort.portValue};
 			osConvertPLton(&ipPort, true, &sipTransMsg.response.sipTrMsgBuf.tpInfo.peer);
 			sipConfig_getHost1(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local);
 #endif
