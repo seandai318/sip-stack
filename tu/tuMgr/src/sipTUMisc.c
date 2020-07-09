@@ -27,14 +27,11 @@ void* sipTU_sendReq2Tr(sipRequest_e nameCode, osMBuf_t* pReq, sipTransViaInfo_t*
     sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.isRequest = true;
     sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.hdrStartPos = 0;
     sipTransMsg.request.pTransInfo = &sipTransInfo;
-#if 0	//use entwork address
-    sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.ip = nextHop->ip;
-    sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.port = nextHop->port;
-    sipConfig_getHost(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.request.sipTrMsgBuf.tpInfo.local.port);
-#else
-	osConvertPLton((osIpPort_t*)nextHop, true, &sipTransMsg.request.sipTrMsgBuf.tpInfo.peer);
+
+	osIpPort_t ipPort = {{nextHop->ip}, nextHop->port};
+	osConvertPLton(&ipPort, true, &sipTransMsg.request.sipTrMsgBuf.tpInfo.peer);
+
 	sipConfig_getHost1(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local);
-#endif
     sipTransMsg.request.sipTrMsgBuf.tpInfo.protocolUpdatePos = topViaProtocolPos;
     sipTransMsg.pTransId = NULL;
     sipTransMsg.pSenderId = pTuInfo;
@@ -65,7 +62,7 @@ osStatus_e sipTU_sendRsp2Tr(sipResponse_e rspCode, osMBuf_t* pResp, sipMsgDecode
     sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.port = peerHostPort.portValue;
     sipConfig_getHost(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.response.sipTrMsgBuf.tpInfo.local.port);
 #else
-	osIpPort_t ipPort = {peerHostPort.host, peerHostPort.portValue};
+	osIpPort_t ipPort = {{peerHostPort.host}, peerHostPort.portValue};
 	osConvertPLton(&ipPort, true, &sipTransMsg.response.sipTrMsgBuf.tpInfo.peer);
 	sipConfig_getHost1(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local);
 #endif
