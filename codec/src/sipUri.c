@@ -346,10 +346,13 @@ osStatus_e sipParamUri_create(sipUri_t* pUri)
 
 	if(pUri->hostport.host.l == 0)
 	{
+		sipConfig_getHost(&pUri->hostport.host, &pUri->hostport.portValue);
+#if 0
 		pUri->hostport.host.p = sipConfig_getHostIP();
 		pUri->hostport.host.l = strlen(pUri->hostport.host.p);
 
 		pUri->hostport.portValue = sipConfig_getHostPort();
+#endif
 	}
 
 EXIT:

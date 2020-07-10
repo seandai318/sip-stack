@@ -1094,11 +1094,21 @@ static osStatus_e callProxy_onSipRequest(sipTUMsg_t* pSipTUMsg)
 	//prepare message forwarding
 	sipHdrRawValueId_t delList = {SIP_HDR_ROUTE, true};
 	uint8_t delNum = pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE] ? 1 : 0;
-	char* localIP;
+
+	osPointerLen_t localIP;
 	int localPort;
-    sipConfig_getHostStr(&localIP, &localPort);
+	sipConfig_getHost(&localIP, &localPort);
 	char* ipPort = oszalloc_r(21);
-	int len = sprintf(ipPort, "%s:%d", &localIP, localPort);
+	int len = osPrintf_buffer(ipPort, 21, "%r:%d", &localIP, localPort);
+	if(len < 0)
+	{
+		logError("fails to osPrintf_buffer for ipPort(%r:%d)", &localIP, localPort);
+		osfree(ipPort);
+        rspCode = SIP_RESPONSE_503;
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+ 
 	osPointerLen_t rr = {ipPort, len};
 	sipHdrRawValueStr_t addList = {SIP_HDR_Record_ROUTE, &rr};
 

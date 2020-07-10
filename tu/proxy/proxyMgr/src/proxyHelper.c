@@ -2,6 +2,7 @@
 #include "osDebug.h"
 #include "osMemory.h"
 #include "osSockAddr.h"
+#include "osPrintf.h"
 
 #include "sipConfig.h"
 #include "sipMsgRequest.h"
@@ -61,11 +62,19 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 	int len = 0;
     if(isAddRR)
 	{
-    	char* localIP;
+	    osPointerLen_t localIP;
     	int localPort;
-    	sipConfig_getHostStr(&localIP, &localPort);
-    	ipPort = oszalloc_r(SIP_HDR_MAX_SIZE, NULL);
-    	len = sprintf(ipPort, "Record-Route: <sip:%s:%d;lr>\r\n", localIP, localPort);
+    	sipConfig_getHost(&localIP, &localPort);
+        ipPort = oszalloc_r(SIP_HDR_MAX_SIZE, NULL);
+    	len = osPrintf_buffer(ipPort, SIP_HDR_MAX_SIZE, "Record-Route: <sip:%s:%d;lr>\r\n", &localIP, localPort);
+    	if(len < 0)
+    	{
+        	logError("fails to osPrintf_buffer for ipPort(%r:%d)", &localIP, localPort);
+        	osfree(ipPort);
+        	status = OS_ERROR_INVALID_VALUE;
+        	goto EXIT;
+    	}
+
 		addNum = 1;
 	}
 	osPointerLen_t rr = {ipPort, len};

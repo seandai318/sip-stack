@@ -15,8 +15,6 @@ typedef struct sipConfigTpType {
 } sipConfigTpType_t;
 
 
-//static char* hostIP = "10.11.12.13";
-//static int hostPort = 5060;
 
 static sipTransport_e sipConfig_defaultTpType = SIP_TRANSPORT_TYPE_ANY;
 

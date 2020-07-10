@@ -1,5 +1,6 @@
 #include "osDebug.h"
 #include "osMemory.h"
+#include "osPrintf.h"
 
 #include "sipHeader.h"
 #include "sipGenericNameParam.h"
@@ -546,7 +547,8 @@ osStatus_e sipHdrCallId_createCallId(osPointerLen_t* pl)
     srand(time(NULL));
     int randValue=rand();
 
-    pl->l = sprintf(callIdValue, "%lx%lx%x@%s", tp.tv_sec, tp.tv_nsec, randValue, sipConfig_getHostIP());
+	pl->l = osPrintf_buffer(callIdValue, SIP_MAX_CALL_ID_LEN, "%lx%lx%x@%s", tp.tv_sec, tp.tv_nsec, randValue, sipConfig_getHostIP());
+//    pl->l = sprintf(callIdValue, "%lx%lx%x@%s", tp.tv_sec, tp.tv_nsec, randValue, sipConfig_getHostIP());
 
 EXIT:
 	if(status != OS_STATUS_OK)
