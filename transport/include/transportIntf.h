@@ -1,3 +1,6 @@
+/* Copyright 2020, 2019, Sean Dai
+ */
+
 #ifndef _TRANSPORT_INTF_H
 #define _TRANSPORT_INTF_H
 
@@ -49,8 +52,9 @@ typedef struct {
 
 
 typedef struct {
-	 bool isUdpWaitResponse;
-	 bool isEphemeralPort;
+	bool isUdpWaitResponse;	//whether the UDP needs to wait for response, if true, it will be the app's responsibility to close the udp fd
+	bool isEphemeralPort;	//shall a EphemeralPort port be used or use a port provided by app
+	int fd;					//for sending message, if fd != -1, the tp shall use the fd to send out the udp message, for receiving message, fd is filled with udp fd created if isUdpWaitResponse = true
 } udpInfo_t;
 
 
@@ -63,21 +67,14 @@ typedef struct {
 	};
 	struct sockaddr_in peer;
 	struct sockaddr_in local;
-#if 0
-	bool isSockAddr;
-	union {
-    	transportIpPort_t peer;			//if isSockAddr = 0;
-		struct sockaddr_in peer_in;		//if isSockAddr = 1;
-	};
-	uinon {
-    	transportIpPort_t local;		//if isSockAddr = 0;
-		struct sockaddr_in local_in;	//if isSockAddr = 1;
-	};
-#endif
 	size_t protocolUpdatePos;		//viaProtocolPos for sip, if=0, do not update.  some protocols like SIP let the tp to determine tp protocol, and the protocol message has to be updated by tp accordingly.
 } transportInfo_t;
 	
 
+typedef void (*tpLocalSendCallback_h)(transportStatus_e tStatus, int fd, osMBuf_t* pBuf);
+
+void transport_localRegApp(transportAppType_e appType, tpLocalSendCallback_h callback);
+transportStatus_e transport_localSend( transportAppType_e appType, transportInfo_t* pTpInfo, osMBuf_t* pBuf, int* fd);
 transportStatus_e transport_send(transportAppType_e appType, void* appId, transportInfo_t* pTpInfo, osMBuf_t* pBuf, int* fd);
 osStatus_e transport_closeTcpConn(int tcpFd, bool isCom);
 

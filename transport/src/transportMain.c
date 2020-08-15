@@ -1,3 +1,8 @@
+/* Copyright 2020, 2019, Sean Dai
+ * implement tcp and udp listening as a stand alone thread.
+ */
+
+
 #define _GNU_SOURCE
 #include <fcntl.h>
 #include <unistd.h>
@@ -224,7 +229,7 @@ void* transportMainStart(void* pData)
 	size_t bufLen;
 	char* buffer;
 	osMBuf_t* udpBuf;
-    char* udpRcv[SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE];	//temp hold the received message to avoid allc/dealloc udp buffer when receiving ping or status info
+    char udpRcv[SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE];	//temp hold the received message to avoid allc/dealloc udp buffer when receiving ping or status info
 	int event_count;
 //    size_t ipcMsgAddr;
 	osIPCMsg_t ipcMsg;
@@ -255,7 +260,7 @@ void* transportMainStart(void* pData)
 			}
 			else if(events[i].data.fd == sipUdpFd)
 			{
-				char* udpRcv[SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE];
+				//char* udpRcv[SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE];
 				while(1)
 				{
 					struct sockaddr_in peerAddr;
@@ -688,6 +693,7 @@ static void sipTpServerOnIpcMsg(osIPCMsg_t* pIpcMsg)
 			break;
 	}
 }
+
 
 
 //need to rework when working on lb module

@@ -1,3 +1,6 @@
+/* Copyright 2020, 2019, Sean Dai
+ */
+
 #include "osMisc.h"
 #include "osTimer.h"
 #include "osHash.h"
@@ -609,12 +612,13 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
                 osfree(pTrans);
             }
 
-            osHash_deleteNode(pTrans->pTransHashLE);
+            osHash_deleteNode(pTrans->pTransHashLE, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
+#if 0
             osHashData_t* pHashData = pTrans->pTransHashLE->data;
 			osfree(pHashData);
             //osfree((sipTransaction_t*)pHashData->pData);
             osfree(pTrans->pTransHashLE);
-
+#endif
             break;
         default:
             logError("received unexpected newState (%d).", newState);

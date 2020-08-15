@@ -1,3 +1,6 @@
+/* Copyright 2020, 2019, Sean Dai
+ */
+
 #define _GNU_SOURCE		//for pipe2()
 #include <fcntl.h>
 #include <unistd.h>
@@ -28,13 +31,16 @@
 #include "tcm.h"
 #include "transportLib.h"
 #include "diaIntf.h"
+#include "transportUdpMgmt.h"
+
 
 
 
 static __thread sipTransportClientSetting_t tpSetting;
 static __thread int udpFd=-1, tpEpFd=-1;
-
+static __thread tpLocalSendCallback_h tpLocal_appTypeCallbackMap[TRANSPORT_APP_TYPE_COUNT];
 static void sipTpClientOnIpcMsg(osIPCMsg_t* pIpcMsg);
+
 static osStatus_e sipTpClientSendTcp(void* pTrId, transportInfo_t* pTpInfo, osMBuf_t* pSipBuf, sipTransportStatus_e* pTransport);
 //static osStatus_e sipTpCreateTcp(void* appId, transportIpPort_t* peer, transportIpPort_t* local, tpTcm_t* pTcm);
 //static void sipTpNotifyTcpConnUser(transportAppType_e appType, osListPlus_t* pList, transportStatus_e msgType, int tcpfd);
@@ -59,6 +65,19 @@ EXIT:
 }
 
 
+void tpLocal_appReg(transportAppType_e appType, tpLocalSendCallback_h callback)
+{
+	if(appType >= TRANSPORT_APP_TYPE_COUNT)
+	{
+		logError("appType(%d) is larger than TRANSPORT_APP_TYPE_COUNT(%d).", appType, TRANSPORT_APP_TYPE_COUNT);
+		return;
+	}
+
+	tpLocal_appTypeCallbackMap[appType] = callback;
+}
+	
+
+	
 void* sipAppMainStart(void* pData)
 {
 	struct sockaddr_in localAddr;
@@ -105,10 +124,6 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 	if(tpConvertPLton(&tpSetting.local, false, &localAddr) != OS_STATUS_OK)
 	{
 		logError("fails to tpConvertPLton for udp, IP=%r, port=%d.", &tpSetting.local.ip, tpSetting.local.port);
-    // Filling server information
-//    localAddr.sin_family    = AF_INET; // IPv4
-//    localAddr.sin_addr.s_addr = tpSetting.local.ip;
-//    localAddr.sin_port = htons(tpSetting.local.port);
 		goto EXIT;
 	}
 
@@ -130,13 +145,15 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
     //to-do: may need to move this function to other module, like masMain(). that requires the synchronization so that when dia starts to do connection, the epoll in tpMain is ready.
 	dia_init("/home/ama/project/app/mas/config");
 
-	//in transport layer, do not do UDP listening, neither we do TCP listening for the new connection, they are the responsible of com.  it only does ipc and tcp client connection listening.  whoever creates the tcp connection will add the connection fd to the tpEpFd. 
+	//in transport layer, do not do TCP listening for the new connection, they are the responsible of com.  it only does ipc and tcp client connection listening.  whoever creates the tcp connection will add the connection fd to the tpEpFd. For udp, we do listening for udp created via tpLocal_udpSend().  for udp created when system start up using the default local, send only (may add to listning later though)
 	ssize_t len;
 	size_t bufLen;
 	char* buffer;
 	int event_count;
 //    size_t ipcMsgAddr;
 	osIPCMsg_t ipcMsg;
+	tpLocalSendCallback_h udpCallback;
+	char udpRcv[SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE];
     while (1)
     {
         event_count = epoll_wait(tpEpFd, events, SYS_MAX_EPOLL_WAIT_EVENTS, -1);
@@ -158,6 +175,34 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 					//sipTpClientOnIpcMsg((osIPCMsg_t*)ipcMsgAddr);
                     sipTpClientOnIpcMsg(&ipcMsg);
 				}
+			}
+			else if((udpCallback = tpUdpMgmtGetUdpCallback(events[i].data.fd)) != NULL)
+			{
+				//this is a UDP FD
+                while(1)
+                {
+                    struct sockaddr_in peerAddr;
+                    int peerAddrLen = sizeof(peerAddr);
+                    len = recvfrom(events[i].data.fd, udpRcv, SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE, MSG_DONTWAIT, (struct sockaddr *) &peerAddr, &peerAddrLen);
+                    if(len == -1 && (errno == EWOULDBLOCK || errno == EAGAIN || errno == EBADF))
+                    {
+                        debug("EAGAIN received for udpfd(%d).", events[i].data.fd);
+                        break;
+                    }
+
+                    if(len < 10)
+                    {
+                        debug("received udp message with len(%d) less than minimum packet size for udp (%d).", len, events[i].data.fd);
+                        continue;
+                    }
+
+                    osMBuf_t* udpBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
+                    memcpy(udpBuf->buf, udpRcv, len);
+
+                    debug("to-remove, peer=%A.", &peerAddr);
+                    udpBuf->end = len;
+					udpCallback(TRANSPORT_STATUS_UDP, events[i].data.fd, udpBuf);
+                }
 			}
 			else
 			{
@@ -226,68 +271,11 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 							//close the fd
 							mdebug(LM_TRANSPORT, "peer closed the TCP connection for tcpfd (%d).", events[i].data.fd);
 	                        tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
-							//close(events[i].data.fd);
-							//tpDeleteTcm(events[i].data.fd);
 						}
 						break;
 					}	
 
 					tpClientProcessSipMsg(pTcm, events[i].data.fd, len);
-#if 0
-					//basic sanity check to remove leading \r\n.  here we also ignore other invalid chars, 3261 only says \r\n
-					if(pTcm->msgConnInfo.pMsgBuf->pos == 0 && (pTcm->msgConnInfo.pMsgBuf->buf[0] < 'A' || pTcm->msgConnInfo.pMsgBuf->buf[0] > 'Z'))
-					{
-                        mdebug(LM_TRANSPORT, "received pkg proceeded with invalid chars, char[0]=0x%x, len=%d.", pTcm->msgConnInfo.pMsgBuf->buf[0],len); 
-						if(sipTpSafeGuideMsg(pTcm->msgConnInfo.pMsgBuf, len))
-						{
-							continue;
-						}
-					}
-					size_t nextStart = 0;
-					ssize_t remaining = sipTpAnalyseMsg(&pTcm->msgConnInfo. len, &nextStart);
-					if(remaining < 0)
-					{
-                        mdebug(LM_TRANSPORT, "remaining=%d, less than 0.", remaining);
-						continue;
-					}
-					else
-					{
-						osMBuf_t* pCurSipBuf = pTcm->msgConnInfo.pMsgBuf;
-						bool isBadMsg = pTcm->msgConnInfo.state.isBadMsg;	
-						if(!tpTcmBufInit(&pTcm->msgConnInfo. isBadMsg ? false : true))
-						{
-							logError("fails to init a TCM pSipMsgBuf.");
-							goto EXIT;
-						}
-
-						if(remaining > 0)
-						{
-							memcpy(pTcm->msgConnInfo.pMsgBuf->buf, &pCurSipBuf->buf[nextStart], remaining);
-						}
-						pTcm->msgConnInfo.pMsgBuf->end = remaining;
-						pTcm->msgConnInfo.pMsgBuf->pos = 0;
-
-						if(!isBadMsg)
-						{
-    						char ip[INET_ADDRSTRLEN]={};
-    						inet_ntop(AF_INET, &pTcm->peer.sin_addr, ip, INET_ADDRSTRLEN);
-							mlogInfo(LM_TRANSPORT, "received a sip Msg from fd(%d) %s:%d, the msg=\n%M", pTcm->sockfd, ip, ntohs(pTcm->peer.sin_port), pCurSipBuf);
-
-							pTcm->sipTcpInfo.isUsed = true;
-
-							sipTransportMsgBuf_t sipTpMsg;
-							sipTpMsg.pSipBuf = pCurSipBuf;
-							sipTpMsg.tcpFd = -1;
-							sipTpMsg.isServer = false;
-							//sipTpMsg.tpId = NULL;					
-							sipTrans_onMsg(SIP_TRANS_MSG_TYPE_PEER, &sipTpMsg, 0);
-						}
-                        else
-                        {
-                            mdebug(LM_TRANSPORT, "received a bad msg, drop.");
-                        }
-					}
-#endif
 				}
 			}
         }
@@ -351,26 +339,6 @@ sipTransportStatus_e sipTpClient_send(void* pTrId, transportInfo_t* pTpInfo, osM
 		goto EXIT;
 	}
 
-	
-#if 0		//done in sipTransportMgr
-    //check which transport protocol to use
-    bool isUDP = true;
-    switch(sipConfig_getTransport(&pTpInfo->peer.ip, pTpInfo->peer.port))
-    {
-        case SIP_TRANSPORT_TYPE_TCP:
-            isUDP = false;
-            break;
-        case SIP_TRANSPORT_TYPE_ANY:
-            if(pSipBuf->end > OS_TRANSPORT_MAX_MTU - OS_SIP_TRANSPORT_BUFFER_SIZE)
-            {
-                isUDP = false;
-            }
-            break;
-        default:
-            break;
-    }
-#endif
-
 	if(pTpInfo->tpType == SIP_TRANSPORT_TYPE_UDP)
 	{
         tpStatus = SIP_TRANSPORT_TYPE_UDP;
@@ -378,18 +346,9 @@ sipTransportStatus_e sipTpClient_send(void* pTrId, transportInfo_t* pTpInfo, osM
         {
             osMBuf_modifyStr(pSipBuf, "UDP", 3, pTpInfo->protocolUpdatePos);
         }
-#if 0	//use network address
-	    struct sockaddr_in dest;
-		status = tpConvertPLton(&pTpInfo->peer, true, &dest);
-		if(status != OS_STATUS_OK)
-		{
-			logError("fails to perform tpConvertPLton.");
-			goto EXIT;
-		}
-#endif
+
 		logInfo("send a SIP message via UDP FD=%d, dest=%A, sip message=\n%M", udpFd, &pTpInfo->peer, pSipBuf);
         len = sendto(udpFd, pSipBuf->buf, pSipBuf->end, 0, (const struct sockaddr*) &pTpInfo->peer, sizeof(struct sockaddr_in));
-//        len = sendto(udpFd, "hello", 5, 0, (const struct sockaddr*) &dest, sizeof(dest));
         if(len != pSipBuf->end || len == -1)
         {
             logError("fails to sendto() for udpFd=%d, len=%d, errno=%d.", udpFd, len, errno);
@@ -409,6 +368,98 @@ EXIT:
 
 	return tpStatus;
 }
+
+
+//two ways, the same socket, send and receive
+transportStatus_e tpLocal_udpSend(transportAppType_e appType, transportInfo_t* pTpInfo, osMBuf_t* pBuf, int* pFd)
+{
+	transportStatus_e tpStatus = TRANSPORT_STATUS_FAIL;
+	if(!pTpInfo || !pBuf)
+	{
+		logError("null pointer, pTpInfo=%p, pBuf=%p.", pTpInfo, pBuf);
+		goto EXIT;
+	}
+
+	tpLocalSendCallback_h callback = tpLocal_appTypeCallbackMap[appType];
+	{
+		if(callback == NULL)
+		{	
+			logError("callback=NULL for appType=%d.", appType);
+			goto EXIT;
+		}
+	}
+
+	int fd = tpUdpMgmtGetFd(appType, pTpInfo->local);
+	if(fd == -1)
+	{
+		//does not find a fd, need to create a new udp socket
+    	if((fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0)) < 0 )
+    	{
+        	logError("fails to create UDP socket.");
+        	goto EXIT;
+    	}
+
+    	int opt = 1;
+    	//has to set SO_REUSEADDR, otherwise, bind() will get EADDRINUSE(98) error when port is specified
+    	if(setsockopt(fd,SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int)) != 0)
+    	{
+        	logError("fails to setsockopt for SO_REUSEADDR.");
+			close(fd);
+        	goto EXIT;
+    	}
+
+    	if(setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(int)) != 0)
+    	{
+        	logError("fails to setsockopt for SO_REUSEPORT.");
+			close(fd);
+        	goto EXIT;
+    	}
+
+    	// Bind the socket with the local address
+    	if(bind(fd, (const struct sockaddr *)&pTpInfo->local, sizeof(pTpInfo->local)) < 0)
+    	{
+        	logError("udpSocket bind fails, local addr=%A, udpSocketfd=%d, errno=%d.", &pTpInfo->local, fd, errno);
+			close(fd);
+        	goto EXIT;
+    	}
+
+    	struct epoll_event event;
+		event.events = EPOLLIN;
+    	event.data.fd = fd;
+    	if(epoll_ctl(tpEpFd, EPOLL_CTL_ADD, fd, &event))
+    	{
+        	logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", fd, tpEpFd, errno);
+			close(fd);
+        	goto EXIT;
+    	}
+
+    	debug("udp listening fd =%d (%A) is added into epoll fd(%d).", fd, &pTpInfo->local, tpEpFd);
+
+		//set new fd in the udpmgmt
+		tpUdpMgmtSetFd(appType, pTpInfo->local, callback, fd);
+	}
+
+    logInfo("send a UDP message via UDP FD=%d, dest=%A", udpFd, &pTpInfo->peer);
+    ssize_t len = sendto(fd, pBuf->buf, pBuf->end, 0, (const struct sockaddr*) &pTpInfo->peer, sizeof(struct sockaddr_in));
+    if(len != pBuf->end || len == -1)
+    {
+		logError("fails to sendto() for udpFd=%d, len=%d, errno=%d.", fd, len, errno);
+    }
+    else
+    {
+		if(pFd)
+		{
+			*pFd = fd;
+		}
+        tpStatus = TRANSPORT_STATUS_UDP;
+    }
+
+    goto EXIT;
+
+EXIT:
+	return tpStatus;
+}
+
 
 
 static void sipTpClientOnIpcMsg(osIPCMsg_t* pIpcMsg)

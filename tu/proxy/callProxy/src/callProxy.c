@@ -1,3 +1,6 @@
+/* Copyright 2020, 2019, Sean Dai
+ */
+
 #include "osHash.h"
 #include "osTimer.h"
 
@@ -936,13 +939,17 @@ static void callProxyInfo_cleanup(void* pData)
     if(pCallInfo->pCallHashLE)
     {
         logInfo("delete hash element, key=%u", ((osHashData_t*)pCallInfo->pCallHashLE->data)->hashKeyInt);
-        osHash_deleteNode(pCallInfo->pCallHashLE);
+		//remove memory allocated for proxyInfo_t
+        osHash_deleteNode(pCallInfo->pCallHashLE, OS_HASH_DEL_NODE_TYPE_ALL);
+        pCallInfo->pCallHashLE = NULL;
 
+#if 0
 		//remove memory allocated for proxyInfo_t
 		osfree(((osHashData_t*)pCallInfo->pCallHashLE->data)->pData);
 		osfree(pCallInfo->pCallHashLE->data);	
     	osfree(pCallInfo->pCallHashLE);
     	pCallInfo->pCallHashLE = NULL;
+#endif
 	}
 
 	osDPL_dealloc(&pCallInfo->callId);

@@ -1,3 +1,6 @@
+/* Copyright 2020, 2019, Sean Dai
+ */
+
 #include "osTimer.h"
 #include "osHash.h"
 #include "osPreMemory.h"
@@ -10,8 +13,6 @@
 #include "sipTUIntf.h"
 #include "sipTU.h"	//used for sipTU_addOwnVia(), need to reorg
 #include "sipTransportIntf.h"
-
-//#include "/home/ama/project/sip-stack/tu/proxy/proxyMgr/include/proxyMgr.h"
 
 
 
@@ -620,12 +621,13 @@ osStatus_e sipTransICEnterState(sipTransState_e newState, sipTransMsgType_e msgT
                 pTrans->sipTransICTimer.timerIdD = 0;
             }
 
-            osHash_deleteNode(pTrans->pTransHashLE);
+            osHash_deleteNode(pTrans->pTransHashLE, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
+#if 0
             osHashData_t* pHashData = pTrans->pTransHashLE->data;
 			osfree(pHashData);
             //osfree((sipTransaction_t*)pHashData->pData);
             osfree(pTrans->pTransHashLE);
-
+#endif
             break;
         default:
             logError("received unexpected newState (%d).", newState);

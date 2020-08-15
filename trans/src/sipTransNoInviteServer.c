@@ -1,3 +1,6 @@
+/* Copyright 2020, 2019, Sean Dai
+ */
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -598,12 +601,13 @@ osStatus_e sipTransNISEnterState(sipTransState_e newState, sipTransMsgType_e msg
                 pTrans->sipTransNISTimer.timerIdJ = 0;
             }
 
-			osHash_deleteNode(pTrans->pTransHashLE);
+			osHash_deleteNode(pTrans->pTransHashLE, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
+#if 0
 			osHashData_t* pHashData = pTrans->pTransHashLE->data;
 			osfree(pHashData);
 			//osfree((sipTransaction_t*)pHashData->pData);
 			osfree(pTrans->pTransHashLE);
-
+#endif
 			break;
 		default:
 			logError("received unexpected newState (%d).", newState);

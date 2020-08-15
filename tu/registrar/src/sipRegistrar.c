@@ -1,3 +1,6 @@
+/* Copyright 2020, 2019, Sean Dai
+ */
+
 //for sipRegistrar, accepts ALL SIP REGISTER, does not do any subscription check, or authentication check.  Basically, a IMS AS registratar functionality
 
 #include "osHash.h"
@@ -702,11 +705,13 @@ static void masRegistrar_cleanup(void* pData)
 	if(pRegData->pRegHashLE)
 	{
 		logInfo("delete hash element, key=%ud", ((osHashData_t*)pRegData->pRegHashLE->data)->hashKeyInt);
-		osHash_deleteNode(pRegData->pRegHashLE);
+		osHash_deleteNode(pRegData->pRegHashLE, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
 	}
 
+#if 0
 	osfree(pRegData->pRegHashLE->data);
 	osfree(pRegData->pRegHashLE);
+#endif
 	pRegData->pRegHashLE = NULL;
 
 DEBUG_END

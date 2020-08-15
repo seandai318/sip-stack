@@ -1,3 +1,6 @@
+/* Copyright 2020, 2019, Sean Dai
+ */
+
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -134,4 +137,24 @@ osStatus_e transport_closeTcpConn(int tcpFd, bool isCom)
 
 EXIT:
 	return status;
-}		
+}
+
+void transport_localRegApp(transportAppType_e appType, tpLocalSendCallback_h callback)
+{
+    return tpLocal_appReg(appType, callback);
+}
+
+
+//app requires send a udp message, a udp socket will be opened per appType if it has not been opened.  when receiving a response, callback(0 will be called
+transportStatus_e transport_localSend(transportAppType_e appType, transportInfo_t* pTpInfo, osMBuf_t* pBuf, int* fd)
+{
+    if(pTpInfo->tpType != TRANSPORT_TYPE_UDP || pTpInfo->isCom)
+    {
+        logError("pTpInfo->tpType(%d) != TRANSPORT_TYPE_UDP or pTpInfo->isCom(%d) is true.", pTpInfo->tpType, pTpInfo->isCom);
+        return TRANSPORT_STATUS_FAIL;
+    }
+
+    return tpLocal_udpSend(appType, pTpInfo, pBuf, fd);
+}
+
+		

@@ -1,3 +1,6 @@
+/* Copyright 2020, 2019, Sean Dai
+ */
+
 #include "osTimer.h"
 #include "osMisc.h"
 #include "osHash.h"
@@ -594,12 +597,13 @@ logError("to-remove, TCP, tpType=%d", pTrans->tpInfo.tpType);
                 pTrans->sipTransNICTimer.timerIdK = 0;
             }
 
-            osHash_deleteNode(pTrans->pTransHashLE);
+            osHash_deleteNode(pTrans->pTransHashLE, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
+#if 0
             osHashData_t* pHashData = pTrans->pTransHashLE->data;
 			osfree(pHashData);
             //osfree((sipTransaction_t*)pHashData->pData);
             osfree(pTrans->pTransHashLE);
-
+#endif
             break;
 		}
         default:
