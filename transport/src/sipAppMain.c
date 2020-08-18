@@ -34,7 +34,7 @@
 #include "transportUdpMgmt.h"
 
 
-
+extern void dnsTest();	//for dns test, temp here, shall be removed after dns testing
 
 static __thread sipTransportClientSetting_t tpSetting;
 static __thread struct sockaddr_in defaultLocalAddr;
@@ -81,7 +81,6 @@ void tpLocal_appReg(transportAppType_e appType, tpLocalSendCallback_h callback)
 	
 void* sipAppMainStart(void* pData)
 {
-	struct sockaddr_in defaultLocalAddr;
 	struct epoll_event event, events[SYS_MAX_EPOLL_WAIT_EVENTS];
 
     sipTransportClientSetting_t tpSetting = *(sipTransportClientSetting_t*)pData;
@@ -144,6 +143,9 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 
     //to-do: may need to move this function to other module, like masMain(). that requires the synchronization so that when dia starts to do connection, the epoll in tpMain is ready.
 	dia_init("/home/ama/project/app/mas/config");
+
+	//test perform dns test, temporary here
+	dnsTest();
 
 	//in transport layer, do not do TCP listening for the new connection, they are the responsible of com.  it only does ipc and tcp client connection listening.  whoever creates the tcp connection will add the connection fd to the tpEpFd. For udp, we do listening for udp created via tpLocal_udpSend().  for udp created when system start up using the default local, send only (may add to listning later though)
 	ssize_t len;
@@ -373,6 +375,7 @@ EXIT:
 //two ways, the same socket, send and receive
 transportStatus_e tpLocal_udpSend(transportAppType_e appType, transportInfo_t* pTpInfo, osMBuf_t* pBuf, int* pFd)
 {
+	DEBUG_BEGIN
 	transportStatus_e tpStatus = TRANSPORT_STATUS_FAIL;
 	if(!pTpInfo || !pBuf)
 	{
@@ -392,12 +395,17 @@ transportStatus_e tpLocal_udpSend(transportAppType_e appType, transportInfo_t* p
 	struct sockaddr_in localAddr;
 	if(pTpInfo->local.sin_addr.s_addr == 0)
 	{
+		localAddr.sin_family = defaultLocalAddr.sin_family;
 		localAddr.sin_addr.s_addr = defaultLocalAddr.sin_addr.s_addr;
 	}
 
 	if(pTpInfo->udpInfo.isEphemeralPort)
 	{
 		localAddr.sin_port = 0;
+	}
+	else
+	{
+		localAddr.sin_port = pTpInfo->local.sin_port;
 	}
 
 	int fd = tpUdpMgmtGetFd(appType, localAddr);
@@ -427,9 +435,9 @@ transportStatus_e tpLocal_udpSend(transportAppType_e appType, transportInfo_t* p
     	}
 
     	// Bind the socket with the local address
-    	if(bind(fd, (const struct sockaddr *)&pTpInfo->local, sizeof(pTpInfo->local)) < 0)
+    	if(bind(fd, (const struct sockaddr *)&localAddr, sizeof(localAddr)) < 0)
     	{
-        	logError("udpSocket bind fails, local addr=%A, udpSocketfd=%d, errno=%d.", &pTpInfo->local, fd, errno);
+        	logError("udpSocket bind fails, local addr=%A, udpSocketfd=%d, errno=%d.", &localAddr, fd, errno);
 			close(fd);
         	goto EXIT;
     	}
@@ -445,13 +453,13 @@ transportStatus_e tpLocal_udpSend(transportAppType_e appType, transportInfo_t* p
         	goto EXIT;
     	}
 
-    	debug("udp listening fd =%d (%A) is added into epoll fd(%d).", fd, &pTpInfo->local, tpEpFd);
+    	debug("udp listening fd =%d (%A) is added into epoll fd(%d).", fd, &localAddr, tpEpFd);
 
 		//set new fd in the udpmgmt
 		tpUdpMgmtSetFd(appType, localAddr, callback, fd);
 	}
 
-    logInfo("send a UDP message via UDP FD=%d, dest=%A", udpFd, &pTpInfo->peer);
+    logInfo("send a UDP message via UDP FD=%d, dest=%A", fd, &pTpInfo->peer);
     ssize_t len = sendto(fd, pBuf->buf, pBuf->end, 0, (const struct sockaddr*) &pTpInfo->peer, sizeof(struct sockaddr_in));
     if(len != pBuf->end || len == -1)
     {
@@ -466,7 +474,9 @@ transportStatus_e tpLocal_udpSend(transportAppType_e appType, transportInfo_t* p
         tpStatus = TRANSPORT_STATUS_UDP;
     }
 
+	logError("tpUdpMgmtGetUdpCallback(fd=%d)=%p", fd, tpUdpMgmtGetUdpCallback(fd));
 EXIT:
+	DEBUG_END
 	return tpStatus;
 }
 
