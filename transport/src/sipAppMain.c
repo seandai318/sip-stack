@@ -49,6 +49,8 @@ static void sipTpClientTimeout(uint64_t timerId, void* ptr);
 static osStatus_e tpClientProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len);
 
 
+static __thread uint64_t dnsTestNum = 0;	//dnsTest temporary 
+
 osStatus_e sipAppMainInit(int pipefd[2])
 {
     osStatus_e status = OS_STATUS_OK;
@@ -144,9 +146,6 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
     //to-do: may need to move this function to other module, like masMain(). that requires the synchronization so that when dia starts to do connection, the epoll in tpMain is ready.
 	dia_init("/home/ama/project/app/mas/config");
 
-	//test perform dns test, temporary here
-	dnsTest();
-
 	//in transport layer, do not do TCP listening for the new connection, they are the responsible of com.  it only does ipc and tcp client connection listening.  whoever creates the tcp connection will add the connection fd to the tpEpFd. For udp, we do listening for udp created via tpLocal_udpSend().  for udp created when system start up using the default local, send only (may add to listning later though)
 	ssize_t len;
 	size_t bufLen;
@@ -176,6 +175,12 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 
 					//sipTpClientOnIpcMsg((osIPCMsg_t*)ipcMsgAddr);
                     sipTpClientOnIpcMsg(&ipcMsg);
+
+    //test perform dns test, temporary here
+	if(dnsTestNum++==0)
+    {
+		dnsTest();
+	}
 				}
 			}
 			else if((udpCallback = tpUdpMgmtGetUdpCallback(events[i].data.fd)) != NULL)
