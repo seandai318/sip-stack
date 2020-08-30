@@ -40,16 +40,14 @@ static __thread sipTransportClientSetting_t tpSetting;
 static __thread struct sockaddr_in defaultLocalAddr;
 static __thread int udpFd=-1, tpEpFd=-1;
 static __thread tpLocalSendCallback_h tpLocal_appTypeCallbackMap[TRANSPORT_APP_TYPE_COUNT];
-static void sipTpClientOnIpcMsg(osIPCMsg_t* pIpcMsg);
 
+static void sipTpClientOnIpcMsg(osIPCMsg_t* pIpcMsg);
+static void appMain_timerReady();
 static osStatus_e sipTpClientSendTcp(void* pTrId, transportInfo_t* pTpInfo, osMBuf_t* pSipBuf, sipTransportStatus_e* pTransport);
-//static osStatus_e sipTpCreateTcp(void* appId, transportIpPort_t* peer, transportIpPort_t* local, tpTcm_t* pTcm);
-//static void sipTpNotifyTcpConnUser(transportAppType_e appType, osListPlus_t* pList, transportStatus_e msgType, int tcpfd);
 static void sipTpClientTimeout(uint64_t timerId, void* ptr);
 static osStatus_e tpClientProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len);
+static void appMain_timerReady();
 
-
-static __thread uint64_t dnsTestNum = 0;	//dnsTest temporary 
 
 osStatus_e sipAppMainInit(int pipefd[2])
 {
@@ -80,14 +78,27 @@ void tpLocal_appReg(transportAppType_e appType, tpLocalSendCallback_h callback)
 }
 	
 
+//this function will be called when timer is ready for this thread
+static void appMain_timerReady()
+{
+	//no need to perform EPOLL_CTL_ADD for any UDP and TCP as there is no UDP or TCP added in to the ePoll during sipAppMainStart
+
+    //to-do: may need to move this function to other module, like masMain(). that requires the synchronization so that when dia starts to do connection, the epoll in tpMain is ready.
+    dia_init("/home/ama/project/app/mas/config");
+
+    //test perform dns test, temporary here
+    dnsTest();
+}
+
 	
 void* sipAppMainStart(void* pData)
 {
 	struct epoll_event event, events[SYS_MAX_EPOLL_WAIT_EVENTS];
 
     sipTransportClientSetting_t tpSetting = *(sipTransportClientSetting_t*)pData;
+	osfree(pData);
 
-	debug("threadId = %u.", (unsigned int)pthread_self());
+	logInfo("threadId = 0x%lx.", pthread_self());
 
 	osTimerInit(tpSetting.timerfd, tpSetting.ownIpcFd[1], SIP_CONFIG_TIMEOUT_MULTIPLE, sipTpClientTimeout);
 
@@ -143,9 +154,6 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 
     logInfo("UDP FD=%d is created, local=%A", udpFd, &defaultLocalAddr);
 
-    //to-do: may need to move this function to other module, like masMain(). that requires the synchronization so that when dia starts to do connection, the epoll in tpMain is ready.
-	dia_init("/home/ama/project/app/mas/config");
-
 	//in transport layer, do not do TCP listening for the new connection, they are the responsible of com.  it only does ipc and tcp client connection listening.  whoever creates the tcp connection will add the connection fd to the tpEpFd. For udp, we do listening for udp created via tpLocal_udpSend().  for udp created when system start up using the default local, send only (may add to listning later though)
 	ssize_t len;
 	size_t bufLen;
@@ -175,12 +183,6 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 
 					//sipTpClientOnIpcMsg((osIPCMsg_t*)ipcMsgAddr);
                     sipTpClientOnIpcMsg(&ipcMsg);
-
-    //test perform dns test, temporary here
-	if(dnsTestNum++==0)
-    {
-		dnsTest();
-	}
 				}
 			}
 			else if((udpCallback = tpUdpMgmtGetUdpCallback(events[i].data.fd)) != NULL)
@@ -492,8 +494,10 @@ static void sipTpClientOnIpcMsg(osIPCMsg_t* pIpcMsg)
 	switch (pIpcMsg->interface)
 	{
 		case OS_TIMER_ALL:
+			osTimerGetMsg(pIpcMsg->interface, pIpcMsg->pMsg, appMain_timerReady);
+			break;
 		case OS_TIMER_TICK:
-			osTimerGetMsg(pIpcMsg->interface, pIpcMsg->pMsg);
+			osTimerGetMsg(pIpcMsg->interface, pIpcMsg->pMsg, NULL);
 			break;
 		case OS_SIP_TRANSPORT_SERVER:
 			sipTrans_onMsg(SIP_TRANS_MSG_TYPE_PEER, pIpcMsg->pMsg, 0);
@@ -516,32 +520,8 @@ static osStatus_e sipTpClientSendTcp(void* pTrId, transportInfo_t* pTpInfo, osMB
 
 	*pTransport = TRANSPORT_STATUS_TCP_OK;
 
-#if 0   //use network address	
-    struct sockaddr_in peer = {};
-//    struct sockaddr_in local = {};
-
-#if 0
-	//do not bind port, use ephemeral port.
-	if(tpConvertPLton(&pTpInfo->local, false, &local) != OS_STATUS_OK)
-	{
-        logError("fails to tpConvertPLton for local IP=%r, errno=%d.", pTpInfo->local.ip, errno);
-        status = OS_ERROR_INVALID_VALUE;
-        goto EXIT;
-    }
-#endif
-    if(tpConvertPLton(&pTpInfo->peer, true, &peer) != OS_STATUS_OK)
-    {
-        logError("fails to tpConvertPLton for peer IP=%r, errno=%d.", pTpInfo->peer.ip, errno);
-        status = OS_ERROR_INVALID_VALUE;
-        goto EXIT;
-    }
-
-	//first check if there is already a TCP connection exists
-	tpTcm_t* pTcm = tpGetTcm(peer, TRANSPORT_APP_TYPE_SIP, true);
-#else
     //first check if there is already a TCP connection exists
     tpTcm_t* pTcm = tpGetTcm(pTpInfo->peer, TRANSPORT_APP_TYPE_SIP, true);
-#endif
 	if(!pTcm)
 	{
 		logError("fails to tpGetTcm for peer(%A).", &pTpInfo->peer);
@@ -576,7 +556,6 @@ static osStatus_e sipTpClientSendTcp(void* pTrId, transportInfo_t* pTpInfo, osMB
         	osListPlus_append(&pTcm->tcpConn.appIdList, pTrId);
 logError("to-remove, TCM2, appId=%p", pTrId);
     	}
-//  pTcm->tcpConn.tcpConnTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_TIMEOUT, sipTransport_onTimeout, tcpMapElement);
 
     	mdebug(LM_TRANSPORT, "sockfd(%d) connStatus=%d, pTcm=%p", pTcm->sockfd, connStatus, pTcm);
 
@@ -624,125 +603,6 @@ EXIT:
 	return status;
 }
 
-#if 0
-static osStatus_e sipTpCreateTcp(void* appId, transportIpPort_t* peer, transportIpPort_t* local, tpTcm_t* pTcm)
-{
-	osStatus_e status = OS_STATUS_OK;
-	int sockfd;
-
-    if((sockfd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)) < 0)
-    {
-        logError("could not open a TCP socket, errno=%d.", errno);
-        status = OS_ERROR_NETWORK_FAILURE;
-        goto EXIT;
-    }
-
-    struct sockaddr_in src;
-    status = tpConvertPLton(local, false, &src);
-	if(status != OS_STATUS_OK)
-    {
-        logError("fails to perform tpConvertPLton for local.");
-		goto EXIT;
-    }
-
-    status = tpConvertPLton(peer, true, &pTcm->peer);
-    if(status != OS_STATUS_OK)
-    {
-        logError("fails to perform tpConvertPLton for peer.");
-        goto EXIT;
-    }
-
-
-    if(bind(sockfd, (const struct sockaddr *)&src, sizeof(src)) < 0 )
-    {
-		logError("fails to bind for sockfd (%d), localIP=%r, localPort=%d, errno=%d", sockfd, &local->ip, local->port, errno);
-		close(sockfd);
-		status = OS_ERROR_NETWORK_FAILURE;
-        goto EXIT;
-    }
-
-    struct epoll_event event;
-    event.events = EPOLLOUT | EPOLLRDHUP;		//after connection is established, events will be changed to EPOLLIN
-    event.data.fd = sockfd;
-    epoll_ctl(tpEpFd, EPOLL_CTL_ADD, sockfd, &event);
-
-	int connStatus = connect(sockfd, (struct sockaddr*)&pTcm->peer, sizeof(pTcm->peer));
-    if(connStatus != 0 && errno != EINPROGRESS) 
-	{
-		logError("fails to connect() for peer ip=%r, port=%d.", peer->ip, peer->port);
-		status = OS_ERROR_NETWORK_FAILURE;
-		goto EXIT;
-    }
-
-    pTcm->isUsing = true;
-    pTcm->sockfd = sockfd;
-	if(connStatus == 0)
-	{
-		 pTcm->isTcpConnDone = true;
-	}
-	else
-	{
-		pTcm->isTcpConnDone = false;
-		osListPlus_append(&pTcm->tcpConn.appIdList, appId);
-logError("to-remove, TCM2, appId=%p", appId);
-	}
-//	pTcm->tcpConn.tcpConnTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_TIMEOUT, sipTransport_onTimeout, tcpMapElement);
-
-	mdebug(LM_TRANSPORT, "sockfd(%d) connStatus=%d, pTcm=%p", sockfd, connStatus, pTcm);	
-EXIT:
-	return status;
-}
-#endif
-
-#if 0
-//if msgType != SIP_TRANS_MSG_TYPE_TX_TCP_READY, set tcpfd=-1
-static void sipTpNotifyTcpConnUser(transportAppType_e appType, osListPlus_t* pList, transportStatus_e tpMsgType, int tcpfd)
-{
-	switch (appType)
-	{
-		case TRANSPORT_APP_TYPE_SIP:
-		{
-			sipTransportStatusMsg_t sipTpMsg;
-			sipTransMsgType_e msgType;
-
-			if(tpMsgType = TRANSPORT_STATUS_TCP_OK)
-			{
-				msgType = SIP_TRANS_MSG_TYPE_TX_TCP_READY;
-				sipTpMsg.tcpFd = tcpfd;
-			}
-			else
-			{
-				msgType = SIP_TRANS_MSG_TYPE_TX_FAILED;
-                sipTpMsg.tcpFd = -1;
-			}
-
-			if(pList->first)
-			{
-				sipTpMsg.pTransId = pList->first;
-				sipTrans_onMsg(msgType, &sipTpMsg, 0);
-			}
-
-			if(pList->num > 1)
-			{
-				osListElement_t* pLE = pList->more.head;
-				while(pLE)
-				{
-					sipTpMsg.pTransId = pLE->data;
-	        		sipTrans_onMsg(msgType, &sipTpMsg, 0);
-					pLE = pLE->next;
-				}
-			}
-			break;
-		}
-		default:
-			logInfo("appType(%d) is unhandled now.", appType);
-			break;
-	}
-
-    //clear appIdList
-	osListPlus_clear(pList);
-}
-#endif
 
 static void sipTpClientTimeout(uint64_t timerId, void* ptr)
 {

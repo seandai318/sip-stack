@@ -91,6 +91,7 @@ void* transportMainStart(void* pData)
 	struct epoll_event event, events[SYS_MAX_EPOLL_WAIT_EVENTS];
 
     transportMainSetting_t tpSetting = *(transportMainSetting_t*)pData;
+	osfree(pData);
 
     osTimerInit(tpSetting.timerfd, tpSetting.ownIpcFd[1], SIP_CONFIG_TIMEOUT_MULTIPLE, sipTpServerTimeout);
 
@@ -683,7 +684,7 @@ static void sipTpServerOnIpcMsg(osIPCMsg_t* pIpcMsg)
 	{
 		case OS_TIMER_ALL:
 		case OS_TIMER_TICK:
-			osTimerGetMsg(pIpcMsg->interface, pIpcMsg->pMsg);
+			osTimerGetMsg(pIpcMsg->interface, pIpcMsg->pMsg, NULL);
 			break;
 		case OS_SIP_TRANSPORT_LBINFO:
 			sipTpServerUpdateLBInfo(pIpcMsg->pMsg);
