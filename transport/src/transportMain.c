@@ -100,7 +100,7 @@ void* transportMainStart(void* pData)
 		lbFd[i] = tpSetting.lbFd[i];
 	}
 
-    debug("threadId = %u.", (unsigned int)pthread_self());
+    debug("threadId = 0x%lx.", pthread_self());
 
     tpEpFd = epoll_create1(0);
     if(tpEpFd == -1)
@@ -116,6 +116,8 @@ void* transportMainStart(void* pData)
         logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", tpSetting.ownIpcFd[0], tpEpFd, errno);
 		goto EXIT;
 	}
+
+    debug("ownIpcFd(%d) is added into epoll fd (%d).", tpSetting.ownIpcFd[0], tpEpFd);
 
     memset(&localAddr, 0, sizeof(localAddr));
 //    memset(&peerAddr, 0, sizeof(peerAddr));
@@ -165,7 +167,6 @@ void* transportMainStart(void* pData)
 	debug("udp listening fd =%d (ip=%r, port=%d) is added into epoll fd (%d).", sipUdpFd, &tpSetting.udpLocal.ip, tpSetting.udpLocal.port, tpEpFd);
 
     //create TCP listening socket
-#if 1
 	for(int i=0; i< tpSetting.tcpInfoNum; i++)
 	{
 		int tcpListenFd = sipTpSetTcpListener(&tpSetting.serverTcpInfo[i].local);
@@ -186,42 +187,6 @@ void* transportMainStart(void* pData)
 		pAppListener->appType = tpSetting.serverTcpInfo[i].appType;
 		osList_append(&tpListenerList, pAppListener);
 
-#else
-/*
-    if((tcpListenFd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)) < 0)
-    {
-        logError("fails to create TCP socket.");
-        goto EXIT;
-    }
-
-    if(setsockopt(tcpListenFd,SOL_SOCKET,SO_REUSEPORT, &opt, sizeof(int)) != 0)
-    {
-        logError("fails to setsockopt for SO_REUSEPORT.");
-        goto EXIT;
-    }
-
-    // Bind the socket with the server address
-    if(bind(tcpListenFd, (const struct sockaddr *)&localAddr, sizeof(localAddr)) < 0 )
-    {
-        logError("tcpListenSocket bind fails, tcpListenfd=%d.", tcpListenFd);
-        goto EXIT;
-    }
-
-	if(listen(tcpListenFd, 5) != 0) 
-	{
-		logError("fails to ,listen tcpListenFd (%d), errno=%d.", tcpListenFd, errno);
-		goto EXIT;
-	}
-
-    event.events = EPOLLIN;
-    event.data.fd = tcpListenFd;
-    if(epoll_ctl(tpEpFd, EPOLL_CTL_ADD, tcpListenFd, &event))
-    {
-        logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", sipUdpFd, tpEpFd, errno);
-        goto EXIT;
-    }
-*/
-#endif
     	debug("tcp listening fd =%d (ip=%r, port=%d, appType=%d) is added into epoll fd (%d).", tcpListenFd, &tpSetting.serverTcpInfo[i].local.ip, tpSetting.serverTcpInfo[i].local.port, tpSetting.serverTcpInfo[i].appType, tpEpFd);
 	}
 
@@ -316,7 +281,7 @@ void* transportMainStart(void* pData)
         			continue;
     			}
 
-                mlogInfo(LM_TRANSPORT, "accepted a tcp connection, tcpFd=%d", tcpfd);
+                mlogInfo(LM_TRANSPORT, "accepted a tcp connection, tcpFd=%d, added into epoll fd(%d)", tcpfd, tpEpFd);
 
 				//add into tcm
 				osStatus_e status = tpTcmAddFd(tcpfd, (struct sockaddr_in*) &tcpPeer, appType);
@@ -332,17 +297,17 @@ void* transportMainStart(void* pData)
 				//if waiting for TCP connection establishment for a locally initiated connection
                 if(events[i].events & EPOLLOUT)
                 {
-					//if was found that events may return 0x14, 0x201c, and tcp connect() may still return properly.  Also, return from epoll_wait() may be before or after connect() return() (probably due to multi threads) 
+					//if was found that events may return 0x14, 0x201c, and tcp connect() may still return properly.  Also, return from epoll_wait() may be before or after connect() return() (probably due to multi threads).  EPOLLHUP means th assigned fd is not useable, probably due to previous close has not completely done in the OS due to underneith TCP mechanism.  Waiting a little bit, EPOLLHUP shall be cleared for the fd by the OS.  it is observed that when I killed an app by doing ctrl-c, then restarts the app, the same fd will be returned after the app called socket().  but when performing connect() using the reassigned fd, EPOLLHUP may return.  waiting a bit to redo, EPOLLHUP would not be returned   
                     if(events[i].events & (EPOLLERR|EPOLLHUP))
                     {
 						debug("received event=0x%x, close the connection (fd=%d), notifying app.", events[i].events, events[i].data.fd);
 						tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
-                        //close(events[i].data.fd);
+                        //close(events[i].data.fd);	
                         //tpDeleteTcm(events[i].data.fd);
                     }
                     else
                     {
-                        debug("fd(%d) is conncted.", events[i].data.fd);
+                        debug("fd(%d) is conncted, events=0x%x.", events[i].data.fd, events[i].events);
 
                         event.events = EPOLLIN | EPOLLRDHUP;
                         event.data.fd = events[i].data.fd;
@@ -896,6 +861,8 @@ static int sipTpSetTcpListener(transportIpPort_t* pIpPort)
 		tcpListenFd = -1;
         goto EXIT;
     }
+
+    debug("tcpListenFd(%d) is added into epoll fd (%d).", tcpListenFd, tpEpFd);
 
 EXIT:
 	return tcpListenFd;

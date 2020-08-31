@@ -87,7 +87,7 @@ static void appMain_timerReady()
     dia_init("/home/ama/project/app/mas/config");
 
     //test perform dns test, temporary here
-    dnsTest();
+//    dnsTest();
 }
 
 	
@@ -130,6 +130,7 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
         logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", tpSetting.ownIpcFd[0], tpEpFd, errno);
 		goto EXIT;
     }
+	debug("ownIpcFd(%d) is added into epoll fd(%d).", tpSetting.ownIpcFd[0], tpEpFd);
 
     memset(&defaultLocalAddr, 0, sizeof(defaultLocalAddr));
 
