@@ -1,3 +1,6 @@
+/* Copyright (c) 2019, 2020, Sean Dai
+ */
+
 #include "osDebug.h"
 #include "osMemory.h"
 #include "osPrintf.h"
@@ -23,7 +26,6 @@ osStatus_e sipParserHdr_str(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrStr_t* pC
 	}
 
 	pCallid->p = &pSipMsg->buf[pSipMsg->pos];
-	//to-do, shall not ->l = hdrEndPos - pSipMsg->pos?
 	pCallid->l = hdrEndPos - pSipMsg->pos;
 
 EXIT:
@@ -547,8 +549,7 @@ osStatus_e sipHdrCallId_createCallId(osPointerLen_t* pl)
     srand(time(NULL));
     int randValue=rand();
 
-	pl->l = osPrintf_buffer(callIdValue, SIP_MAX_CALL_ID_LEN, "%lx%lx%x@%s", tp.tv_sec, tp.tv_nsec, randValue, sipConfig_getHostIP());
-//    pl->l = sprintf(callIdValue, "%lx%lx%x@%s", tp.tv_sec, tp.tv_nsec, randValue, sipConfig_getHostIP());
+	pl->l = osPrintf_buffer(callIdValue, SIP_MAX_CALL_ID_LEN, "%lx%lx%x@%r", tp.tv_sec, tp.tv_nsec, randValue, sipConfig_getHostIP());
 
 EXIT:
 	if(status != OS_STATUS_OK)

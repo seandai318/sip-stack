@@ -1,3 +1,6 @@
+/* Copyright (c) 2019, 2020, Sean Dai
+ */
+
 #include <my_global.h>
 #include <mysql.h>
 #include <string.h>
@@ -74,14 +77,6 @@ osStatus_e masDbQuerySMSByUser(osPointerLen_t* user)
 	}
 
     char query[MAS_DB_QUERY_LEN];
-#if 0
-    char* queryStr = "select smsId, content, user, caller, timerN, expire from user inner join sms using (userId) where userName ='";
-    int fixedLen = strlen(queryStr);
-	char query[MAS_DB_QUERY_LEN]={};
-	strcpy(query, queryStr);
-	strncpy(&query[fixedLen], user->p, user->l);
-	strcpy(&query[fixedLen + usr->l], "'");
-#endif
 	int len = osPrintf_buffer(query, MAS_DB_QUERY_LEN, "select smsId, content, username, caller from user inner join sms using (userId) where userName ='%r'", user);
 	query[len] = 0;
 logError("to-remove, sms, query=%s", query);
@@ -195,7 +190,6 @@ osStatus_e masDbStoreSms(ssize_t userId, osPointerLen_t* user, osPointerLen_t* c
     struct timespec tp;
     clock_gettime(CLOCK_REALTIME, &tp);
 
-//    char* queryStr = "insert into sms (content, caller, userId, timerN, expire) values ('";
 	char query[MAS_DB_QUERY_LEN];
 	size_t expire = tp.tv_sec + MAS_DB_SMS_TIMER_T1;
 	size_t dropTime = tp.tv_sec + MAS_DB_SMS_MAX_TIMER_M;
@@ -446,45 +440,11 @@ logError("to-remove, sms, userPL=%r", &userPL);
 
 	//build a SIP request, the related DB info will be saved as part of the opaque TU data
 	//smsId, content, user, caller, timerN, expire
-//	osPointerLen_t called = {pRow[MASDB_SMS_QUERY_USER], strlen(pRow[MASDB_SMS_QUERY_USER])};
     osPointerLen_t caller = {pRow[MASDB_SMS_QUERY_CALLER], strlen(pRow[MASDB_SMS_QUERY_CALLER])};
     sipTransInfo_t sipTransInfo;
 	size_t protocolUpdatePos;
 	osPointerLen_t sms = {pRow[MASDB_SMS_QUERY_CONTENT], strlen(pRow[MASDB_SMS_QUERY_CONTENT])};
 	osMBuf_t* pSipBuf = masSip_buildRequest(&userPL, &caller, pCalledContactUser, &sms, &sipTransInfo.transId.viaId, &protocolUpdatePos);
-#if 0
-	osMBuf_t* pSipBuf = sipTU_uacBuildRequest(SIP_METHOD_MESSAGE, pCalledContactUser, &userPL, &caller, &sipTransInfo.transId.viaId, &protocolUpdatePos);
-	if(!pSipBuf)
-	{
-		logError("fails to sipTU_uacBuildRequest for a SMS from(%s) to(%s).", pRow[MASDB_SMS_QUERY_CALLER], pRow[MASDB_SMS_QUERY_USER]);
-		status = OS_ERROR_MEMORY_ALLOC_FAILURE;
-		goto EXIT;
-	}
-
-	//now add other headers. add cSeq, p-asserted-id, content-type
-	osPointerLen_t cSeqHdr = {"1 MESSAGE", 9};
-	status = sipMsgAppendHdrStr(pSipBuf, "Cseq", &cSeqHdr, 0);
-
-	status = sipMsgAppendHdrStr(pSipBuf, "P-Asserted-Identity", &caller, 0);
-
-	osPointerLen_t cType = {"message/cpim", 12};
-	status = sipMsgAppendHdrStr(pSipBuf, "Content-Type", &cType, 0);
-
-	uint16_t cLen = 0;
-	char* pContent = masSip_buildContent(pRow[MASDB_SMS_QUERY_CONTENT], pRow[MASDB_SMS_QUERY_CALLER], pRow[MASDB_SMS_QUERY_USER], false, &cLen);
-	if(pContent == NULL)
-	{
-		logError("fails to masBuildSipContent.");
-		status = OS_ERROR_INVALID_VALUE;
-		goto EXIT;
-	}
-
-	status = sipMsgAppendHdrStr(pSipBuf, "Content-Length", NULL, cLen);
-
-	//append message body
-	status = sipMsgAppendContent(pSipBuf, pContent, true);
-	osfree(pContent);
-#endif
 
     masInfo_t* pMasInfo = osmalloc(sizeof(masInfo_t), masInfo_cleanup);
 	if(!pMasInfo)
@@ -525,15 +485,9 @@ logError("to-remove, sms, userPL=%r", &userPL);
     sipTransInfo.isRequest = true;
     sipTransInfo.transId.reqCode = SIP_METHOD_MESSAGE;
     sipTransMsg.request.pTransInfo = &sipTransInfo;
-#if 0	//use network address
-    sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.ip = pCalledContactUser->hostport.host;
-    sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.port = pCalledContactUser->hostport.portValue;
-    sipConfig_getHost(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.request.sipTrMsgBuf.tpInfo.local.port);
-#else
-	osIpPort_t osPeer = {pCalledContactUser->hostport.host, pCalledContactUser->hostport.portValue};
+	osIpPort_t osPeer = {{pCalledContactUser->hostport.host, false, false}, pCalledContactUser->hostport.portValue};
 	osConvertPLton(&osPeer, true, &sipTransMsg.request.sipTrMsgBuf.tpInfo.peer);
 	sipConfig_getHost1(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local);
-#endif
     sipTransMsg.request.sipTrMsgBuf.tpInfo.protocolUpdatePos = protocolUpdatePos;
     sipTransMsg.pTransId = NULL;
     sipTransMsg.pSenderId = pMasInfo;

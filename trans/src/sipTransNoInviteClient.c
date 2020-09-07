@@ -1,4 +1,4 @@
-/* Copyright 2020, 2019, Sean Dai
+/* Copyright (c) 2020, 2019, Sean Dai
  */
 
 #include "osTimer.h"
@@ -126,18 +126,9 @@ osStatus_e sipTransNICStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uin
     pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
 	pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
 
-//    pTrans->tpInfo.pTrId = pTrans;
 	//shall not use request.pTransInfo->transId.viaId.host/port here, as this is the request top via's host/ip, which is own host/ip
-#if 0	//use network address
-	osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip);
-	//pTrans->tpInfo.peer.ip = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip;
-	pTrans->tpInfo.peer.port = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.port;
-    osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local.ip);
-    pTrans->tpInfo.local.port = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local.port;
-#else
 	pTrans->tpInfo.peer = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer;
 	pTrans->tpInfo.local = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local;
-#endif
 	pTrans->tpInfo.protocolUpdatePos = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.protocolUpdatePos;
 
 	pTrans->tpInfo.tpType = TRANSPORT_TYPE_ANY;
@@ -540,7 +531,6 @@ osStatus_e sipTransNICEnterState(sipTransState_e newState, sipTransMsgType_e msg
                 pTrans->sipTransNICTimer.timerIdF = 0;
             }
 
-logError("to-remove, TCP, tpType=%d", pTrans->tpInfo.tpType);
             if(pTrans->tpInfo.tpType != TRANSPORT_TYPE_TCP)
             {
                 pTrans->sipTransNICTimer.timerIdK = sipTransStartTimer(SIP_TIMER_K, pTrans);
@@ -557,7 +547,7 @@ logError("to-remove, TCP, tpType=%d", pTrans->tpInfo.tpType);
             sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
             sipTUMsg.pTUId = pTrans->pTUId;
 			sipTUMsg.pSipMsgBuf = &pTrans->req;
-			sipTUMsg.sipMsgType = SIP_MSG_REQUEST;
+			sipTUMsg.sipMsgType = SIP_MSG_RESPONSE;
 
             switch(curState)
             {
@@ -598,12 +588,6 @@ logError("to-remove, TCP, tpType=%d", pTrans->tpInfo.tpType);
             }
 
             osHash_deleteNode(pTrans->pTransHashLE, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
-#if 0
-            osHashData_t* pHashData = pTrans->pTransHashLE->data;
-			osfree(pHashData);
-            //osfree((sipTransaction_t*)pHashData->pData);
-            osfree(pTrans->pTransHashLE);
-#endif
             break;
 		}
         default:

@@ -1,7 +1,8 @@
-/* Copyright 2020, 2019, Sean Dai
+/* Copyright (c) 2019, 2020, Sean Dai
+ *
+ * for sipRegistrar, accepts ALL SIP REGISTER, does not do any subscription check, or authentication check.  
+ * Basically, a IMS AS registratar functionality
  */
-
-//for sipRegistrar, accepts ALL SIP REGISTER, does not do any subscription check, or authentication check.  Basically, a IMS AS registratar functionality
 
 #include "osHash.h"
 #include "osTimer.h"
@@ -83,7 +84,6 @@ static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 	DEBUG_BEGIN
 
     sipHdrDecoded_t* pContactHdr=oszalloc(sizeof(sipHdrDecoded_t), sipHdrDecoded_cleanup);
-//	sipRawHdrListSA_t contactRawHdrSA={};
     sipHdrDecoded_t viaHdr={};
 	
 	if(msgType != SIP_MSG_REQUEST)
@@ -139,8 +139,6 @@ static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 
 	//decode the 1st contact entry
 	logError("sean-remove, before decode SIP_HDR_CONTACT (%d).", SIP_HDR_CONTACT);
-//	status = sipRawHdr_dup(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT], &contactRawHdrSA);
-//    status = sipDecodeHdr(contactRawHdrSA.rawHdr.pRawHdr, pContactHdr, false);
     status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT]->pRawHdr, pContactHdr, true);
     if(status != OS_STATUS_OK)
     {
@@ -221,9 +219,6 @@ static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 
 		pRegData = oszalloc(sizeof(tuRegistrar_t), masRegistrar_cleanup);
 		osDPL_dup(&pRegData->user, &sipUri);
-//		pRegData->regState = MAS_REGSTATE_REGISTERED;
-//		pRegData->pContact = osmemref(pContactHdr);
-//		sipHdrDecoded_dup(&pRegData->pContact-> &contactHdr);
 
 		pHashData->hashKeyType = OSHASHKEY_INT;
 		pHashData->hashKeyInt = key;
@@ -234,7 +229,6 @@ logError("to-remvoe, just to check the creation of a address.");
         logError("to-remove, regState, pRegHashLE=%p, pRegData=%p, state=%d, MAS_REGSTATE_REGISTERED=%d", pRegData->pRegHashLE, pRegData, pRegData->regState, MAS_REGSTATE_REGISTERED);
 
 		pRegData->regState = MAS_REGSTATE_NOT_REGISTERED;				
-//		pRegData->expiryTimerId = masRegStartTimer(regExpire*1000, pRegData);
 			
 		rspCode = SIP_RESPONSE_200;
 		goto EXIT;
@@ -246,17 +240,11 @@ logError("to-remvoe, just to check the creation of a address.");
 
 EXIT:
 	{
-#if 0	//use network address
-        sipHostport_t peer;
-        peer.host = pSipTUMsg->pPeer->ip;
-        peer.portValue = pSipTUMsg->pPeer->port;
-#else
 		osIpPort_t osPeer;
 		osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
         sipHostport_t peer;
 		peer.host = osPeer.ip.pl;
 		peer.portValue = osPeer.port;
-#endif
 
 		osMBuf_t* pSipResp = NULL;
     	sipHdrName_e sipHdrArray[] = {SIP_HDR_FROM, SIP_HDR_TO, SIP_HDR_CALL_ID, SIP_HDR_CSEQ};
@@ -301,16 +289,9 @@ logError("to-remove, masReg, pRegData=%p", pRegData);
     		sipHdrVia_getPeerTransport(pTopVia, &peerHostPort, &peerTpProtocol);
 
             sipTransMsg.response.sipTrMsgBuf.tpInfo.tpType = peerTpProtocol;
-//            sipTransMsg.response.sipTrMsgBuf.tpInfo.tcpFd = pSipTUMsg->tcpFd;
-#if 0	//use network address
-            sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.ip = peerHostPort.host;
-            sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.port = peerHostPort.portValue;
-			sipConfig_getHost(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.response.sipTrMsgBuf.tpInfo.local.port); 
-#else
 			osIpPort_t ipPort ={{peerHostPort.host}, peerHostPort.portValue};
 			osConvertPLton(&ipPort, true, &sipTransMsg.response.sipTrMsgBuf.tpInfo.peer);
 			sipConfig_getHost1(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local);
-#endif
             sipTransMsg.response.sipTrMsgBuf.tpInfo.protocolUpdatePos = 0;
 
 			//fill the other info
@@ -370,7 +351,7 @@ logError("to-remove, masReg, pRegData=%p", pRegData);
 							}
         					pRegData->expiryTimerId = masRegStartTimer(regExpire*1000, pRegData);
 							//start timer to query DB if there is stored SMS for the user, the reason not to query right away is that client could not handle immediate SMS after register
-							pRegData->smsQueryTimerId = masRegStartTimer(5000, pRegData);
+							pRegData->smsQueryTimerId = masRegStartTimer(SIP_UE_REG_SEND_SMS_DELAY, pRegData);
     					}
 					}
 				}
@@ -387,14 +368,11 @@ logError("to-remove, masReg, pRegData=%p", pRegData);
 		}
 	}
 
-//	osfree(pContactHdr->decodedHdr);
 logError("to-remove, viaHdr.decodedHdr=%p, pContactHdr=%p", viaHdr.decodedHdr, pContactHdr);
 	osfree(viaHdr.decodedHdr);	
 	osfree(pContactHdr);
 
     osfree(pReqDecodedRaw);
-
-//logError("to-remove, masreg1, pRegData=%p, peer-ipaddr=%p, peer=%r:%d", pRegData, ((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.host.p, &((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.host, ((sipHdrMultiContact_t*)pRegData->pContact->decodedHdr)->contactList.pGNP->hdrValue.uri.hostport.portValue);
 
 	DEBUG_END
 	return status;
@@ -509,7 +487,6 @@ void* masReg_addAppInfo(osPointerLen_t* pSipUri, void* pMasInfo)
 	}
 
 	void* pRegId = NULL;
-//	pMasInfo->regId = NULL;
 
     uint32_t key = osHash_getKeyPL(pSipUri, true);
     osListElement_t* pHashLE = osHash_lookupByKey(masRegHash, &key, OSHASHKEY_INT);
@@ -526,30 +503,19 @@ void* masReg_addAppInfo(osPointerLen_t* pSipUri, void* pMasInfo)
         osDPL_dup(&pRegData->user, pSipUri);
         pRegData->regState = MAS_REGSTATE_NOT_REGISTERED;
         logError("to-remove, regState, pRegData=%p, state=%d, MAS_REGSTATE_REGISTERED=%d", pRegData, pRegData->regState, MAS_REGSTATE_REGISTERED);
-#if 0
-//since SMS is not an session, really there is no need to store sms in regData 
-		osList_append(&pRegData->appInfoList, pMasInfo);
-#endif
+
         pHashData->hashKeyType = OSHASHKEY_INT;
         pHashData->hashKeyInt = key;
         pHashData->pData = pRegData;
         pRegData->pRegHashLE = osHash_add(masRegHash, pHashData);
-//		pMasInfo->regId = pRegData->pRegHashLE;
 		pRegId = pRegData->pRegHashLE;
-logError("to-remove, CRASH, pMasInfo=%p, pRegId=%p", pMasInfo, pRegId); 
 	
         pRegData->purgeTimerId = masRegStartTimer(SIP_REG_PURGE_TIMER*1000, pRegData);
     }
 	else
 	{
-//		pMasInfo->regId = pHashLE;
 		pRegId = pHashLE;
 		tuRegistrar_t* pRegData = ((osHashData_t*)pHashLE->data)->pData;
-#if 0
-//since SMS is not an session, really there is no need to store sms in regData
-		osList_append(&pRegData->appInfoList, pMasInfo);
-#endif
-logError("to-remove, CRASH, pRegData=%p, pMasInfo(pInfo)=%p, pHashLE=%p", pRegData, pMasInfo, pHashLE);
 	}
 
 EXIT:	
@@ -566,7 +532,6 @@ osStatus_e masReg_deleteAppInfo(void* pRegId, void* pTransId)
 		return OS_ERROR_NULL_POINTER;
 	}
 
-logError("to-remove, CRASH, pRegId=%p", pRegId);
 	osStatus_e status = OS_STATUS_OK;
 	tuRegistrar_t* pRegData = osHash_getData(pRegId);
 	if(!pRegData)
@@ -576,7 +541,7 @@ logError("to-remove, CRASH, pRegId=%p", pRegId);
 		goto EXIT;
 	}
 
-logError("to-remove, pRegData=%p, pTransId=%p", pRegData, pTransId);
+	debug("pRegData=%p, pTransId=%p", pRegData, pTransId);
 	void* pInfo = osList_deleteElement(&pRegData->appInfoList, appInfoMatchHandler, pTransId);
 	if(!pInfo)
 	{
@@ -590,29 +555,6 @@ logError("to-remove, pRegData=%p, pTransId=%p", pRegData, pTransId);
 EXIT:
 	return status;
 }
-
-
-#if 0
-//move to masMgr, and change name to masInfo_getTransId()
-void* masReg_getTransId(void* pTUId, void* pTransId, bool isSrcTransId)
-{
-	if(!pTUId)
-	{
-		return NULL;
-	}
-
-	if((isSrcTransId && ((masInfo_t*)pTUId)->pSrcTransId == pTransId))
-	{
-		return ((masInfo_t*)pTUId)->pDstTransId;
-	}
-	else if (!isSrcTransId && ((masInfo_t*)pTUId)->pDstTransId != pTransId)
-	{
-		return ((masInfo_t*)pTUId)->pSrcTransId;
-	}
-
-	return NULL;
-}
-#endif	
 
 
 static uint64_t masRegStartTimer(time_t msec, void* pData)
@@ -708,10 +650,6 @@ static void masRegistrar_cleanup(void* pData)
 		osHash_deleteNode(pRegData->pRegHashLE, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
 	}
 
-#if 0
-	osfree(pRegData->pRegHashLE->data);
-	osfree(pRegData->pRegHashLE);
-#endif
 	pRegData->pRegHashLE = NULL;
 
 DEBUG_END

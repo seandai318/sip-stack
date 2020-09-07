@@ -1,4 +1,4 @@
-/* Copyright 2020, 2019, Sean Dai
+/* Copyright (c) 2020, 2019, Sean Dai
  */
 
 #include <sys/socket.h>
@@ -111,11 +111,7 @@ osStatus_e sipTransNISStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uin
         goto EXIT;
     }
 
-#if 0	//use network address
-	debug("pTrans=%p, tpInfo (isCom=%d, tpType=%d, tcpFd=%d, peer=%r:%d).", pTrans, pTrans->tpInfo.isCom, pTrans->tpInfo.tpType, pTrans->tpInfo.tcpFd, &pTrans->tpInfo.peer.ip, pTrans->tpInfo.peer.port);
-#else
     debug("pTrans=%p, tpInfo (isCom=%d, tpType=%d, tcpFd=%d, peer=%A).", pTrans, pTrans->tpInfo.isCom, pTrans->tpInfo.tpType, pTrans->tpInfo.tcpFd, &pTrans->tpInfo.peer);
-#endif
 
 	sipTransNISEnterState(SIP_TRANS_STATE_TRYING, msgType, pTrans);
 
@@ -156,22 +152,10 @@ osStatus_e sipTransNISStateTrying_onMsg(sipTransMsgType_e msgType, void* pMsg, u
 			//the peer address from TU is the address in the top via, may be different from the real address used by the peer.  if the request message was received via TCP, the real peer has been saved when transaction was created, only reset when the message was received via UDP.
 			if(pTrans->tpInfo.tcpFd < 0)
 			{
-#if 0	//use network address
-				//no need to reallocate memory for peer using osDPL_dup, it has been done in transMgr via osPL_setStr when a message is first received from peer
-				osPL_plcpy(&pTrans->tpInfo.peer.ip, &pTU->response.sipTrMsgBuf.tpInfo.peer.ip);
-				pTrans->tpInfo.peer.port = pTU->response.sipTrMsgBuf.tpInfo.peer.port;
-				//pTrans->tpInfo.peer = pTU->response.sipTrMsgBuf.tpInfo.peer;
-#else
 				pTrans->tpInfo.peer = pTU->response.sipTrMsgBuf.tpInfo.peer;
-#endif
 			}
 
-#if 0	//use network address
-            osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &pTU->response.sipTrMsgBuf.tpInfo.local.ip);
-            pTrans->tpInfo.local.port = pTU->response.sipTrMsgBuf.tpInfo.local.port;
-#else
 			pTrans->tpInfo.local = pTU->response.sipTrMsgBuf.tpInfo.local;
-#endif
 			if(pTU->sipMsgType != SIP_MSG_RESPONSE)
 			{
 				logError("received unexpected request message from TU in NISStateTrying, response message is expected.");
@@ -602,12 +586,6 @@ osStatus_e sipTransNISEnterState(sipTransState_e newState, sipTransMsgType_e msg
             }
 
 			osHash_deleteNode(pTrans->pTransHashLE, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
-#if 0
-			osHashData_t* pHashData = pTrans->pTransHashLE->data;
-			osfree(pHashData);
-			//osfree((sipTransaction_t*)pHashData->pData);
-			osfree(pTrans->pTransHashLE);
-#endif
 			break;
 		default:
 			logError("received unexpected newState (%d).", newState);

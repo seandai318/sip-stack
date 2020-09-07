@@ -1,3 +1,6 @@
+/* Copyright (c) 2019, 2020, Sean Dai
+ */
+
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
@@ -37,8 +40,7 @@ osStatus_e sipParserHdr_via(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrMultiVia_
         goto EXIT;
     }
 
-//viaList shall be initialized out of this function, otherwise, multiple via hdr will initiate the viaList each other
-//    osList_init(&pVia->viaList);
+	//viaList shall be initialized out of this function, otherwise, multiple via hdr will initiate the viaList each other
 
 	pVia->viaNum = 0;
     while(pSipMsg->pos < hdrEndPos)
@@ -66,7 +68,6 @@ osStatus_e sipParserHdr_via(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrMultiVia_
 			logError("incorrect port number (%r).", &pViaElem->hdrValue.hostport.port);
 			goto EXIT;
 		}
-
 		if(++pVia->viaNum == 1)
 		{
 			pVia->pVia = pViaElem;
@@ -120,7 +121,6 @@ osStatus_e sipParserHdr_viaElement(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrVi
 	bool isBeforeSlash = true;
 	while(pSipMsg->pos < hdrEndPos && stage < 3)
 	{
-	//	debug("char='%c', pos=%ld, lwsLen=%d", pSipMsg->buf[pSipMsg->pos], pSipMsg->pos, lwsLen);
 		if(pSipMsg->buf[pSipMsg->pos] == '/')
 		{
 			pVia->sentProtocol[stage].p = &pSipMsg->buf[origPos];

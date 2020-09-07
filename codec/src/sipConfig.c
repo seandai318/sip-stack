@@ -1,3 +1,6 @@
+/* Copyright (c) 2019, 2020, Sean Dai
+ */
+
 #include <string.h>
 #include <arpa/inet.h>
 
@@ -7,18 +10,6 @@
 #include "sipConfig.h"
 #include "sipConfigPriv.h"
 
-#if 0
-typedef struct {
-    sipConfig_xmlDataName_e eDataName;
-    osPointerLen_t dataName;
-    osXmlDataType_e dataType;
-    union {
-        bool xmlIsTrue;
-        uint64_t xmlInt;
-        osPointerLen_t xmlStr;
-    };
-} sipConfig_xmlData_t;
-#endif
 
 osXmlData_t sipConfig_xmlData[SIP_XML_MAX_DATA_NAME_NUM] = {
     {SIP_XML_TIMER_C, 					{"SIP_TIMER_C", strlen("SIP_TIMER_C")},	OS_XML_DATA_TYPE_XS_LONG, 0},
@@ -107,7 +98,7 @@ void sipConfig_getHost(osPointerLen_t* host, int* port)
 
 void sipConfig_getHost1(struct sockaddr_in* pHost)
 {
-	osIpPort_t ipPort = {{SIP_CONFIG_LOCAL_IP}, SIP_CONFIG_LISTEN_PORT};
+	osIpPort_t ipPort = {{SIP_CONFIG_LOCAL_IP, false, false}, SIP_CONFIG_LISTEN_PORT};
 	osConvertPLton(&ipPort, true, pHost);
 }
 

@@ -1,3 +1,6 @@
+/* Copyright (c) 2019, 2020, Sean Dai
+ */
+
 #include "osHash.h"
 #include "osTimer.h"
 #include "osSockAddr.h"
@@ -122,7 +125,6 @@ static osStatus_e masSMS_onSipRequest(sipTUMsg_t* pSipTUMsg)
 
     osPointerLen_t sms={};
     status = masSip_getSms(pReqDecodedRaw, &sms);
-logError("to-remove, SMS, sms=%r", &sms);
 
 	sipUri_t* pCalledContactUser = NULL;
 	osPointerLen_t calledUri;
@@ -145,8 +147,6 @@ logError("to-remove, SMS, sms=%r", &sms);
         goto BUILD_RESPONSE;
 	}	
 
-logError("to-remove, calledContact, host=%r, port=%d", &pCalledContactUser->hostport.host, pCalledContactUser->hostport.portValue);
-
 	//prepare for sipTU_buildRequest(), add a P-Called-ID 
 	sipHdrRawValueStr_t calledId;
 	calledId.nameCode = SIP_HDR_P_CALLED_PARTY_ID;
@@ -154,33 +154,13 @@ logError("to-remove, calledContact, host=%r, port=%d", &pCalledContactUser->host
 
 	size_t topViaProtocolPos = 0;
 	sipTransInfo_t sipTransInfo;
-#if 0	//use network address
-	sipTransInfo.transId.viaId.host = pSipTUMsg->pPeer->ip;
-	sipTransInfo.transId.viaId.port = pSipTUMsg->pPeer->port;
-#else
 	osIpPort_t osIpPort;
 	osConvertntoPL(pSipTUMsg->pPeer, &osIpPort);
 	sipTransInfo.transId.viaId.host = osIpPort.ip.pl;
 	sipTransInfo.transId.viaId.port = osIpPort.port;
-#endif	
-logError("to-remove, PEER=%A", pSipTUMsg->pPeer); 
+	debug("PEER=%A", pSipTUMsg->pPeer); 
 
-#if 0
-    //forward the SIP MESSAGE back to CSCF, add top via, remove top Route, reduce the max-forarded by 1.  The viaId shall be filled with the real peer IP/port
-	osMBuf_t* pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, false, NULL, 0, &calledId, 0, &sipTransInfo.transId.viaId, pCalledContactUser, &topViaProtocolPos);
-	if(!pReq)
-	{
-		logError("fails to create proxy request.");
-		rspCode = SIP_RESPONSE_503;
-        status = OS_ERROR_INVALID_VALUE;
-        goto BUILD_RESPONSE;
-	}
-#endif
     osMBuf_t* pReq = masSip_buildRequest(&calledUri, &callerUri, pCalledContactUser, &sms, &sipTransInfo.transId.viaId, &topViaProtocolPos);
-
-	//sipTransInfo.transId.viaId shall contains the request top via info, it has been updated in the function sipTU_buildRequest()
-//	sipTransInfo.transId.viaId.host = pCalledContactUser.hostport.host;
-//	sipTransInfo.transId.viaId.port = pCalledContactUser.hostport.portValue;
 
 	masInfo_t* pMasInfo = osmalloc(sizeof(masInfo_t), masInfo_cleanup);
 	pMasInfo->pSrcTransId = pSipTUMsg->pTransId;
@@ -193,6 +173,7 @@ logError("to-remove, PEER=%A", pSipTUMsg->pPeer);
 	if(!pMasInfo->regId)
 	{
 		osMBuf_dealloc(pReq);
+		osfree(pMasInfo);
 		rspCode = SIP_RESPONSE_500;
 		status = OS_ERROR_INVALID_VALUE;
         goto BUILD_RESPONSE;
@@ -213,15 +194,9 @@ logError("to-remove, PEER=%A", pSipTUMsg->pPeer);
     sipTransInfo.isRequest = true;
 	sipTransInfo.transId.reqCode = SIP_METHOD_MESSAGE;
 	sipTransMsg.request.pTransInfo = &sipTransInfo;
-#if 0	//use network address
-    sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.ip = pCalledContactUser->hostport.host;
-    sipTransMsg.request.sipTrMsgBuf.tpInfo.peer.port = pCalledContactUser->hostport.portValue;
-    sipConfig_getHost(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.request.sipTrMsgBuf.tpInfo.local.port);
-#else
-	osIpPort_t osPeer = {pCalledContactUser->hostport.host, pCalledContactUser->hostport.portValue};
+	osIpPort_t osPeer = {{pCalledContactUser->hostport.host, false, false}, pCalledContactUser->hostport.portValue};
 	osConvertPLton(&osPeer, true, &sipTransMsg.request.sipTrMsgBuf.tpInfo.peer);
 	sipConfig_getHost1(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local);
-#endif
 	sipTransMsg.request.sipTrMsgBuf.tpInfo.protocolUpdatePos = topViaProtocolPos;
 	sipTransMsg.pTransId = NULL;
 	sipTransMsg.appType = SIPTU_APP_TYPE_MAS;
@@ -242,15 +217,9 @@ BUILD_RESPONSE:
 	//to send the response to the caller side
 	if(rspCode != SIP_RESPONSE_INVALID)
 	{
-#if 0	//use network address
-        sipHostport_t peer;
-        peer.host = pSipTUMsg->pPeer->ip;
-        peer.portValue = pSipTUMsg->pPeer->port;
-#else
 		osIpPort_t osPeer;
 		osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
 		sipHostport_t peer = {osPeer.ip.pl, osPeer.port};
-#endif
 	    sipHdrDecoded_t viaHdr={};
     	status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr, &viaHdr, false);
     	if(status != OS_STATUS_OK)
@@ -278,18 +247,10 @@ BUILD_RESPONSE:
             sipHostport_t peerHostPort;
             sipTransport_e peerTpProtocol;
             sipHdrVia_getPeerTransport(pTopVia, &peerHostPort, &peerTpProtocol);
-
             sipTransMsg.response.sipTrMsgBuf.tpInfo.tpType = peerTpProtocol;
-//            sipTransMsg.response.sipTrMsgBuf.tpInfo.tcpFd = pSipTUMsg->tcpFd;
-#if 0	//use network address
-            sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.ip = peerHostPort.host;
-            sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.port = peerHostPort.portValue;
-            sipConfig_getHost(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.response.sipTrMsgBuf.tpInfo.local.port);
-#else
-			osIpPort_t osPeer = {peerHostPort.host, peerHostPort.portValue};
+			osIpPort_t osPeer = {{peerHostPort.host, false, false}, peerHostPort.portValue};
 			osConvertPLton(&osPeer, true, &sipTransMsg.response.sipTrMsgBuf.tpInfo.peer);
 			sipConfig_getHost1(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local);
-#endif
             sipTransMsg.response.sipTrMsgBuf.tpInfo.protocolUpdatePos = 0;
 
             //fill the other info
@@ -299,7 +260,7 @@ BUILD_RESPONSE:
             sipTransMsg.pTransId = pSipTUMsg->pTransId;
     		sipTransMsg.appType = SIPTU_APP_TYPE_MAS;
             sipTransMsg.response.rspCode = rspCode;
-            sipTransMsg.pSenderId = pMasInfo;
+            sipTransMsg.pSenderId = NULL;
 
             status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);
 
@@ -399,8 +360,7 @@ static osStatus_e masSMS_onSipTransError(sipTUMsg_t* pSipTUMsg)
 
 	if(!pSipTUMsg->pTUId)
 	{
-        logError("null pointer, pSipTUMsg->pTUId.");
-        status = OS_ERROR_NULL_POINTER;
+        logInfo("null pointer, pSipTUMsg->pTUId.");
         goto EXIT;
     }
 

@@ -1,3 +1,6 @@
+/* Copyright (c) 2019, 2020, Sean Dai
+ */
+
 #ifndef _SIP_CONFIG_H
 #define _SIP_CONFIG_H
 
@@ -47,6 +50,7 @@ typedef enum {
 #define SIP_REG_DEFAULT_EXPIRE		(*(uint64_t*)sipConfig_getConfig(SIP_XML_REG_DEFAULT_EXPIRE))	//default 3600
 #define SIP_REG_MIN_EXPIRE			(*(uint64_t*)sipConfig_getConfig(SIP_XML_REG_MIN_EXPIRE))		//default 600
 #define SIP_REG_MAX_EXPIRE			(*(uint64_t*)sipConfig_getConfig(SIP_XML_REG_MAX_EXPIRE))		//36000
+#define SIP_UE_REG_SEND_SMS_DELAY	30000	//30 sec, move to xml.  if send the stored SMS right after a IMS client registers, the IMS client will respond 200 OK, but does not display to user
 
 #define SIP_TIMER_T1				(*(uint64_t*)sipConfig_getConfig(SIP_XML_TIMER_T1))			//default 500
 #define SIP_TIMER_T2				(*(uint64_t*)sipConfig_getConfig(SIP_XML_TIMER_T2))			//default 4000

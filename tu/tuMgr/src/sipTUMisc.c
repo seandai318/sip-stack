@@ -1,3 +1,6 @@
+/* Copyright (c) 2019, 2020, Sean Dai
+ */
+
 #include "osTypes.h"
 #include "osDebug.h"
 #include "osSockAddr.h"
@@ -28,7 +31,7 @@ void* sipTU_sendReq2Tr(sipRequest_e nameCode, osMBuf_t* pReq, sipTransViaInfo_t*
     sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.hdrStartPos = 0;
     sipTransMsg.request.pTransInfo = &sipTransInfo;
 
-	osIpPort_t ipPort = {{nextHop->ip}, nextHop->port};
+	osIpPort_t ipPort = {{nextHop->ip, false, false}, nextHop->port};
 	osConvertPLton(&ipPort, true, &sipTransMsg.request.sipTrMsgBuf.tpInfo.peer);
 
 	sipConfig_getHost1(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local);
@@ -57,15 +60,9 @@ osStatus_e sipTU_sendRsp2Tr(sipResponse_e rspCode, osMBuf_t* pResp, sipMsgDecode
   	sipHdrVia_getPeerTransportFromRaw(pReqDecodedRaw, peerViaIdx, &peerHostPort, &peerTpProtocol);
 
     sipTransMsg.response.sipTrMsgBuf.tpInfo.tpType = peerTpProtocol;
-#if 0   //use network address
-    sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.ip = peerHostPort.host;
-    sipTransMsg.response.sipTrMsgBuf.tpInfo.peer.port = peerHostPort.portValue;
-    sipConfig_getHost(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local.ip, &sipTransMsg.response.sipTrMsgBuf.tpInfo.local.port);
-#else
-	osIpPort_t ipPort = {{peerHostPort.host}, peerHostPort.portValue};
+	osIpPort_t ipPort = {{peerHostPort.host, false, false}, peerHostPort.portValue};
 	osConvertPLton(&ipPort, true, &sipTransMsg.response.sipTrMsgBuf.tpInfo.peer);
 	sipConfig_getHost1(&sipTransMsg.response.sipTrMsgBuf.tpInfo.local);
-#endif
     sipTransMsg.response.sipTrMsgBuf.tpInfo.protocolUpdatePos = 0;
 
     //fill the other info
