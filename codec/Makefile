@@ -1,4 +1,4 @@
-PROJECT_DIR = /home/ama/project
+PROJECT_DIR = ${HOME}/project
 PROJECT_APP_DIR = $(PROJECT_DIR)/sip-stack/codec
 IDIR = $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include
 #INC=$(foreach d, $(IDIR), -I$d)
