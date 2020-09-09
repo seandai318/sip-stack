@@ -1,4 +1,4 @@
-PROJECT_DIR = ${HOME}/project
+PROJECT_DIR ?= ${HOME}/project
 PROJECT_APP_DIR = $(PROJECT_DIR)/sip-stack/transport
 IDIR = $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/tu/tuMgr/include  $(PROJECT_DIR)/sip-stack/transport/include $(PROJECT_DIR)/diameter/common/include
 #INC=$(foreach d, $(IDIR), -I$d)
@@ -11,19 +11,25 @@ src = $(wildcard $(SRC_DIR)/*.c)
 obj = $(src:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 dep = $(obj:.o=.d)  # one dependency file for each source
 
-CFLAGS=$(INC) -g -DPREMEM
-DEBUG = true
-ifeq ($(DEBUG), true)
-    override CFLAGS += -DDEBUG -DPREMEM_DEBUG
+ifdef $(APP_BASE)
+    include $(APP_BASE)/Makefile.cflags
+else
+    CC=gcc
+    AR=ar
+    CFLAGS=$(INC) -g -DPREMEM -std=gnu99
+    DEBUG = true
+    ifeq ($(DEBUG), true)
+        override CFLAGS += -DDEBUG -DPREMEM_DEBUG
+    endif
 endif
 
 LDFLAGS = -lpthread
 
-libsip.a: $(obj)
+libtransport.a: $(obj)
 	cd $(OBJ_DIR);  $(AR) -cr $@ $^
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	cd $(SRC_DIR); $(CC) $(CFLAGS) -c $(notdir $<) -o $@
 
 -include $(dep)   # include all dep files in the makefile
 

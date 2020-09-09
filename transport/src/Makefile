@@ -1,4 +1,4 @@
-PROJECT_DIR = ${HOME}/project
+PROJECT_DIR ?= ${HOME}/project
 IDIR = $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/tu/tuMgr/include  $(PROJECT_DIR)/sip-stack/transport/include $(PROJECT_DIR)/diameter/common/include
 #INC=$(foreach d, $(IDIR), -I$d)
 INC=$(IDIR:%=-I%)
@@ -8,10 +8,16 @@ src = $(wildcard *.c)
 obj = $(src:.c=.o)
 dep = $(obj:.o=.d)  # one dependency file for each source
 
-CFLAGS=$(INC) -g -DPREMEM
-DEBUG = true
-ifeq ($(DEBUG), true)
-    override CFLAGS += -DDEBUG -DPREMEM_DEBUG
+ifdef $(APP_BASE)
+    include $(APP_BASE)/Makefile.cflags
+else
+    CC=gcc
+    AR=ar
+    CFLAGS=$(INC) -g -DPREMEM -std=gnu99
+    DEBUG = true
+    ifeq ($(DEBUG), true)
+        override CFLAGS += -DDEBUG -DPREMEM_DEBUG
+    endif
 endif
 
 LDFLAGS = -lpthread
