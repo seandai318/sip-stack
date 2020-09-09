@@ -1,4 +1,4 @@
-PROJECT_DIR = /home/ama/project
+PROJECT_DIR ?= $(HOME)/project
 PROJECT_APP_DIR = $(PROJECT_DIR)/sip-stack/tu/proxy/callProxy
 IDIR = $(PROJECT_APP_DIR)/include $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/transport/include  $(PROJECT_DIR)/sip-stack/tu/tuMgr/include $(PROJECT_DIR)/sip-stack/tu/proxy/proxyMgr/include $(PROJECT_DIR)/sip-stack/tu/registrar/include
 #INC=$(foreach d, $(IDIR), -I$d)
