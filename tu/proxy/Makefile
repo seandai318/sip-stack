@@ -1,6 +1,17 @@
-PROJECT_DIR = /home/ama/project
+PROJECT_DIR ?= ${HOME}/project
 PROJECT_APP_DIR = $(PROJECT_DIR)/sip-stack/tu/proxy
 
+ifdef $(APP_BASE)
+    include $(APP_BASE)/Makefile.cflags
+else
+    CC=gcc
+    AR=ar
+    CFLAGS=$(INC) -g -DPREMEM -std=gnu99
+    DEBUG = true
+    ifeq ($(DEBUG), true)
+        override CFLAGS += -DDEBUG -DPREMEM_DEBUG
+    endif
+endif
 
 libproxy.a: libproxycall.a libproxymgr.a
 	@mkdir -p $(PROJECT_APP_DIR)/bin-debug
