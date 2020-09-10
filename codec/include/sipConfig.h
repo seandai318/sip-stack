@@ -26,9 +26,11 @@ typedef enum {
 	SIP_XML_REG_MIN_EXPIRE,
 	SIP_XML_REG_MAX_EXPIRE,
     SIP_XML_CONFIG_LOCAL_IP,
+    SIP_XML_DB_USERNAME_SIZE,
 	SIP_XML_REG_DEFAULT_EXPIRE,
 	SIP_XML_CONFIG_LISTEN_PORT,
     SIP_XML_CONFIG_USE_IMS_CLIENT,
+    SIP_XML_UE_REG_SEND_SMS_DELAY,
 	SIP_XML_CONFIG_TIMEOUT_MULTIPLE,
 	SIP_XML_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE,
 	SIP_XML_CONFIG_TRANSACTION_HASH_BUCKET_SIZE,
@@ -50,8 +52,8 @@ typedef enum {
 #define SIP_REG_DEFAULT_EXPIRE		(*(uint64_t*)sipConfig_getConfig(SIP_XML_REG_DEFAULT_EXPIRE))	//default 3600
 #define SIP_REG_MIN_EXPIRE			(*(uint64_t*)sipConfig_getConfig(SIP_XML_REG_MIN_EXPIRE))		//default 600
 #define SIP_REG_MAX_EXPIRE			(*(uint64_t*)sipConfig_getConfig(SIP_XML_REG_MAX_EXPIRE))		//36000
-#define SIP_UE_REG_SEND_SMS_DELAY	30000	//30 sec, to-do, move to xml.  if send the stored SMS right after a IMS client registers, the IMS client will respond 200 OK, but does not display to user
-#define SIP_DB_USERNAME_SIZE        58      //to-do, move to xml, this has to match with the S&F DB's username varchar(58)
+#define SIP_UE_REG_SEND_SMS_DELAY	(*(uint64_t*)sipConfig_getConfig(SIP_XML_UE_REG_SEND_SMS_DELAY))	//default 30000, if send the stored SMS right after a IMS client registers, the IMS client will respond 200 OK, but does not display to user
+#define SIP_DB_USERNAME_SIZE        (*(uint64_t*)sipConfig_getConfig(SIP_XML_DB_USERNAME_SIZE))			//default 58, this has to match with the S&F DB's username varchar(58)
 
 #define SIP_TIMER_T1				(*(uint64_t*)sipConfig_getConfig(SIP_XML_TIMER_T1))			//default 500
 #define SIP_TIMER_T2				(*(uint64_t*)sipConfig_getConfig(SIP_XML_TIMER_T2))			//default 4000
