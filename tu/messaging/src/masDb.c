@@ -76,6 +76,13 @@ osStatus_e masDbQuerySMSByUser(osPointerLen_t* user)
 		return OS_ERROR_NULL_POINTER;
 	}
 
+	if(user->l > SIP_DB_USERNAME_SIZE)
+	{
+		logError("user size(%d) exceeds SIP_DB_USERNAME_SIZE(%d).", user->l, SIP_DB_USERNAME_SIZE);
+		status = OS_ERROR_INVALID_VALUE;
+		goto EXIT;
+	}
+
     char query[MAS_DB_QUERY_LEN];
 	int len = osPrintf_buffer(query, MAS_DB_QUERY_LEN, "select smsId, content, username, caller from user inner join sms using (userId) where userName ='%r'", user);
 	query[len] = 0;
@@ -327,6 +334,13 @@ osStatus_e masDbSetUser(osPointerLen_t* user, size_t* userId)
 		return OS_ERROR_NULL_POINTER;
 	}
 
+    if(user->l > SIP_DB_USERNAME_SIZE)
+    {
+        logError("user size(%d) exceeds SIP_DB_USERNAME_SIZE(%d).", user->l, SIP_DB_USERNAME_SIZE);
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
 	if(masDbGetUserId(user, userId) != OS_STATUS_OK)
 	{
     	char query[MAS_DB_QUERY_LEN];
@@ -361,6 +375,13 @@ osStatus_e masDbGetUserId(osPointerLen_t* user, size_t* userId)
     {
         logError("null pointer, user.");
         return OS_ERROR_NULL_POINTER;
+    }
+
+    if(user->l > SIP_DB_USERNAME_SIZE)
+    {
+        logError("user size(%d) exceeds SIP_DB_USERNAME_SIZE(%d).", user->l, SIP_DB_USERNAME_SIZE);
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
     }
 
     char query[MAS_DB_QUERY_LEN];
