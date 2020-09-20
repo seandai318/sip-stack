@@ -4,7 +4,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 
-#include "osXmlParser.h"
+#include "osXmlParserIntf.h"
 #include "osSockAddr.h"
 
 #include "sipConfig.h"
@@ -32,11 +32,10 @@ osXmlData_t sipConfig_xmlData[SIP_XML_MAX_DATA_NAME_NUM] = {
     {SIP_XML_CONFIG_TRANSPORT_TCP_CONN_QUARANTINE_TIME,	{"SIP_CONFIG_TRANSPORT_TCP_CONN_QUARANTINE_TIME", sizeof("SIP_CONFIG_TRANSPORT_TCP_CONN_QUARANTINE_TIME")-1}, OS_XML_DATA_TYPE_XS_LONG, 0}};
 
 
-
 void sipConfig_init(char* configFolder)
 {
 	osXmlDataCallbackInfo_t cbInfo={sipConfig_xmlData, SIP_XML_MAX_DATA_NAME_NUM}; 
-    if(osXml_getLeafValue(configFolder, SIP_CONFIG_XSD_FILE_NAME, SIP_CONFIG_XML_FILE_NAME, osXml_xmlCallback, &cbInfo) != OS_STATUS_OK)
+    if(osXml_getLeafValue(configFolder, SIP_CONFIG_XSD_FILE_NAME, SIP_CONFIG_XML_FILE_NAME, true, &cbInfo) != OS_STATUS_OK)
     {
         logError("fails to sipConfig_getXmlConfig.");
         return;
