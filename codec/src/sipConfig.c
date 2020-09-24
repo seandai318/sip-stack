@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <arpa/inet.h>
+#include <stdlib.h>
 
 #include "osXmlParserIntf.h"
 #include "osSockAddr.h"
@@ -38,6 +39,7 @@ void sipConfig_init(char* configFolder)
     if(osXml_getLeafValue(configFolder, SIP_CONFIG_XSD_FILE_NAME, SIP_CONFIG_XML_FILE_NAME, true, &cbInfo) != OS_STATUS_OK)
     {
         logError("fails to sipConfig_getXmlConfig.");
+		exit(EXIT_FAILURE);
         return;
     }
 }
