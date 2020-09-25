@@ -24,7 +24,7 @@ typedef enum {
 
 typedef struct sipTpMsgState {
     sipTransportEomPattern_e eomPattern;
-    int clValue;        //default shall be set to -1, means clValue has not bee set. clValue >= 0 means value has been found
+    int clValue;        //a sip message's content length value.  default shall be set to -1, means clValue has not been set. clValue >= 0 means value has been found
     bool isBadMsg;      //bad msg format, or pSipMsgBuf is full, still not found a sip packet
 } sipTpMsgState_t;
 

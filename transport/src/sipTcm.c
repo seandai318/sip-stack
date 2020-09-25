@@ -7,12 +7,22 @@
 
 
 
-/*extract Content-Length and EOM from a newly received message piece
-  pSipMsgBuf_pos = end of bytes processed.
-  pSipMsgBuf->end = end of bytes received, except when a sip packet is found, which pSipMsgBuf->end = end of the sip packet
-  if a sip packet does not contain Content-Length header, assume Content length = 0
-  pNextStart: if there is extra bytes, the position in the buf that the extra bytes starts
-  return value: -1: expect more read() for the current  sip packet, 0: exact sip packet, >1 extra bytes for next sip packet.
+/* This function identifies whether a pSipMsg contains a whole sip message or part of a sip message.  The following is checked:
+ * 1. if the pSipMsg contains the whole sip message.
+ * 2. if the pSipMsg contains the whole sip message + extra bytes for the next sip message
+ * 3. if the pSipMsg contains part of a sip message
+ * 
+ * For case 1 and 2, the pSipMsg can be sent to the up layter, but the extra bytes in the case 2 needs to be copied to the 
+ * next pSipMsg (done in the caller of sipTpAnalyseMsg()).
+ * 
+ * The Content-Length is used to identify the length of a sip message to determine which of the above three cases the pSipMsg is 
+ * in.  if a Content-Length does not exist, but the parse meets "\r\n\r\n", the end of a sip message is also reached.
+ *
+ * pSipMsgBuf->pos = end of bytes processed.
+ * pSipMsgBuf->end = end of bytes received, except when a sip packet is found, which pSipMsgBuf->end = end of the sip packet
+ * if a sip packet does not contain Content-Length header, assume Content length = 0
+ * pNextStart: if there is extra bytes, the position in the buf that the extra bytes starts
+ * return value: -1: expect more read() for the current sip packet, 0: exact sip packet, >1 extra bytes for next sip packet.
  */
 ssize_t sipTpAnalyseMsg(osMBuf_t* pSipMsg, sipTpMsgState_t* pMsgState, size_t chunkLen, size_t* pNextStart)
 {
@@ -24,10 +34,10 @@ ssize_t sipTpAnalyseMsg(osMBuf_t* pSipMsg, sipTpMsgState_t* pMsgState, size_t ch
 
     pSipMsg->end += chunkLen;
 
-    ssize_t remaining = -1;
+    ssize_t remainingBytes = -1;	//how many bytes are out of this sip message, equivlent to how many the next sip message are included in this received TCP message. if > 0, contains next sip message
     *pNextStart = 0;
 
-    //first check if is waiting for content
+    //first check if is waiting for content.  When clValue >=0, the sip message's content length has been identified in the last received TCP message 
     if(pMsgState->clValue > 0)
     {
         if(chunkLen >= pMsgState->clValue)
@@ -40,13 +50,13 @@ ssize_t sipTpAnalyseMsg(osMBuf_t* pSipMsg, sipTpMsgState_t* pMsgState, size_t ch
                 if(pSipMsg->buf[pSipMsg->end+i] >= 'A' && pSipMsg->buf[pSipMsg->end+i] <= 'Z')
                 {
                     *pNextStart = pSipMsg->end+i;
-                    remaining = chunkLen - pMsgState->clValue - i - 1;
+                    remainingBytes = chunkLen - pMsgState->clValue - i - 1;
                     goto EXIT;
                 }
             }
 
             *pNextStart = pSipMsg->end+chunkLen;
-            remaining = 0;
+            remainingBytes = 0;
             goto EXIT;
         }
         else
@@ -60,6 +70,7 @@ ssize_t sipTpAnalyseMsg(osMBuf_t* pSipMsg, sipTpMsgState_t* pMsgState, size_t ch
     }
 
     //check content-length and end of headers in the sip message header part
+	int clPos = 0;	//points to the first char of "Content-Length", used for case when cl is resolved, but tcp message stopped before RNRN
     for(int i=pSipMsg->pos; i<pSipMsg->end; i++)
     {
         switch(pSipMsg->buf[i])
@@ -90,40 +101,53 @@ ssize_t sipTpAnalyseMsg(osMBuf_t* pSipMsg, sipTpMsgState_t* pMsgState, size_t ch
                 else if(pMsgState->eomPattern == SIP_TRANSPORT_EOM_RNR)
                 {
                     pMsgState->eomPattern = SIP_TRANSPORT_EOM_RNRN;
-                    remaining = chunkLen + pSipMsg->pos - i - 1;
+                    remainingBytes = chunkLen + pSipMsg->pos - i - 1;
                     if(pMsgState->clValue <= 0)
                     {
+						//find "\r\n\r\n", if Content-Length=0 or does not present, this is the end of a sip message
                         pMsgState->clValue = 0;
                         pSipMsg->pos = i+1;
+						if(pSipMsg->end > pSipMsg->pos)
+						{
+							*pNextStart = pSipMsg->pos;
+						}
+		
+						//the sip message delimit is done, set proper pos/end for the current pSipMsg
                         pSipMsg->end = pSipMsg->pos;
-                        *pNextStart = pSipMsg->end;
+						pSipMsg->pos = 0;
                         goto EXIT;
                     }
                     else
                     {
-                        //the remaining bytes more than content length
-logError("to-remove, TCPCL, remaining=%ld, pMsgState->clValue=%ld", remaining,  pMsgState->clValue);
-                        if(remaining >= pMsgState->clValue)
+                        //the remainingBytes bytes more than content length
+                        if(remainingBytes >= pMsgState->clValue)
                         {
-                            pSipMsg->pos = i + 1 + pMsgState->clValue;
-                            pSipMsg->end = pSipMsg->pos;
-                            remaining -= pMsgState->clValue;
-                            for (int j=0; j<remaining; j++)
+							mdebug(LM_TRANSPORT, "there are more bytes received than the current sip message, remainingBytes=%ld", remainingBytes);
+
+							//the sip message delimit is done, set proper pos/end for the current pSipMsg
+                            pSipMsg->pos = 0;
+                            pSipMsg->end = i + 1 + pMsgState->clValue;
+
+                            remainingBytes -= pMsgState->clValue;
+                            //get rid of any garbage between this sip message and next sip message.  The first char of next sip message be A-Z
+                            for (int j=0; j<remainingBytes; j++)
                             {
                                 if(pSipMsg->buf[pSipMsg->end+j] >= 'A' && pSipMsg->buf[pSipMsg->end+j] <= 'Z')
                                 {
                                     *pNextStart = pSipMsg->end+j;
-                                    remaining -= j;
+                                    remainingBytes -= j;
                                     goto EXIT;
                                 }
                             }
-                            remaining = 0;
+                            
+							remainingBytes = 0;
                             goto EXIT;
                         }
                         else
                         {
-                            //the remaining bytes less than content length
-                            pMsgState->clValue -= remaining;
+                            //the remainingBytes bytes less than content length, part of this sip message will be in next TCP message
+                            pMsgState->clValue -= remainingBytes;
+							remainingBytes = -1;
                             pSipMsg->pos = pSipMsg->end;
                             goto EXIT;
                         }
@@ -148,7 +172,7 @@ logError("to-remove, TCPCL, remaining=%ld, pMsgState->clValue=%ld", remaining,  
 
                 pMsgState->eomPattern = SIP_TRANSPORT_EOM_OTHER;
 
-                //if the remaining message is not big enough to contain "Content-Length"
+                //if the nextSipMsgBytes message is not big enough to contain "Content-Length"
                 if(i+14 >= pSipMsg->end)
                 {
                     pMsgState->eomPattern = SIP_TRANSPORT_EOM_RN;
@@ -156,7 +180,7 @@ logError("to-remove, TCPCL, remaining=%ld, pMsgState->clValue=%ld", remaining,  
                     goto EXIT;
                 }
 
-                //if the remaining message is big enough to contain "Content-Length", but this header is not a Content-Lenth header
+                //if the nextSipMsgBytes message is big enough to contain "Content-Length", but this header is not a Content-Lenth header
                 if(pSipMsg->buf[i+9] != 'e')
                 {
                     break;
@@ -179,6 +203,8 @@ logError("to-remove, TCPCL, remaining=%ld, pMsgState->clValue=%ld", remaining,  
                 }
 
                 //has found the Content-Length header, next step is to get the cl value
+				clPos = i;
+
                 //clValueState=-1, right after content-header name, clValueState=0, right after ':', clValueState>0, cl value is found
                 int clValueState = -1;
                 int j;
@@ -198,10 +224,9 @@ logError("to-remove, TCPCL, remaining=%ld, pMsgState->clValue=%ld", remaining,  
                     }
                     else if(pSipMsg->buf[j] == '\r' && pMsgState->clValue >= 0)
                     {
-                        //do not understand why set clValueState=0? shall make it > 0? do since break happens, whatever value makes no difference
-                        clValueState = 0;
+                        //done with content-length parsing, set back 1 char to make the position in front of '\r'
                         j--;
-logError("to-remove, TCPCL, cl=%d", pMsgState->clValue);
+						mdebug(LM_TRANSPORT, "Content-Length=%d", pMsgState->clValue);
                         break;
                     }
                     else if(pSipMsg->buf[j] >= '0' && pSipMsg->buf[j] <= '9')
@@ -221,11 +246,12 @@ logError("to-remove, TCPCL, cl=%d", pMsgState->clValue);
                     }
                 }
 
-                //if there is no break out from the above "for(j= i+14; j<end; j++)" loop, means the CL header will be continued in the next read(), retrieve to the beginning of CL header
                 if(j == pSipMsg->end)
                 {
+					//retrieved the whole TCP message, in the CL header, but the value has not identified, i.e., the CL header will be continued in the next read().  return bck to the beginning of the CL header
                     pSipMsg->pos = i;
                     pMsgState->eomPattern = SIP_TRANSPORT_EOM_RN;
+					goto EXIT;
                 }
                 else
                 {
@@ -239,18 +265,27 @@ logError("to-remove, TCPCL, cl=%d", pMsgState->clValue);
                 //debug("i=%d, received %c, patterm=%d.", i, pSipMsg->buf[i], pMsgState->eomPattern);
                 pMsgState->eomPattern = SIP_TRANSPORT_EOM_OTHER;
                 break;
-        }
-    }
+        }	//switch(pSipMsg->buf[i])
+    }	//for(int i=pSipMsg->pos; i<pSipMsg->end; i++)
+
+	//if getting here, and clValue >=0, meaning cl is resolved, but \r\n\r\n has not reached, get back to the beginning of CL header, and redo cl resolving in next TCP message
+	if(pMsgState->clValue >= 0)
+	{
+		pMsgState->clValue = -1;
+		pSipMsg->pos = clPos;
+		pMsgState->eomPattern = SIP_TRANSPORT_EOM_RN;
+		remainingBytes == -1;
+	}
 
 EXIT:
     //buf is full, but still not found the end of a sip packet, treat this as a bad packet.
-    if(remaining == -1 && pSipMsg->end == pSipMsg->size)
+    if(remainingBytes == -1 && pSipMsg->end == pSipMsg->size)
     {
-        remaining == 0;
+        remainingBytes == 0;
         pMsgState->isBadMsg = true;
     }
 
-    return remaining;
+    return remainingBytes;
 }
 
 
@@ -259,7 +294,6 @@ osStatus_e tpProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len, bool* isForwar
     osStatus_e status = OS_STATUS_OK;
 	*isForwardMsg = false;
 
-    //mdebug(LM_TRANSPORT, "received TCP message, len=%d from fd(%d), bufLen=%ld, msg=\n%r", len, events[i].data.fd, bufLen, &dbgPL);
     //basic sanity check to remove leading \r\n.  here we also ignore other invalid chars, 3261 only says \r\n
     if(pTcm->msgConnInfo.pMsgBuf->pos == 0 && (pTcm->msgConnInfo.pMsgBuf->buf[0] < 'A' || pTcm->msgConnInfo.pMsgBuf->buf[0] > 'Z'))
     {
@@ -269,19 +303,31 @@ osStatus_e tpProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len, bool* isForwar
             goto EXIT;
         }
     }
+
     size_t nextStart = 0;
-    ssize_t remaining = sipTpAnalyseMsg(pTcm->msgConnInfo.pMsgBuf, &pTcm->msgConnInfo.sipState, len, &nextStart);
-    if(remaining < 0)
+    ssize_t nextSipMsgBytes = sipTpAnalyseMsg(pTcm->msgConnInfo.pMsgBuf, &pTcm->msgConnInfo.sipState, len, &nextStart);
+
+    //if isBadMsg, drop the current received sip message, and reuse the pSipMsgBuf
+    if(pTcm->msgConnInfo.sipState.isBadMsg)
     {
-        mdebug(LM_TRANSPORT, "remaining=%d, less than 0.", remaining);
+        mlogInfo(LM_TRANSPORT, "receive a invalid message, ignore.");
+
+		tpTcmBufInit(pTcm, false);
+        pTcm->msgConnInfo.pMsgBuf->pos = 0;
+        pTcm->msgConnInfo.pMsgBuf->end = 0;
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+    if(nextSipMsgBytes < 0)
+    {
+        mdebug(LM_TRANSPORT, "nextSipMsgBytes=%d, less than 0, the sip message to be completed in next TCP read.", nextSipMsgBytes);
         goto EXIT;
     }
     else
     {
         osMBuf_t* pCurSipBuf = pTcm->msgConnInfo.pMsgBuf;
-        bool isBadMsg = pTcm->msgConnInfo.sipState.isBadMsg;
-        //if isBadMsg, drop the current received sip message, and reuse the pSipMsgBuf
-        if(!tpTcmBufInit(pTcm, isBadMsg ? false : true))
+        if(!tpTcmBufInit(pTcm, true))
         {
             logError("fails to init a TCM pSipMsgBuf.");
             status = OS_ERROR_SYSTEM_FAILURE;
@@ -289,27 +335,14 @@ osStatus_e tpProcessSipMsg(tpTcm_t* pTcm, int tcpFd, ssize_t len, bool* isForwar
         }
 
         //copy the next sip message pieces that have been read into the newly allocated pSipMsgBuf
-        if(remaining > 0)
+        if(nextSipMsgBytes > 0)
         {
-            memcpy(pTcm->msgConnInfo.pMsgBuf->buf, &pCurSipBuf->buf[nextStart], remaining);
+            memcpy(pTcm->msgConnInfo.pMsgBuf->buf, &pCurSipBuf->buf[nextStart], nextSipMsgBytes);
         }
-        pTcm->msgConnInfo.pMsgBuf->end = remaining;
+        pTcm->msgConnInfo.pMsgBuf->end = nextSipMsgBytes;
         pTcm->msgConnInfo.pMsgBuf->pos = 0;
-
-	    //prepare the current buf to be forwarded
-    	pCurSipBuf->pos = 0;
-    	pCurSipBuf->end = nextStart;
-
-        if(!isBadMsg)
-        {
-            pTcm->msgConnInfo.isUsed = true;
-			*isForwardMsg = true;
-            //tpServerForwardMsg(TRANSPORT_APP_TYPE_SIP, pCurSipBuf, tcpFd, &pTcm->peer);
-        }
-        else
-        {
-            mdebug(LM_TRANSPORT, "received a bad msg, drop.");
-        }
+        pTcm->msgConnInfo.isUsed = true;
+		*isForwardMsg = true;
     }
 
 EXIT:

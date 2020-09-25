@@ -68,17 +68,6 @@ tpTcm_t* tpGetTcm(struct sockaddr_in peer, transportAppType_e appType, bool isRe
 {
 	tpTcm_t* pTcm = NULL;
 
-#if 0
-    struct sockaddr_in peer = {};
-
-    peer.sin_port = htons(peerPort);
-    if (inet_pton(AF_INET, peerIp, &peer.sin_addr.s_addr) == 0)
-    {
-        logError("inet_pton for peerIp=%s, errno=%d.", peerIp, errno);
-        goto EXIT;
-    }
-#endif
-
 	if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
 	{
 		logError("fails to acquire rdlock for tcmRwlock.");
@@ -159,16 +148,6 @@ tpTcm_t* tpGetTcmByFd(int tcpFd, struct sockaddr_in peer)
 {
     tpTcm_t* pTcm = NULL;
 
-#if 0
-    struct sockaddr_in peer = {};
-
-    peer.sin_port = htons(peerPort);
-    if (inet_pton(AF_INET, peerIp, &peer.sin_addr.s_addr) == 0)
-    {
-        logError("inet_pton for peerIp=%s, errno=%d.", peerIp, errno);
-        goto EXIT;
-    }
-#endif
     if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
     {
         logError("fails to acquire rdlock for tcmRwlock.");
@@ -272,7 +251,7 @@ osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp)
 			}
 			else
 			{
-logError("to-remove, sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i);
+				mdebug(LM_TRANSPORT, "sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i);
 
     			if(isNotifyApp && notifyTcpConnUser[sipTCM[i].appType])
     			{
@@ -312,7 +291,7 @@ void tpDeleteAllTcm()
         }
 
         sipTCM[i].isUsing = false;
-            logError("to-remove, tcm, sipTCM[%d].isUsing = false", i);
+        mdebug(LM_TRANSPORT, "tcm, sipTCM[%d].isUsing = false", i);
 
         if(sipTCM[i].isTcpConnDone)
         {
@@ -328,7 +307,7 @@ void tpDeleteAllTcm()
 		}
         else
         {
-logError("to-remove, sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i);
+			mdebug(LM_TRANSPORT, "sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i);
 
 	        if(notifyTcpConnUser[sipTCM[i].appType])
             {
@@ -417,13 +396,11 @@ osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, transportAppType_e ap
 		pTcm->isUsing = true;
 		pTcm->isTcpConnDone = true;
 		pTcm->appType = appType;
-logError("to-remove, PTCM, pTcm=%p set to true", pTcm);
 		pTcm->sockfd = tcpfd;
 		pTcm->peer = *peer;
-//		tpTcmBufInit(&pTcm->msgConnInfo.sipBuf, false);
         tpTcmBufInit(pTcm, true);
 
-logError("to-remove, pTcm->appType=%d, notifyTcpConnUser[pTcm->appType]=%p.", pTcm->appType, notifyTcpConnUser[pTcm->appType]);
+		mdebug(LM_TRANSPORT, "pTcm=%p set to true, pTcm->appType=%d, notifyTcpConnUser[pTcm->appType]=%p.", pTcm, pTcm->appType, notifyTcpConnUser[pTcm->appType]);
 
 	    if(notifyTcpConnUser[pTcm->appType])
     	{
@@ -489,7 +466,7 @@ osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished)
 			{
 				sipTCM[i].isTcpConnDone = true;
 
-logError("to-remove, sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i); 
+				mdebug(LM_TRANSPORT, "sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i); 
 				if(notifyTcpConnUser[sipTCM[i].appType])
 				{
 					notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_OK, tcpfd, &sipTCM[i].peer);
@@ -513,7 +490,7 @@ logError("to-remove, sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=
 				}
 
             	sipTCM[i].isUsing = false;
-logError("to-remove, tcm, sipTCM[%d].isUsing = false", i);
+				mdebug(LM_TRANSPORT, "sipTCM[%d].isUsing = false", i);
 
             	memset(&sipTCM[i], 0, sizeof(tpTcm_t));
             	sipTCM[i].sockfd = -1;
@@ -616,10 +593,9 @@ static void sipTpOnKATimeout(uint64_t timerId, void* ptr)
     }
     else
     {
-		mdebug(LM_TRANSPORT, "tcpFd(%d) has not been used during the keep alive period(%d ms), close the fd.", pTcm->sockfd, SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE);
+		mdebug(LM_TRANSPORT, "tcpFd(%d) has not been used during the keep alive period(%d ms), set sipTCM.isUsing = false, close the fd.", pTcm->sockfd, SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE);
 
         pTcm->isUsing = false;
-logError("to-remove, tcm, sipTCM.isUsing = false");
 		close(pTcm->sockfd);
 
 		//re-initiate the pTcm to all 0
@@ -662,7 +638,10 @@ osMBuf_t* tpTcmBufInit(tpTcm_t* pTcm, bool isAllocBuf)
 			break;
 	}
 
-    pTcm->msgConnInfo.pMsgBuf = isAllocBuf ? osMBuf_alloc(tpGetBufSize(pTcm->appType)) : NULL;
+    if(isAllocBuf)
+	{
+		pTcm->msgConnInfo.pMsgBuf = osMBuf_alloc(tpGetBufSize(pTcm->appType));
+	}
 
     if(!pTcm->msgConnInfo.pMsgBuf)
     {
@@ -701,7 +680,7 @@ static void sipTpOnQTimeout(uint64_t timerId, void* ptr)
     }
 
     pTpQ->isUsing = false;
-logError("to-remove, tcm, sipTCM.isUsing = false");
+	mdebug(LM_TRANSPORT, "sipTCM.isUsing = false");
 
     pTpQ->qTimerId = 0;
 
@@ -720,17 +699,6 @@ void tpListUsedTcm()
     }
 
     tpTcm_t* pTcm = NULL;
-
-#if 0
-    struct sockaddr_in peer = {};
-
-    peer.sin_port = htons(peerPort);
-    if (inet_pton(AF_INET, peerIp, &peer.sin_addr.s_addr) == 0)
-    {
-        logError("inet_pton for peerIp=%s, errno=%d.", peerIp, errno);
-        goto EXIT;
-    }
-#endif
 
     if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
     {
