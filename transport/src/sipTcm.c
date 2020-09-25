@@ -24,9 +24,9 @@
  * pSipMsgBuf->end = end of the current sip message
  * for case 3:
  * pSipMsgBuf->pos = end of bytes processed.
- * pSipMsgBuf->end = end of bytes received, except when a sip packet is found, which pSipMsgBuf->end = end of the sip packet
+ * pSipMsgBuf->end = end of bytes received.
  * if a sip packet does not contain Content-Length header, assume Content length = 0
- * pNextStart: if there is extra bytes, the position in the buf that the extra bytes starts
+ * pNextStart: if there is extra bytes for next sip message, the position in the buf that the extra bytes starts, otherwise, 0
  * return value: -1: expect more read() for the current sip packet, 0: exact sip packet, >1 extra bytes for next sip packet.
  */
 ssize_t sipTpAnalyseMsg(osMBuf_t* pSipMsg, sipTpMsgState_t* pMsgState, size_t chunkLen, size_t* pNextStart)
