@@ -7,7 +7,8 @@
 
 
 
-/* This function identifies whether a pSipMsg contains a whole sip message or part of a sip message.  The following is checked:
+/* This function delimits a TCP message for SIP. It identifies whether a pSipMsg contains a whole sip message or part of a
+ * sip message.  The following is checked:
  * 1. if the pSipMsg contains the whole sip message.
  * 2. if the pSipMsg contains the whole sip message + extra bytes for the next sip message
  * 3. if the pSipMsg contains part of a sip message
@@ -18,6 +19,10 @@
  * The Content-Length is used to identify the length of a sip message to determine which of the above three cases the pSipMsg is 
  * in.  if a Content-Length does not exist, but the parse meets "\r\n\r\n", the end of a sip message is also reached.
  *
+ * when this function returns, for case 1 & 2:
+ * pSipMsgBuf->pos = 0;
+ * pSipMsgBuf->end = end of the current sip message
+ * for case 3:
  * pSipMsgBuf->pos = end of bytes processed.
  * pSipMsgBuf->end = end of bytes received, except when a sip packet is found, which pSipMsgBuf->end = end of the sip packet
  * if a sip packet does not contain Content-Length header, assume Content length = 0
@@ -38,6 +43,9 @@ ssize_t sipTpAnalyseMsg(osMBuf_t* pSipMsg, sipTpMsgState_t* pMsgState, size_t ch
     *pNextStart = 0;
 
     //first check if is waiting for content.  When clValue >=0, the sip message's content length has been identified in the last received TCP message 
+	//this only happens when Content-Length is processed, but last TCP message stopped after RNRN (stopped in Content section).
+	//for case that Content-Length is processed, but the last TCP message stopped before reaching RNRN, the processing of the last TCP message
+	//has reset the clValue = -1, and pos to the beginning of Content-Length header.
     if(pMsgState->clValue > 0)
     {
         if(chunkLen >= pMsgState->clValue)
