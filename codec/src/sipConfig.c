@@ -35,8 +35,8 @@ osXmlData_t sipConfig_xmlData[SIP_XML_MAX_DATA_NAME_NUM] = {
 
 void sipConfig_init(char* configFolder)
 {
-	osXmlDataCallbackInfo_t cbInfo={sipConfig_xmlData, SIP_XML_MAX_DATA_NAME_NUM}; 
-    if(osXml_getLeafValue(configFolder, SIP_CONFIG_XSD_FILE_NAME, SIP_CONFIG_XML_FILE_NAME, true, &cbInfo) != OS_STATUS_OK)
+	osXmlDataCallbackInfo_t cbInfo={true, NULL, sipConfig_xmlData, SIP_XML_MAX_DATA_NAME_NUM}; 
+    if(osXml_getLeafValue(configFolder, SIP_CONFIG_XSD_FILE_NAME, SIP_CONFIG_XML_FILE_NAME, &cbInfo) != OS_STATUS_OK)
     {
         logError("fails to sipConfig_getXmlConfig.");
 		exit(EXIT_FAILURE);
