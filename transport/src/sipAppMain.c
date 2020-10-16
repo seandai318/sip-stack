@@ -84,7 +84,15 @@ static void appMain_timerReady()
 	//no need to perform EPOLL_CTL_ADD for any UDP and TCP as there is no UDP or TCP added in to the ePoll during sipAppMainStart
 
     //to-do: may need to move this function to other module, like masMain(). that requires the synchronization so that when dia starts to do connection, the epoll in tpMain is ready.
-    dia_init("/home/ama/project/app/mas/config");
+    char configDir[80];
+    if(snprintf(configDir, 80, "%s%s", getenv("HOME"), "/project/app/mas/config") >= 80)
+    {
+        logError("the size of config directory is larger than 80.");
+        return;
+    }
+
+    logInfo("read diameter configuration from %s.", configDir);
+    dia_init(configDir);
 
     //test perform dns test, temporary here
 //    dnsTest();
