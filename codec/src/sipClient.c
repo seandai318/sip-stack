@@ -1,7 +1,7 @@
 /********************************************************
  * Copyright (C) 2019, Sean Dai
  *
- * @file osTime.c  Time formatting
+ * @file sipClient.c 
  ********************************************************/
 
 #include <string.h>
