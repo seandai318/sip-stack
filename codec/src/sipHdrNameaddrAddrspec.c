@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrNameaddrAddrspec.c
+ ********************************************************/
+
 #include "osList.h"
 #include "osMemory.h"
 

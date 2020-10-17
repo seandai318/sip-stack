@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file transportCom.h
+ ********************************************************/
+
 #ifndef _TRANSPORT_COM_H
 #define _TRANSPORT_COM_H
 

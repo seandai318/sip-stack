@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file callProxyMisc.h
+ ********************************************************/
+
 #ifndef _CALL_PROXY_MISC_H
 #define _CALL_PROXY_MISC_H
 

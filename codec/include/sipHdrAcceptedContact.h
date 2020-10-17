@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrAcceptedContact.h
+ ********************************************************/
+
 #ifndef _SIPHDR_ACCEPTED_CONTACT_H
 #define _SIPHDR_ACCEPTED_CONTACT_H
 

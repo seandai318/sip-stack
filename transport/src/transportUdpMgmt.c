@@ -1,8 +1,11 @@
-/* Copyright 2020, Sean Dai
- * 
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file transportUdpMgmt.c
  * This file manages the UDP sockets that perform both send and receive.
- * a tpUdpInfoList list maintains all udp fds, one udp per a appType + local interface 
- */
+ * a tpUdpInfoList list maintains all udp fds, one udp per a appType + local interface
+ ********************************************************/
+
 
 #include <sys/epoll.h>
 #include <unistd.h>

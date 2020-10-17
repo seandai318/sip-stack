@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrContentType.h
+ ********************************************************/
+
 #ifndef _SIP_HDR_CONENT_TYPE_H
 #define _SIP_HDR_CONENT_TYPE_H
 

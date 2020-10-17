@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file proxyHelper.c
+ ********************************************************/
+
 #include "osTypes.h"
 #include "osDebug.h"
 #include "osMemory.h"

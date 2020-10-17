@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHeaderMisc.h
+ ********************************************************/
+
 #ifndef _SIP_HEADER_MISC_H
 #define _SIP_HEADER_MISC_H
 

@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrTypes.h
+ ********************************************************/
+
 #ifndef _SIP_HDR_TYPES_H
 #define _SIP_HDR_TYPES_H
 

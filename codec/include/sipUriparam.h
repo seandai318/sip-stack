@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipUriparam.h
+ ********************************************************/
+
 #ifndef _SIP_URI_PARAM_H
 #define _SIP_URI_PARAM_H
 

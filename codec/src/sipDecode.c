@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipDecode.c
+ ********************************************************/
+
 #include <string.h>
 #include "sipHeader.h"
 #include "osDebug.h"

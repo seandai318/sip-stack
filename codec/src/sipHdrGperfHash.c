@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrGperfHash.c
+ ********************************************************/
+
 /* ANSI-C code produced by gperf version 3.1 */
 /* Command-line: gperf -L ANSI-C -N gperfSipHdrLookup -H gperfSipHdrHash -D -t -K name --ignore-case test.gperf  */
 /* Computed positions: -k'1,3,7,$' */

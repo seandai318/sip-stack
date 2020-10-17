@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrRoute.h
+ ********************************************************/
+
 #ifndef _SIP_HDR_ROUTE_H
 #define _SIP_HDR_ROUTE_H
 

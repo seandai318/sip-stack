@@ -1,8 +1,11 @@
-/* Copyright (c) 2019, 2020, Sean Dai
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
  *
- * for sipRegistrar, accepts ALL SIP REGISTER, does not do any subscription check, or authentication check.  
+ * @file sipRegistrar.c
+ * for sipRegistrar, accepts ALL SIP REGISTER, does not do any subscription check, or authentication check.
  * Basically, a IMS AS registratar functionality
- */
+ ********************************************************/
+
 
 #include "osHash.h"
 #include "osTimer.h"

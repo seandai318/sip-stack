@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipMsgRequest.c
+ ********************************************************/
+
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>

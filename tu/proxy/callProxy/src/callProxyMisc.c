@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file callProxyMisc.c
+ ********************************************************/
+
 #include "proxyMgr.h"
 #include "callProxyMisc.h"
 

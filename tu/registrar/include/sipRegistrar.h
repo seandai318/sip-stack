@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipRegistrar.h
+ ********************************************************/
+
 #ifndef _SIP_REGISTRAR_H
 #define _SIP_REGISTRAR_H
 

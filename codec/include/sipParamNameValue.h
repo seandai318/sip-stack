@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipParamNameValue.h
+ ********************************************************/
+
 #ifndef _SIP_PARAM_NAME_VALUE_H
 #define _SIP_PARAM_NAME_VALUE_H
 

@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file diaTransportIntf.h
+ ********************************************************/
+
 #ifndef _DIA_TRANSPORT_INTF_H
 #define _DIA_TRANSPORT_INTF_H
 

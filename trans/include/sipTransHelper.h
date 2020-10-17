@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipTransHelper.h
+ ********************************************************/
+
 #ifndef _SIP_TRANS_HELPER_H
 #define _SIP_TRANS_HELPER_H
 

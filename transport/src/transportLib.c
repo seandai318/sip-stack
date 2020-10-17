@@ -1,5 +1,9 @@
-/* Copyright (c), 2020, 2019, Sean Dai
- */
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file transportLib.c
+ ********************************************************/
+
 
 //#define _GNU_SOURCE
 #include <fcntl.h>

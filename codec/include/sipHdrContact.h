@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrContact.h
+ ********************************************************/
+
 #ifndef _SIP_HDR_CONTACT_H
 #define _SIP_HDR_CONTACT_H
 

@@ -1,3 +1,10 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipConfig.c
+ ********************************************************/
+
+
 #ifndef _TRANSPORT_LIB_H
 #define _TRANSPORT_LIB_H
 

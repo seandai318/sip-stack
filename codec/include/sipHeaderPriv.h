@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHeaderPriv.h
+ ********************************************************/
+
 #ifndef _SIP_HEADER_PRIV_H
 #define _SIP_HEADER_PRIV_H
 

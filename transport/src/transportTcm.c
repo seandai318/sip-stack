@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file transportTcm.c
+ ********************************************************/
+
 #include <unistd.h>
 #include <sys/socket.h>
 //#include <sys/types.h>

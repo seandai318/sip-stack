@@ -1,9 +1,8 @@
-/**
- * @file sipParsing.c  Overall SIP parsing function
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
  *
- * Copyright (C) 2019, InterLogic
- */
-
+ * @file sipParsing.c  Overall SIP parsing function
+ ********************************************************/
 
 #include "osDebug.h"
 #include "osPL.h"

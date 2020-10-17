@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipMsgFirstLine.h
+ ********************************************************/
+
 #ifndef _SIP_MSG_FIRST_LINE_H
 #define _SIP_MSG_FIRST_LINE_H
 

@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrDate.c
+ ********************************************************/
+
 #include "string.h"
 #include "osDebug.h"
 #include "osPL.h"

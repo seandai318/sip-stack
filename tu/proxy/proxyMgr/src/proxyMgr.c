@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file proxyMgr.c
+ ********************************************************/
+
 #include "osTypes.h"
 #include "osHash.h"
 #include "osDebug.h"

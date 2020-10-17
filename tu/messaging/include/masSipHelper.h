@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file masSipHelper.h
+ ********************************************************/
+
 #ifndef _MAS_SIP_HELPER_H
 #define _MAS_SIP_HELPER_H
 

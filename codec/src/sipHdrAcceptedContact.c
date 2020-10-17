@@ -1,3 +1,8 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrAcceptedContact.c
+ ********************************************************/
 
 #include "osDebug.h"
 #include "osList.h"

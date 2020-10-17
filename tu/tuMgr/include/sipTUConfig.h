@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipTUConfig.h
+ ********************************************************/
+
 #ifndef _SIP_TU_CONFIG_H
 #define _SIP_TU_CONFIG_H
 

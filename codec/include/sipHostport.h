@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHostport.h
+ ********************************************************/
+
 #ifndef _SIP_HOST_PORT_H
 #define _SIP_HOST_PORT_H
 

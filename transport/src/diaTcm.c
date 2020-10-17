@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file diaTcm.c
+ ********************************************************/
+
 #include <endian.h>
 #include <string.h>
 #include "unistd.h"

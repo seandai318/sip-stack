@@ -1,5 +1,9 @@
-/* Copyright 2020, 2019, Sean Dai
- */
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipTransInviteServer.c
+ ********************************************************/
+
 
 #include "osMisc.h"
 #include "osTimer.h"

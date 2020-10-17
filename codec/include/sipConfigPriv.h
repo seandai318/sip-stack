@@ -1,4 +1,9 @@
-//this file shall only be included in sipConfig.h
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipConfigPriv.h
+ * this file shall only be included in sipConfig.h
+ ********************************************************/
 
 
 #ifndef _SIP_CONFIG_PRIV_H

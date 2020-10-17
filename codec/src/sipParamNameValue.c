@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipParamNameValue.c
+ ********************************************************/
+
 #include "osTypes.h"
 #include "osMemory.h"
 

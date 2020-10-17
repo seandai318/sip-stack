@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrNameaddrAddrspec.h
+ ********************************************************/
+
 #ifndef _SIP_HDR_NAMEADDR_ADDRSPEC_H
 #define _SIP_HDR_NAMEADDR_ADDRSPEC_H
 

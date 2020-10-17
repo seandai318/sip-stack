@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file proxyMisc.c
+ ********************************************************/
+
 #include "osDebug.h"
 #include "osTypes.h"
 #include "osList.h"

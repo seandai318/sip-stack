@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019, Sean Dai
+ *
+ * @file osTime.c  Time formatting
+ ********************************************************/
+
 #include <string.h>
 #include <stdio.h>
 #include "osMBuf.h"

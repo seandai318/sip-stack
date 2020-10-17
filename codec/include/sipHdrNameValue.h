@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrNameValue.h
+ ********************************************************/
+
 #ifndef _SIP_HDR_NAME_VALUE_H
 #define _SIP_HDR_NAME_VALUE_H
 

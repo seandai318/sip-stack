@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipMsgRequest.h
+ ********************************************************/
+
 #ifndef _SIP_MSG_REGUEST_H
 #define _SIP_MSG_REGUEST_H
 

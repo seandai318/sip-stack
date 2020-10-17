@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipUserinfo.h
+ ********************************************************/
+
 #ifndef _SIP_USERINFO_H
 #define _SIP_USERINFO_H
 

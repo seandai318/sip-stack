@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file proxyHelper.h
+ ********************************************************/
+
 #ifndef _PROXY_HELPER_H
 #define _PROXY_HELPER_H
 

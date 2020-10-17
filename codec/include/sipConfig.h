@@ -1,5 +1,8 @@
-/* Copyright (c) 2019, 2020, Sean Dai
- */
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipConfig.h
+ ********************************************************/
 
 #ifndef _SIP_CONFIG_H
 #define _SIP_CONFIG_H

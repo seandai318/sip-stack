@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipTransportIntf.h
+ ********************************************************/
+
 #ifndef _SIP_TRANSPORT_INTF_H
 #define _SIP_TRANSPORT_INTF_H
 

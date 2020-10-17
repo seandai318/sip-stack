@@ -1,5 +1,8 @@
-/* Copyright (c) 2019, 2020, Sean Dai
- */
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrMisc.c 
+ ********************************************************/
 
 #include "osDebug.h"
 #include "osMemory.h"

@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrGperfHash.h
+ ********************************************************/
+
 #ifndef _SIP_HDR_HASH_H
 #define _SIP_HDR_HASH_H
 

@@ -1,6 +1,9 @@
-/* Copyright 2020, 2019, Sean Dai
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file transportMain.c
  * implement tcp and udp listening as a stand alone thread.
- */
+ ********************************************************/
 
 
 #define _GNU_SOURCE

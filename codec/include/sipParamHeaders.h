@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipParamHeaders.h
+ ********************************************************/
+
 #ifndef _SIP_PARAM_HEADERS_H
 #define _SIP_PARAM_HEADERS_H
 

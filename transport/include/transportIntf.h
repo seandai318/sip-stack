@@ -1,5 +1,9 @@
-/* Copyright 2020, 2019, Sean Dai
- */
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file transportIntf.h
+ ********************************************************/
+
 
 #ifndef _TRANSPORT_INTF_H
 #define _TRANSPORT_INTF_H

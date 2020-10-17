@@ -1,5 +1,9 @@
-/* Copyright 2020, 2019, Sean Dai
- */
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipAppMain.h
+ ********************************************************/
+
 
 #ifndef _SIP_APP_MAIN_H
 #define _SIP_APP_MAIN_H

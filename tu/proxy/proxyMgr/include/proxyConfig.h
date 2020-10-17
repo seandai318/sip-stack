@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file proxyConfig.h
+ ********************************************************/
+
 #ifndef _PROXY_CONFIG_H
 #define _PROXY_CONFIG_H
 

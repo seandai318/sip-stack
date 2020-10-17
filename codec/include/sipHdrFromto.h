@@ -1,3 +1,9 @@
+/********************************************************
+ * Copyright (C) 2019,2020, Sean Dai
+ *
+ * @file sipHdrFromto.h
+ ********************************************************/
+
 #ifndef _SIP_HDR_FROMTO_H
 #define _SIP_HDR_FROMTO_H
 
