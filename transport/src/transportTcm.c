@@ -200,7 +200,7 @@ tpTcm_t* tpGetConnectedTcm(int tcpFd)
 			continue;
 		}
 
-        if(sipTCM[i].sockfd = tcpFd)
+        if(sipTCM[i].sockfd == tcpFd)
         {
             pTcm = &sipTCM[i];
 			if(!pTcm->msgConnInfo.pMsgBuf)
@@ -427,7 +427,7 @@ osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, transportAppType_e ap
 				break;
 		}
 
-		mdebug(LM_TRANSPORT, "tcpfd(%d, %A) is added to pTcm(%p)", tcpfd, &peer, pTcm);  
+		mdebug(LM_TRANSPORT, "tcpfd(%d, %A) is added to pTcm(%p)", tcpfd, peer, pTcm); 
 		goto EXIT;
 	}
 
@@ -720,7 +720,7 @@ void tpListUsedTcm()
     {
         if(sipTCM[i].isUsing)
         {
-			n += sprintf(&prtBuffer[n], "i=%d, sockfd=%d, peer IP:port=%s:%d\n", i, sipTCM[i].sockfd, inet_ntoa(sipTCM[i].peer.sin_addr), ntohs(sipTCM[i].peer.sin_port));
+			n += sprintf(&prtBuffer[n], "i=%d, pTcm=%p, sockfd=%d, peer IP:port=%s:%d\n", i, &sipTCM[i], sipTCM[i].sockfd, inet_ntoa(sipTCM[i].peer.sin_addr), ntohs(sipTCM[i].peer.sin_port));
 			if(++count == 10)
         	{
             	prtBuffer[n] = 0;
