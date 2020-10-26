@@ -59,6 +59,8 @@ static __thread osHash_t* sipTransportLBHash;
 //can not be __thread since it may be used by transaction layer directly for sending message via UDP
 static int sipUdpFd=-1;
 
+
+
 osStatus_e transportMainInit(int pipefd[2], uint32_t bucketSize)
 {
     osStatus_e status = OS_STATUS_OK;
@@ -804,7 +806,6 @@ static void sipTpServerTimeout(uint64_t timerId, void* ptr)
 }
 	
 
-
 static int sipTpSetTcpListener(transportIpPort_t* pIpPort)
 {
 	int tcpListenFd = -1;
@@ -926,7 +927,6 @@ static transportStatus_e tpCreateAndSendTcp(transportAppType_e appType, void* ap
         {
             pTcm->isTcpConnDone = false;
             osListPlus_append(&pTcm->tcpConn.appIdList, appId);
-logError("to-remove, TCM2, appId=%p", appId);
         }
 //  pTcm->tcpConn.tcpConnTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_TIMEOUT, sipTransport_onTimeout, tcpMapElement);
 
