@@ -330,6 +330,7 @@ void* transportMainStart(void* pData)
 				{
 					logError("received a TCP message from tcpfd (%d) that does not have TCM.", events[i].data.fd);
 					appType = TRANSPORT_APP_TYPE_UNKNOWN;
+					tpListUsedTcm();
 				}
 				else
 				{
@@ -341,7 +342,7 @@ void* transportMainStart(void* pData)
 				//pSipMsgBuf->end = the end of last received bytes
             	while (1) 
 				{
-					switch(pTcm->appType)
+					switch(appType)
 					{
 	                    case TRANSPORT_APP_TYPE_SIP:
 						case TRANSPORT_APP_TYPE_DIAMETER:
@@ -397,7 +398,7 @@ void* transportMainStart(void* pData)
 
 					bool isForwardMsg = false;
 					debug("received message for appType=%d, len=%d.", pTcm->appType, len);
-					switch(pTcm->appType)
+					switch(appType)
 					{
                         case TRANSPORT_APP_TYPE_SIP:
 							if(tpProcessSipMsg(pTcm, events[i].data.fd, len, &isForwardMsg) != OS_STATUS_OK)
@@ -412,6 +413,7 @@ void* transportMainStart(void* pData)
                             }
                             break;
                         case TRANSPORT_APP_TYPE_UNKNOWN:
+							logError("received message(len=%d) from fd(%d) that has no TCM.", len, events[i].data.fd);
 							break;
 					}	
 
@@ -490,36 +492,6 @@ sipTransportStatus_e tpConnectedTcpSend(transportInfo_t* pTpInfo, osMBuf_t* pMsg
 		goto EXIT;
 	}
 
-#if 0
-	//allow the sending of UDP due to some clients (like IMS client) ignores top via's send_by, insist to send response to the real ip:port used in the request,
-	if(pTpInfo->tpType == TRANSPORT_TYPE_UDP)
-	{
-        tpStatus = TRANSPORT_TYPE_UDP;
-        if(pTpInfo->protocolUpdatePos != 0)
-        {
-            osMBuf_modifyStr(pSipBuf, "UDP", 3, pTpInfo->protocolUpdatePos);
-        }
-
-        struct sockaddr_in dest;
-        status = tpConvertPLton(&pTpInfo->peer, true, &dest);
-        if(status != OS_STATUS_OK)
-        {
-            logError("fails to perform tpConvertPLton.");
-            goto EXIT;
-        }
-
-        logInfo("send a SIP message via UDP FD=%d, dest ip=%s, port=%d, sip message=\n%M", sipUdpFd, inet_ntoa(dest.sin_addr), ntohs(dest.sin_port), pMsgBuf);
-        len = sendto(sipUdpFd, pMsgBuf->buf, pMsgBuf->end, 0, (const struct sockaddr*) &dest, sizeof(dest));
-//        len = sendto(sipUdpFd, "hello", 5, 0, (const struct sockaddr*) &dest, sizeof(dest));
-        if(len != pMsgBuf->end || len == -1)
-        {
-            logError("fails to sendto() for sipUdpFd=%d, len=%d, errno=%d.", sipUdpFd, len, errno);
-            status = OS_ERROR_NETWORK_FAILURE;
-        }
-	
-		goto EXIT;
-	}
-#endif
 	//for sending via TCP, unless it is a response for a request received vis TCP fd in tpServer, not allow it.
 	if(pTpInfo->tpType != TRANSPORT_TYPE_TCP || pTpInfo->tcpFd == -1)
 	{
@@ -528,29 +500,6 @@ sipTransportStatus_e tpConnectedTcpSend(transportInfo_t* pTpInfo, osMBuf_t* pMsg
 		goto EXIT;
 	}
 
-	//check if this fd is closed.
-#if 0	//use network address
-    struct sockaddr_in peer = {};
-    struct sockaddr_in local = {};
-
-    if(tpConvertPLton(&pTpInfo->peer, true, &peer) != OS_STATUS_OK)
-    {
-        logError("fails to tpConvertPLton for peer IP=%r, errno=%d.", pTpInfo->peer.ip, errno);
-        status = OS_ERROR_INVALID_VALUE;
-        goto EXIT;
-    }
-
-    //first check if there is already a TCP connection exists
-    tpTcm_t* pTcm = tpGetTcmByFd(pTpInfo->tcpFd, peer);
-	if(!pTcm)
-	{
-		mlogInfo(LM_TRANSPORT, "the tcpfd(%d, peer %r:%d) has been closed in the tpServer.", pTpInfo->tcpFd, &pTpInfo->peer.ip, pTpInfo->peer.port);
-		tpListUsedTcm();
-		status = OS_ERROR_INVALID_VALUE;
-        goto EXIT;
-    }
-
-#else
     //first check if there is already a TCP connection exists
     tpTcm_t* pTcm = tpGetTcmByFd(pTpInfo->tcpFd, pTpInfo->peer);
     if(!pTcm)
@@ -560,8 +509,6 @@ sipTransportStatus_e tpConnectedTcpSend(transportInfo_t* pTpInfo, osMBuf_t* pMsg
         status = OS_ERROR_INVALID_VALUE;
         goto EXIT;
     }
-#endif
-
 
 	int sockfd;
 	len = write(pTpInfo->tcpFd, pMsgBuf->buf, pMsgBuf->end);
@@ -781,7 +728,7 @@ static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int t
     inet_ntop(AF_INET, &peer->sin_addr, ip, INET_ADDRSTRLEN);
 	if(appType == TRANSPORT_APP_TYPE_DIAMETER)
 	{
-		mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), the msg=", ip, ntohs(peer->sin_port), appType);
+		mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), tcp fd=%d, the msg=", ip, ntohs(peer->sin_port), appType, tcpFd);
 		hexdump(stdout, pBuf->buf, pBuf->end);
 	}
 	else

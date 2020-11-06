@@ -16,7 +16,8 @@
 #define PROXY_CONFIG_NEXT_HOP_IP	"10.10.10.10"
 #define PROXY_CONFIG_NEXT_HOP_PORT	5060
 
-
+#define SIP_TU_PROXY_MAX_EXTRA_HDR_ADD_NUM	20
+#define SIP_TU_PROXY_MAX_EXTRA_HDR_DEL_NUM	20
 
 bool proxyConfig_hasRegistrar();
 bool proxyConfig_getNextHop(transportIpPort_t* pNextHop);

@@ -23,16 +23,17 @@
 
 
 //proxy forwards the request
-osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipUri_t* pTargetUri,  bool isAddRR, transportIpPort_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId)
+//if pHdrModInfo != NULL, then this function will do hdr add/del purly based on the info in the pHdrModInfo, otherwise, based on  
+osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipUri_t* pTargetUri,  sipProxy_msgModInfo_t* pHdrModInfo, transportIpPort_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId)
 
 {
 	osStatus_e status = OS_STATUS_OK;
 	transportIpPort_t nextHop;
 	osMBuf_t* pReq = NULL;
 
-	if(!pSipTUMsg || !pReqDecodedRaw || !proxyInfo)
+	if(!pSipTUMsg || !pReqDecodedRaw || !proxyInfo ||!pHdrModInfo)
 	{
-		logError("null pointer, pSipTUMsg=%p, pReqDecodedRaw=%p, proxyInfo=%p", pSipTUMsg, pReqDecodedRaw, proxyInfo);
+		logError("null pointer, pSipTUMsg=%p, pReqDecodedRaw=%p, proxyInfo=%p, pHdrModInfo=%p", pSipTUMsg, pReqDecodedRaw, proxyInfo, pHdrModInfo);
 		status = OS_ERROR_NULL_POINTER;
 		goto EXIT;
 	}
@@ -61,12 +62,17 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 
     //prepare message forwarding
     sipHdrRawValueId_t delList = {SIP_HDR_ROUTE, true};
-    uint8_t delNum = pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE] ? 1 : 0;
+	uint8_t delNum = 0;
+	if(pHdrModInfo->isAuto)
+	{
+    	delNum = pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE] ? 1 : 0;
+	}
 
+	osPointerLen_t rr;
 	uint8_t addNum = 0;
 	char* ipPort = NULL;
 	int len = 0;
-    if(isAddRR)
+    if(pHdrModInfo->isAuto && pHdrModInfo->isAddRR)
 	{
 	    osPointerLen_t localIP;
     	int localPort;
@@ -81,14 +87,22 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
         	goto EXIT;
     	}
 
+		osPL_setStr(&rr, ipPort, len);
 		addNum = 1;
 	}
-	osPointerLen_t rr = {ipPort, len};
     sipHdrRawValueStr_t addList = {SIP_HDR_RECORD_ROUTE, rr};
 	
     //forward the SIP INVITE, add top via, remove top Route, reduce the max-forarded by 1.  The viaId shall be filled with the real peer IP/port
-    pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, true, &delList, delNum, &addList, addNum, &viaId, pTargetUri, &topViaProtocolPos);
-    osfree(ipPort);
+	if(pHdrModInfo->isAuto)
+	{
+	   	pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, true, &delList, delNum, &addList, addNum, &viaId, pTargetUri, &topViaProtocolPos);
+	    osfree(ipPort);
+	}
+	else
+	{
+        pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, true, pHdrModInfo->extraDelHdr, pHdrModInfo->delNum, pHdrModInfo->extraAddHdr, pHdrModInfo->addNum, &viaId, pTargetUri, &topViaProtocolPos);
+	}
+
     if(!pReq)
     {
         logError("fails to create proxy request.");

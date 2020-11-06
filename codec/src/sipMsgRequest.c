@@ -682,6 +682,7 @@ static void sipMsgDecodedRawHdr_delete(void* data)
 }
 
 
+//check if a hdr has multiple values, it can be due to multiple headers with the same header name, or one header name with multiple values
 //if isCheckTopHdrOnly=true, only check the top hdr of the specified hdr name, otherwise, check hdr for the whole message
 //if isCheckTopHdrOnly=true, and the result isMulti=true, then the top hdr has to be decoded, in this case, pHdrCodeDecoded will pass out the decoded hdr, and the caller has to clear the pHdrCodeDecoded after done using it
 bool sipMsg_isHdrMultiValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isCheckTopHdrOnly, sipHdrDecoded_t* pTopHdrDecoded)

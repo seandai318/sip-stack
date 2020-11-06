@@ -114,6 +114,7 @@ tpTcm_t* tpGetTcm(struct sockaddr_in peer, transportAppType_e appType, bool isRe
 		pTcm->peer = peer;
 		pTcm->sockfd = -1;
 		pTcm->isUsing = true;
+		mdebug(LM_TRANSPORT, "pTcm(%p).isUsing=true, appType=%d.", pTcm, appType);
 	}
 
 EXIT:
@@ -142,6 +143,8 @@ void tpReleaseTcm(tpTcm_t* pTcm)
     }
 
 	pTcm->isUsing = false;
+    mdebug(LM_TRANSPORT, "pTcm(%p).isUsing=false, fd=%d.", pTcm, pTcm->sockfd);
+
 	pTcm->sockfd = -1;
     memset(pTcm, 0, sizeof(tpTcm_t));
 
@@ -242,7 +245,7 @@ osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp)
         if(sipTCM[i].sockfd = tcpfd)
         {
 			sipTCM[i].isUsing = false;
-			debug("set sipTCM[%d].isUsing = false", i);
+			mdebug(LM_TRANSPORT, "pTcm(%p, sipTCM[%d]).isUsing=false, tcpfd=%d", &sipTCM[i], i, tcpfd);
 			if(sipTCM[i].isTcpConnDone)
 			{
 				osStopTimer(sipTCM[i].msgConnInfo.keepAliveTimerId);
@@ -297,7 +300,7 @@ void tpDeleteAllTcm()
         }
 
         sipTCM[i].isUsing = false;
-        mdebug(LM_TRANSPORT, "tcm, sipTCM[%d].isUsing = false", i);
+        mdebug(LM_TRANSPORT, "pTcm(%p, sipTCM[%d]).isUsing=false, fd=%d", &sipTCM[i], i, sipTCM[i].sockfd);
 
         if(sipTCM[i].isTcpConnDone)
         {
@@ -406,7 +409,7 @@ osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, transportAppType_e ap
 		pTcm->peer = *peer;
         tpTcmBufInit(pTcm, true);
 
-		mdebug(LM_TRANSPORT, "pTcm=%p set to true, pTcm->appType=%d, notifyTcpConnUser[pTcm->appType]=%p.", pTcm, pTcm->appType, notifyTcpConnUser[pTcm->appType]);
+		mdebug(LM_TRANSPORT, "pTcm(%p).isUsing=true, fd=%d, pTcm->appType=%d, notifyTcpConnUser[pTcm->appType]=%p.", pTcm, tcpfd, pTcm->appType, notifyTcpConnUser[pTcm->appType]);
 
 	    if(notifyTcpConnUser[pTcm->appType])
     	{
@@ -496,7 +499,7 @@ osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished)
 				}
 
             	sipTCM[i].isUsing = false;
-				mdebug(LM_TRANSPORT, "sipTCM[%d].isUsing = false", i);
+				mdebug(LM_TRANSPORT, "pTcm(%p, sipTCM[%d]).isUsing=false, fd=%d.", &sipTCM[i], i, tcpfd);
 
             	memset(&sipTCM[i], 0, sizeof(tpTcm_t));
             	sipTCM[i].sockfd = -1;
@@ -508,6 +511,8 @@ osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished)
 					if(!sipTpQList[i].isUsing)
 					{
 						sipTpQList[i].isUsing = true;
+						mdebug(LM_TRANSPORT, "pTpQ(%p, sipTpQList[%d]).isUsing=true.", &sipTpQList[i], i);
+
 						sipTpQList[i].peer = sipTCM[i].peer;
 						sipTpQList[i].qTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_TCP_CONN_QUARANTINE_TIME, sipTpOnQTimeout, &sipTpQList[i]);
 						break;
@@ -519,6 +524,8 @@ osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished)
 					if(sipTpMaxQNum < SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM)
 					{
                         sipTpQList[i].isUsing = true;
+                        mdebug(LM_TRANSPORT, "pTpQ(%p, sipTpQList[%d]).isUsing=true.", &sipTpQList[i], i);
+
                         sipTpQList[i].peer = sipTCM[i].peer;
                         sipTpQList[i].qTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_TCP_CONN_QUARANTINE_TIME, sipTpOnQTimeout, &sipTpQList[i]);
 						sipTpMaxQNum++;
@@ -599,7 +606,7 @@ static void sipTpOnKATimeout(uint64_t timerId, void* ptr)
     }
     else
     {
-		mdebug(LM_TRANSPORT, "tcpFd(%d) has not been used during the keep alive period(%d ms), set sipTCM.isUsing = false, close the fd.", pTcm->sockfd, SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE);
+		mdebug(LM_TRANSPORT, "pTcm(%p).isUsing=false, tcpFd(%d) has not been used during the keep alive period(%d ms), close the fd.", pTcm, pTcm->sockfd, SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE);
 
         pTcm->isUsing = false;
 		close(pTcm->sockfd);
@@ -686,7 +693,7 @@ static void sipTpOnQTimeout(uint64_t timerId, void* ptr)
     }
 
     pTpQ->isUsing = false;
-	mdebug(LM_TRANSPORT, "sipTCM.isUsing = false");
+	mdebug(LM_TRANSPORT, "pTpQ(%p).isUsing=false", pTpQ);
 
     pTpQ->qTimerId = 0;
 
