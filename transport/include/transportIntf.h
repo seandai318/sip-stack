@@ -69,7 +69,11 @@ typedef struct {
     	int tcpFd;              //only for TRANSPORT_TYPE_TCP.  If fd=-1, transport shall create one. for SIP response, the fd usually not 0, shall be the one what the request was received from
 		udpInfo_t udpInfo;		//only for TRANSPORT_TYPE_UDP and TRANSPORT_TYPE_ANY
 	};
-	struct sockaddr_in peer;
+	bool isPeerFqdn;			//if peer is in the form of ip:port or fqdn
+	union {
+		struct sockaddr_in peer;	//when isPeerFqdn = false
+		osVPointerLen_t peerFqdn;	//when isPeerFqdn = true
+	};
 	struct sockaddr_in local;
 	size_t protocolUpdatePos;		//viaProtocolPos for sip, if=0, do not update.  some protocols like SIP let the tp to determine tp protocol, and the protocol message has to be updated by tp accordingly.
 } transportInfo_t;

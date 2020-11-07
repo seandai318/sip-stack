@@ -123,10 +123,6 @@ osStatus_e sipTransICStateNone_onMsg(sipTransMsgType_e msgType, void* pMsg, uint
 	}
 
 	pTrans->tpInfo = ((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo;
-#if 0	//use network address
-    osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.peer.ip);
-    osDPL_dup((osDPointerLen_t*)&pTrans->tpInfo.local.ip, &((sipTransMsg_t*)pMsg)->request.sipTrMsgBuf.tpInfo.local.ip);
-#endif
     pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_ANY;
     pTrans->tpInfo.tcpFd = -1;
 

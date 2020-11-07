@@ -218,14 +218,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
             //the peer address from TU is the address in the top via, may be different from the real address used by the peer.  if the request message was received via TCP, the real peer has been saved when transaction was created, only reset when the message was received via UDP.
             if(pTrans->tpInfo.tcpFd < 0)
             {
-#if 0	//use struct sockaddr_in
-                //no need to reallocate memory for peer using osDPL_dup, it has been done in transMgr via osPL_setStr when a message is first received from peer
-                osPL_plcpy(&pTrans->tpInfo.peer.ip, &((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer.ip);
-                pTrans->tpInfo.peer.port = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer.port;
-#else
 				pTrans->tpInfo.peer = ((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.tpInfo.peer;
-#endif
-
             }
 
 #if 0	//use struct sockaddr_in
