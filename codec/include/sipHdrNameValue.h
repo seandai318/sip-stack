@@ -10,6 +10,7 @@
 #include "osTypes.h"
 #include "osList.h"
 #include "osMBuf.h"
+#include "osPL.h"
 
 #include "sipParamNameValue.h"
 #include "sipHdrTypes.h"
@@ -41,6 +42,8 @@ osStatus_e sipHdrNameValue_encode(osMBuf_t* pSipBuf, void* pHdrDT, void* pData);
 osStatus_e sipHdrName_build(sipHdrNameList_t* pHdr);
 osStatus_e sipHdrName_addParam(sipHdrNameList_t* pHdr, sipParamName_t* pName);
 osStatus_e sipHdrName_encode(osMBuf_t* pSipBuf, void* pHdrDT, void* pData);
+
+osPointerLen_t* sipHdrNameValueList_getValue(sipHdrNameValueList_t* pnvList, osPointerLen_t* pName);
 
 
 #endif

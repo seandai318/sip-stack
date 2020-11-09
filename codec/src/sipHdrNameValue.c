@@ -663,3 +663,37 @@ EXIT:
 
     return status;
 }
+
+
+osPointerLen_t* sipHdrNameValueList_getValue(sipHdrNameValueList_t* pnvList, osPointerLen_t* pName)
+{
+	if(!pnvList || !pName)
+	{
+		logError("null pointer, pnvList=%p, pName=%p.", pnvList, pName);
+		return NULL;
+	}
+
+	if(pnvList->nvpNum <=0)
+	{
+		return NULL;
+	}
+
+	if(osPL_casecmp(&pnvList->pNVP->name, pName) == 0)
+	{
+		return &pnvList->pNVP->value;
+	}
+
+	osListElement_t* pLE = pnvList->nvpList.head;
+	if(pLE)
+	{
+		sipParamNameValue_t* pNV = pLE->data;
+		if(pNV && osPL_casecmp(&pNV->name, pName) == 0)
+		{
+			return &pNV->value;
+		}
+
+		pLE = pLE->next;
+	}
+
+	return NULL;
+}
