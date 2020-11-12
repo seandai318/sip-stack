@@ -12,9 +12,18 @@
 #include "osTypes.h"
 #include "sipHdrTypes.h"
 #include "sipMsgRequest.h"
+#include "sipConfig.h"
 
 
 #define SIP_MAX_CSEQ_NUM	2147483648
+
+typedef struct {
+    osPointerLen_t pl;
+    char buf[SIP_HDR_MAX_SIZE];
+} sipPointerLen_t;
+
+
+#define SIPPL_INIT(sipPL)   {{sipPL.buf, 0}}
 
 
 osStatus_e sipParserHdr_str(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrStr_t* pCallid);
@@ -37,6 +46,18 @@ osStatus_e sipHdrCallId_createCallId(osPointerLen_t* pl);
 osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, osPointerLen_t* pCallId);
 osStatus_e sipHdrCallId_getValue(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* pCallId);
 osStatus_e sipHdrCSeq_getValue(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pSeqNum, osPointerLen_t* pMethod);
+uint32_t sipHdrCSeq_generateValue();
 
+
+static inline void sipPL_init(sipPointerLen_t* pSipPL)
+{
+    if(!pSipPL)
+    {
+        return;
+    }
+
+    pSipPL->pl.p = pSipPL->buf;
+    pSipPL->pl.l = 0;
+}
 
 #endif

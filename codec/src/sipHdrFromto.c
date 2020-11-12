@@ -225,6 +225,48 @@ EXIT:
 }
 
 
+osStatus_e sipHdrFromto_generateSipPLTagId(sipPointerLen_t* pTagId, bool isTagLabel)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+    if(!pTagId)
+    {
+        logError("null pointer, pTagId.");
+        status = OS_ERROR_NULL_POINTER;
+        goto EXIT;
+    }
+
+    struct timespec tp;
+    clock_gettime(CLOCK_REALTIME, &tp);
+    srand(tp.tv_nsec);
+    int randValue=rand();
+
+    if(isTagLabel)
+    {
+        pTagId->pl.l = sprintf((char*)pTagId->pl.p, "tag=%lx%lx%s", (tp.tv_nsec+randValue), tp.tv_sec %100000, osGetNodeId());
+    }
+    else
+    {
+        pTagId->pl.l = sprintf((char*)pTagId->pl.p, "%lx%lx%s", (tp.tv_nsec+randValue), tp.tv_sec %100000, osGetNodeId());
+    }
+
+    if(pTagId->pl.l >= SIP_MAX_TAG_ID_LENGTH)
+    {
+        logError("the tagId length (%d)  exceeds the maximum allowable length.", pTagId->pl.l);
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+EXIT:
+    if(status != OS_STATUS_OK)
+    {
+        pTagId->pl.l = 0;
+    }
+
+    return status;
+}
+
+
 void sipHdrFromto_cleanup(void* data)
 {
 	if(!data)

@@ -23,7 +23,6 @@
 
 
 //proxy forwards the request
-//if pHdrModInfo != NULL, then this function will do hdr add/del purly based on the info in the pHdrModInfo, otherwise, based on  
 osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipUri_t* pTargetUri,  sipProxy_msgModInfo_t* pHdrModInfo, transportIpPort_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId)
 
 {
@@ -100,7 +99,7 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 	}
 	else
 	{
-        pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, true, pHdrModInfo->extraDelHdr, pHdrModInfo->delNum, pHdrModInfo->extraAddHdr, pHdrModInfo->addNum, &viaId, pTargetUri, &topViaProtocolPos);
+        pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, pHdrModInfo->isChangeCallId ? false:true, pHdrModInfo->extraDelHdr, pHdrModInfo->delNum, pHdrModInfo->extraAddHdr, pHdrModInfo->addNum, &viaId, pTargetUri, &topViaProtocolPos);
 	}
 
     if(!pReq)

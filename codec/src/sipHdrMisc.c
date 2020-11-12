@@ -4,6 +4,8 @@
  * @file sipHdrMisc.c 
  ********************************************************/
 
+#include <time.h>
+
 #include "osDebug.h"
 #include "osMemory.h"
 #include "osPrintf.h"
@@ -15,6 +17,7 @@
 #include "sipConfig.h"
 #include "sipHeader.h"
 #include "sipMsgRequest.h"
+
 
 
 osStatus_e sipParserHdr_str(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrStr_t* pCallid)
@@ -646,4 +649,23 @@ osStatus_e sipHdrCSeq_getValue(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* 
 EXIT:
 	return status;	
 }	
-	
+
+
+uint32_t sipHdrCSeq_generateValue()
+{
+	static __thread int gSipCSeqNum = 0;
+	if(!gSipCSeqNum)
+	{
+		struct timespec tp;
+		clock_gettime(CLOCK_REALTIME, &tp);
+		gSipCSeqNum = tp.tv_nsec % 1000;
+	}
+
+	if(++gSipCSeqNum > SIP_MAX_CSEQ_NUM)
+	{
+		gSipCSeqNum = 1;
+	}
+
+	return gSipCSeqNum;
+}
+

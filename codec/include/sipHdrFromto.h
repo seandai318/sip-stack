@@ -8,7 +8,9 @@
 #define _SIP_HDR_FROMTO_H
 
 #include "osMBuf.h"
+
 #include "sipGenericNameParam.h"
+#include "sipHdrMisc.h"
 
 
 typedef struct sipHdr_fromto {
@@ -24,6 +26,7 @@ osStatus_e sipHdrFrom_create(void* pFromHdrDT, void* pFromUriExtDT, void* pFromT
 osStatus_e sipHdrTo_encode(osMBuf_t* pSipBuf, void* pToHdr, void* other);
 osStatus_e sipHdrTo_create(void* pToHdrDT, void* pToUriExtDT, void* other);
 osStatus_e sipHdrFromto_generateTagId(osPointerLen_t* pTagId, bool isTagLabel);
+osStatus_e sipHdrFromto_generateSipPLTagId(sipPointerLen_t* pTagId, bool isTagLabel);
 void sipHdrFromto_cleanup(void* data);
 void* sipHdrFromto_alloc();
 
