@@ -1,0 +1,34 @@
+#ifndef __SIP_TU_DEST_MGR_H
+#define __SIP_TU_DEST_MGR_H
+
+
+#define SIP_TU_DEST_MAX_SUPPORTED_TP_TYPE_NUM   5       //in theory the value is 2, TCP, UDP.  As documented in the sipTuDestMgr.c, make it bigger just in case
+#define SIP_TU_DEST_QUARANTINE_TIME				600		//quarantine timer, 10 min 
+#define SIP_TU_DEST_KEEP_ALIVE_TIME				36000	//sipTuDestRecord_t keep alive timer, 10 hour
+typedef struct {
+    bool isQuarantined;
+    transportType_e tpType;
+    struct sockaddr_in destAddr;
+//  sipTuDestAddr_t destAddr;
+    int priority;
+    int weight;
+	uint64_t qTimerId;	//quarantine timer when isQuarantined = true
+} sipTuDestInfo_t;
+
+
+typedef struct {
+    osVPointerLen_t destName;   //dns qName.  Will show the qNme of the highest used qType
+    osList_t destList;          //each entry contains sipTuDestInfo_t
+    uint64_t kaTimerId;  //a timer to prevent app uses one query then does not use it again, when this tiemr expires, the associated record will be freed
+} sipTuDestRecord_t;
+
+
+typedef struct {
+    transportType_e tpType;
+    int priority;
+    int weight;
+    int port;
+} sipTuDestSrvInfo_t;
+
+
+#endif
