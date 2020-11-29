@@ -2,6 +2,10 @@
 #define _SCSCF_REGISTRAR_H
 
 
+#include "sipHdrMisc.h"
+#include "sipTUIntf.h"
+#include "sipTU.h"
+
 #include "cscfConfig.h"
 
 
@@ -137,5 +141,11 @@ typedef struct {
 	uint64_t expiryTimerId;
 	uint64_t purgeTimerId;
 } scscfRegInfo_t;
+
+
+void scscfReg_onTimeout(uint64_t timerId, void* data);
+void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo);
+void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo);
+void scscfRegTempWorkInfo_cleanup(scscfRegTempWorkInfo_t* pTempWorkInfo);
 
 #endif

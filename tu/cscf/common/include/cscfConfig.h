@@ -8,6 +8,9 @@
 #define _CSCF_CONFIG_H
 
 #include "osPL.h"
+#include <netinet/in.h>
+
+#include "osXmlParserIntf.h"
 
 
 #define SCSCF_MAX_ALLOWED_SIFC_ID_NUM	20	
@@ -22,8 +25,23 @@
 #define SCSCF_IS_AUTH_ENABLED			false
 #define SCSCF_IS_REREG_PERFORM_AUTH		false
 
-#define SCSCF_URI						"scscf01.globalstar.com"
-#define SCSCF_URI_WITH_PORT				"scscf01.globalstar.com:5060"
+#define SCSCF_URI						"scscf01.ims.com"
+#define SCSCF_URI_WITH_PORT				"scscf01.ims.com:5060"
+#define SCSCF_IP_ADDR					"1.2.3.4"
+#define SCSCF_LISTEN_PORT				5060
+
+#define ICSCF_IP_ADDR					"2.3.4.5"
+#define ICSCF_LISTEN_PORT				5060
+
+#define CSCF_HSS_URI				"hss.ims.com"
+
+
+typedef enum {
+	CSCF_TYPE_INVALID,
+	CSCF_TYPE_ICSCF,
+	CSCF_TYPE_SCSCF,
+} cscfType_e;
+
 
 typedef enum {
     SCSCF_USR_PROFILE_IDENTITY,             //Identity
@@ -61,6 +79,7 @@ typedef struct {
 
 void cscfConfig_init(char* cxFolder, char* cxXsdFileName);
 osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUserProfile_t* pDecodedUserProfile);
+struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseListenPort);
 
 
 

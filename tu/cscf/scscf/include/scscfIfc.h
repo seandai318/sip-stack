@@ -7,6 +7,9 @@
 
 #include "sipMsgFirstLine.h"
 #include "sipHeaderData.h"
+#include "sipMsgRequest.h"
+
+#include "scscfRegistrar.h"
 
 
 typedef enum {
@@ -35,7 +38,7 @@ typedef struct {
 
 
 osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet);
-osPointerLen_t* scscfIfc_getNextAS(osListElement_t* pLastifc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent);
+osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastifc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent);
 osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet);
 scscfIfcRegType_e scscfIfc_mapSar2IfcRegType(scscfRegSarRegType_e sarRegType);
 

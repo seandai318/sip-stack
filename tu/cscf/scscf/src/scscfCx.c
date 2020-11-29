@@ -6,30 +6,39 @@
  ********************************************************/
 
 
+#include "osHash.h"
+#include "osTimer.h"
+
 #include "diaMsg.h"
 #include "diaIntf.h"
 #include "diaCxSar.h"
+#include "diaCxAvp.h"
+
+#include "cscfConfig.h"
+#include "cscfHelper.h"
+#include "scscfRegistrar.h"
+#include "scscfIntf.h"
 
 
-static osStatus_e scscfReg_decodeSaa(osPointerLen_t* pImpu, diaMsgDecoded_t* pDiaDecoded, scscfUserProfile_t* pUsrProfile, diaResultCode_t* pResultCode, scscfChgInfo_t* pChgInfo);
+static osStatus_e scscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, scscfUserProfile_t* pUsrProfile, diaResultCode_t* pResultCode, scscfChgInfo_t* pChgInfo);
 
 
-static osStatus_e scscfReg_performMar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, pRegData)
+static osStatus_e scscfReg_performMar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, scscfRegInfo_t* pRegInfo)
 {
     osStatus_e status = OS_STATUS_OK;
     return status;
 }
 
 
-static osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, pRegData, int regExpire)
+static osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, scscfRegInfo_t* pRegInfo, int regExpire)
 {
     osStatus_e status = OS_STATUS_OK;
 
     dia3gppServerAssignmentType_e saType;
     diaCxUserDataAvailable_e usrDataAvailable = DIA_3GPP_CX_USER_DATA_NOT_AVAILABLE;
-    switch(pRegData->regState)
+    switch(pRegInfo->regState)
     {
-        case MAS_REGSTATE_REGISTERED:
+        case SCSCF_REG_STATE_REGISTERED:
             if(regExpire == 0)
             {
                 saType = DIA_3GPP_CX_USER_DEREGISTRATION;
@@ -39,17 +48,16 @@ static osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pIm
                 saType = DIA_3GPP_CX_RE_REGISTRATION;
             }
             break;
-        case MAS_REGSTATE_NOT_REGISTERED:
-        case MAS_REGSTATE_UN_REGISTERED:
+        case SCSCF_REG_STATE_NOT_REGISTERED:
+        case SCSCF_REG_STATE_UN_REGISTERED:
             if(regExpire == 0)
             {
                 //simple accept
-                rspCode = SIP_RESPONSE_200;
                 goto EXIT;
             }
             else
             {
-                if(pRegData->regState == MAS_REGSTATE_UN_REGISTERED)
+                if(pRegInfo->regState == SCSCF_REG_STATE_UN_REGISTERED)
                 {
                     usrDataAvailable = DIA_3GPP_CX_USER_DATA_ALREADY_AVAILABLE;
                 }
@@ -57,15 +65,17 @@ static osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pIm
             }
             break;
         default:
-            logError("received sip REGISTER with expire=%d when pRegData->regState=%d, this shall never happen, reject.", regExpire, pRegData->regState);
+            logError("received sip REGISTER with expire=%d when pRegInfo->regState=%d, this shall never happen, reject.", regExpire, pRegInfo->regState);
             status = OS_ERROR_INVALID_VALUE;
             goto EXIT;
             break;
     }
 
     diaCxSarInfo_t sarInfo = {saType, usrDataAvailable, DIA_3GPP_CX_MULTI_REG_IND_NOT_MULTI_REG, NULL};
-    diaCxSarAppInput_t sarInput = {pImpi, pImpu, SCSCF_URI_WITH_PORT, CSCF_CONFIG_HSS_URI, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
-    status = diaCx_sendSAR(pImpi, pImpu, saType, scscfReg_onDiaMsg, pRegData);
+	osPointerLen_t serverName = {SCSCF_URI_WITH_PORT, strlen(SCSCF_URI_WITH_PORT)};
+	osPointerLen_t destHost = {CSCF_HSS_URI, strlen(CSCF_HSS_URI)};
+    diaCxSarAppInput_t sarInput = {pImpi, pImpu, &serverName, &destHost, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
+    status = diaCx_sendSAR(&sarInput, scscfReg_onDiaMsg, pRegInfo);
     if(status != OS_STATUS_OK)
     {
         logError("fails to diaCx_initSAR for impu(%r) for DIA_3GPP_CX_UNREGISTERED_USER.", pImpu);
@@ -79,10 +89,13 @@ EXIT:
 
 osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
 {
+	osStatus_e status = OS_STATUS_OK;
+
     switch(pRegInfo->tempWorkInfo.sarRegType)
     {
-        case if(SCSCF_REG_SAR_UN_REGISTER)
+        case SCSCF_REG_SAR_UN_REGISTER:
         {
+#if 0 	//to-do when integrating session part
             osListElement_t* pLE = pRegInfo->sessDatalist.head;
             if(!pLE)
             {
@@ -109,16 +122,17 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
                 pRegInfo->regState = SCSCF_REG_STATE_UN_REGISTERED;
                 pRegInfo->purgeTimerId = osStartTimer(SCSCFREG_USER_PURGE_TIME, scscfReg_onTimeout, pRegInfo);
             }
+#endif
             break;
         }
         case SCSCF_REG_SAR_REGISTER:
         {
-            sipResponse_e rspCode = scscf_hss2SipRspCodeMap(resultCode);
-            scscReg_sendResponse(pRegInfo->regMsgInfo.pReqDecodedRaw, 0, pRegInfo->regMsgInfo.pSipTUMsg->pPeer, osSA_isInvalid(pRegInfo->regMsgInfo.sipLocalHost)? NULL : &pRegInfo->regMsgInfo.sipLocalHost, rspCode);
+            sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
+            cscf_sendRegResponse(pRegInfo->regMsgInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->regMsgInfo.pSipTUMsg->pPeer, osSA_isInvalid(&pRegInfo->regMsgInfo.sipLocalHost)? NULL : &pRegInfo->regMsgInfo.sipLocalHost, rspCode);
 
             if(rspCode < 200 || rspCode >= 300)
             {
-                osHash_deleteNode(pUserHashLE, OS_HASH_DEL_NODE_TYPE_ALL);
+                osHash_deleteNode(pRegInfo->tempWorkInfo.pRegHashLE, OS_HASH_DEL_NODE_TYPE_ALL);
             }
             else
             {
@@ -141,8 +155,8 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         }
         case SCSCF_REG_SAR_RE_REGISTER:
         {
-            sipResponse_e rspCode = scscf_hss2SipRspCodeMap(resultCode);
-            scscReg_sendResponse(pRegInfo->regMsgInfo.pReqDecodedRaw, 0, pRegInfo->regMsgInfo.pSipTUMsg->pPeer, osSA_isInvalid(pRegInfo->regMsgInfo.sipLocalHost)? NULL : &pRegInfo->regMsgInfo.sipLocalHost, rspCode);
+            sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
+            cscf_sendRegResponse(pRegInfo->regMsgInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->regMsgInfo.pSipTUMsg->pPeer, osSA_isInvalid(&pRegInfo->regMsgInfo.sipLocalHost)? NULL : &pRegInfo->regMsgInfo.sipLocalHost, rspCode);
 
             if(rspCode > 199 && rspCode < 299)
             {
@@ -161,8 +175,8 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         }
         case SCSCF_REG_SAR_DE_REGISTER:
         {
-            sipResponse_e rspCode = scscf_hss2SipRspCodeMap(resultCode);
-            scscReg_sendResponse(pRegInfo->regMsgInfo.pReqDecodedRaw, 0, pRegInfo->regMsgInfo.pSipTUMsg->pPeer, osSA_isInvalid(pRegInfo->regMsgInfo.sipLocalHost)? NULL : &pRegInfo->regMsgInfo.sipLocalHost, rspCode);
+            sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
+            cscf_sendRegResponse(pRegInfo->regMsgInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->regMsgInfo.pSipTUMsg->pPeer, osSA_isInvalid(&pRegInfo->regMsgInfo.sipLocalHost)? NULL : &pRegInfo->regMsgInfo.sipLocalHost, rspCode);
 
             //continue 3rd party registration
             pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE;
@@ -175,16 +189,16 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
                 //if scscfReg_perform3rdPartyReg == isDone, free the subscription, otherwise, wait for the response from the last AS to free the subscription.
                 scscfReg_deleteSubHash(pRegInfo);
             }
-#endif
             break;
         }
         default:
-            logError("a UE receives a SAA while in sarRegType=%d, this shall never happen.", pRegInfo->sarRegType);
+            logError("a UE receives a SAA while in sarRegType=%d, this shall never happen.", pRegInfo->tempWorkInfo.sarRegType);
+			status = OS_ERROR_INVALID_VALUE;
             break;
     }
 
 EXIT:
-    return;
+    return status;
 }
 
 
@@ -202,7 +216,7 @@ static osStatus_e scscfReg_decodeHssMsg(diaMsgDecoded_t* pDiaDecoded, scscfRegIn
                 goto EXIT;
             }
 
-            status = scscfReg_decodeSaa(pImpu, pDiaDecoded, &pRegInfo->usrProfile, pResultCode, &pHashData->chgInfo);
+            status = scscfReg_decodeSaa(pDiaDecoded, &pRegInfo->userProfile, pResultCode, &pRegInfo->hssChgInfo);
             break;
         default:
             logError("unexpected dia command(%d) received, ignore.", pDiaDecoded->cmdCode);
@@ -214,7 +228,7 @@ EXIT:
 }
 
 
-static osStatus_e scscfReg_decodeSaa(osPointerLen_t* pImpu, diaMsgDecoded_t* pDiaDecoded, scscfUserProfile_t* pUsrProfile, diaResultCode_t* pResultCode, scscfChgInfo_t* pChgInfo)
+static osStatus_e scscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, scscfUserProfile_t* pUsrProfile, diaResultCode_t* pResultCode, scscfChgInfo_t* pChgInfo)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -226,22 +240,22 @@ static osStatus_e scscfReg_decodeSaa(osPointerLen_t* pImpu, diaMsgDecoded_t* pDi
         switch(pAvp->avpCode)
         {
             case DIA_AVP_CODE_RESULT_CODE:
-                isResultCode = true;
                 pResultCode->resultCode = pAvp->avpData.data32;
                 goto EXIT;
                 break;
             case DIA_AVP_CODE_EXPERIMENTAL_RESULT_CODE:
-                isResultCode = false;
                 pResultCode->expCode = pAvp->avpData.data32;
                 goto EXIT;
                 break;
             case DIA_AVP_CODE_CX_USER_DATA_CX:
+			{
                 osVPointerLen_t* pXmlUserData = &pAvp->avpData.dataStr;
-                status = scfConfig_parseUserProfile(pXmlUserData, pUsrProfile);
+                status = scscfConfig_parseUserProfile(&pXmlUserData->pl, pUsrProfile);
                 break;
+			}
             case DIA_AVP_CODE_CX_CHARGING_INFO:
             {
-                osList_t* pChgInfoList = pAvp->avpData.dataGrouped.dataList;
+                osList_t* pChgInfoList = &pAvp->avpData.dataGrouped.dataList;
                 if(pChgInfoList)
                 {
                     osListElement_t* pLE = pChgInfoList->head;
@@ -252,13 +266,13 @@ static osStatus_e scscfReg_decodeSaa(osPointerLen_t* pImpu, diaMsgDecoded_t* pDi
                         {
                             if(pAvp->avpCode == DIA_AVP_CODE_CX_PRI_CHG_COLLECTION_FUNC_NAME)
                             {
-                                pChgInfo.chgAddrType = CHG_ADDR_TYPE_CCF;
-                                osVPL_copyVPL(&pChgInfo.chgAddr, &pAvp->avpData.dataStr);
+                                pChgInfo->chgAddrType = CHG_ADDR_TYPE_CCF;
+                                osVPL_copyVPL(&pChgInfo->chgAddr, &pAvp->avpData.dataStr);
                             }
                             else if(pAvp->avpCode == DIA_AVP_CODE_CX_PRI_EVENT_CHG_FUNC_NAME)
                             {
-                                pChgInfo.chgAddrType = CHG_ADDR_TYPE_ECF;
-                                osVPL_copyVPL(&pChgInfo.chgAddr, &pAvp->avpData.dataStr);
+                                pChgInfo->chgAddrType = CHG_ADDR_TYPE_ECF;
+                                osVPL_copyVPL(&pChgInfo->chgAddr, &pAvp->avpData.dataStr);
                             }
                             else
                             {
@@ -271,7 +285,7 @@ static osStatus_e scscfReg_decodeSaa(osPointerLen_t* pImpu, diaMsgDecoded_t* pDi
                 break;
             }
             case DIA_AVP_CODE_USER_NAME:
-                *pUserName = pAvp->avpData.dataStr;
+                //*pUserName = pAvp->avpData.dataStr;
                 break;
             default:
                 mlogInfo(LM_CSCF, "avpCode(%d) is not processed.", pAvp->avpCode);

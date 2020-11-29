@@ -48,19 +48,12 @@ static osPointerLen_t* scscfReg_getNoBarImpu(osList_t* pUeList, bool isTelPrefer
 static bool scscfReg_performNWDeRegister(scscfRegInfo_t* pRegInfo);
 static osStatus_e scscfReg_createAndSendSipDeRegister(scscfRegInfo_t* pRegInfo, scscfAsRegInfo_t* pAsInfo);
 
-static void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo);
-static void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo);
 static void scscfRegInfo_cleanup(void* data);
-static void scscfRegTempWorkInfo_cleanup(scscfRegTempWorkInfo_t* pTempWorkInfo);
-
-static void scscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData);
 
 static inline osPointerLen_t* scscfReg_getUserId(scscfRegIdentity_t* pIdentity);
 static inline bool scscfReg_isPerformMar(scscfRegState_e regState, bool isAuthForReReg);
 static inline bool scscfReg_isPeformSar(scscfRegState_e regState, int regExpire);
 
-static void scscfReg_onTimeout(uint64_t timerId, void* data);
-static uint64_t masRegStartTimer(time_t msec, void* pData);
 static uint64_t scscfReg_startTimer(time_t msec, scscfRegInfo_t* pRegInfo);
 
 
@@ -377,7 +370,7 @@ static bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_
 		goto EXIT;
 	}
 
-    pRegInfo->tempWorkInfo.pAs = scscfIfc_getNextAS(pRegInfo->tempWorkInfo.pLastIfc, &pRegInfo->userProfile.sIfcIdList, pRegInfo->tempWorkInfo.pReqDecodedRaw, pIfcEvent);
+    pRegInfo->tempWorkInfo.pAs = scscfIfc_getNextAS(&pRegInfo->tempWorkInfo.pLastIfc, &pRegInfo->userProfile.sIfcIdList, pRegInfo->tempWorkInfo.pReqDecodedRaw, pIfcEvent);
     if(!pRegInfo->tempWorkInfo.pAs)
     {
         isDone = true;
@@ -746,10 +739,9 @@ static osStatus_e scscfReg_createAndSendSipDeRegister(scscfRegInfo_t* pRegInfo, 
 	}
 
     sipTransInfo_t sipTransInfo;
-    osIpPort_t osIpPort;
-    osConvertntoPL(scscf_getLocalSockAddr(), &osIpPort);
-    sipTransInfo.transId.viaId.host = osIpPort.ip.pl;
-    sipTransInfo.transId.viaId.port = osIpPort.port;
+    osIpPort_t ipPort = {{{SCSCF_IP_ADDR, strlen(SCSCF_IP_ADDR)}}, 0};
+    sipTransInfo.transId.viaId.host = ipPort.ip.pl;
+    sipTransInfo.transId.viaId.port = ipPort.port;
 
     size_t topViaProtocolPos = 0;
 	sipTuUri_t reqUri = {pAsInfo->asUri, true};
@@ -787,7 +779,7 @@ static osStatus_e scscfReg_createAndSendSipDeRegister(scscfRegInfo_t* pRegInfo, 
     sipTransInfo.transId.reqCode = SIP_METHOD_REGISTER;
     sipTransMsg.request.pTransInfo = &sipTransInfo;
 	sipTransMsg.request.sipTrMsgBuf.tpInfo.peer = pAsInfo->asAddr.sockAddr;
-	sipTransMsg.request.sipTrMsgBuf.tpInfo.local = scscf_getLocalSockAddr();
+	sipTransMsg.request.sipTrMsgBuf.tpInfo.local = cscfConfig_getLocalSockAddr(CSCF_TYPE_SCSCF, true);
     sipTransMsg.request.sipTrMsgBuf.tpInfo.protocolUpdatePos = topViaProtocolPos;
     sipTransMsg.pTransId = NULL;
     sipTransMsg.pSenderId = pRegInfo;
@@ -807,7 +799,7 @@ static uint64_t scscfReg_startTimer(time_t msec, scscfRegInfo_t* pRegInfo)
 }
 
 		
-static void scscfReg_onTimeout(uint64_t timerId, void* data)
+void scscfReg_onTimeout(uint64_t timerId, void* data)
 {
 	logInfo("timeout, timerId=0x%lx.", timerId); 
 	if(!data)
@@ -845,7 +837,7 @@ static uint64_t scscfReg_restartTimer(time_t msec, void* pData)
 
 //pDiaDecoded = NULL indicates no diameter response is received, like timed out
 //need to save HSS msg, to-do
-static void scscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData)
+void scscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData)
 {
 	if(!pAppData)
 	{
@@ -935,7 +927,7 @@ EXIT:
 }
 				
 
-static void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo)
+void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo)
 {
     //go through all ID list, and add one at a time.
     osListElement_t* pLE = pRegInfo->ueList.head;
@@ -961,7 +953,7 @@ static void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo)
 
 	
 //delete hash data for the whole subscription of a UE
-static void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo)
+void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo)
 {
 	//go through all ID list, and delete them.
 	osListElement_t* pLE = pRegInfo->ueList.head;
@@ -1007,7 +999,7 @@ static void scscfRegInfo_cleanup(void* data)
 }
 
 
-static void scscfRegTempWorkInfo_cleanup(scscfRegTempWorkInfo_t* pTempWorkInfo)
+void scscfRegTempWorkInfo_cleanup(scscfRegTempWorkInfo_t* pTempWorkInfo)
 {
 	pTempWorkInfo->regWorkState = SCSCF_REG_WORK_STATE_NONE;
 	pTempWorkInfo->sarRegType = SCSCF_REG_SAR_INVALID;

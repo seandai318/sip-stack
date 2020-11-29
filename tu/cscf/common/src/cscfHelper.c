@@ -200,3 +200,20 @@ EXIT:
 	return status;
 }
 
+
+//to make the mapping configurable, to-do
+sipResponse_e cscf_cx2SipRspCodeMap(diaResultCode_t resultCode)
+{
+	sipResponse_e sipRspCode = SIP_RESPONSE_200;
+
+	if(resultCode >= 2000 && resultCode < 3000)
+	{
+		sipRspCode = SIP_RESPONSE_200;
+	}
+	else
+	{
+		sipRspCode = SIP_RESPONSE_500;
+	}
+
+	return sipRspCode;
+}

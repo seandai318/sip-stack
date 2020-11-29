@@ -28,9 +28,10 @@
 
 #include "osMBuf.h"
 
-#include "sipHdrGperfHash.h"
 #include "sipMsgFirstLine.h"
 #include "sipHeaderData.h"
+#include "sipHeader.h"
+
 #include "scscfIfc.h"
 #include "scscfRegistrar.h"
 
@@ -73,6 +74,7 @@ typedef struct {
 		
 typedef struct {
 	bool conditionTypeCNF;
+	uint32_t priority;
 	osList_t sptGrpList;	//each entry contains a scscfIfcSptGrp_t
 	osPointerLen_t asName;
 	bool isDefaultSessContinued;	//default handling
@@ -106,26 +108,27 @@ typedef enum {
 
 
 osXmlData_t scscfIfc_xmlData[SCSCF_IFC_XML_MAX_DATA_NAME_NUM] = {
-    SCSCF_IFC_SPT,		{"SPT", sizeof("SPT")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
-    SCSCF_IFC_Group,	{"Group", sizeof("Group")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_Method,	{"Method", sizeof("Method")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_Header,	{"Header", sizeof("Header")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_Content,	{"Content", sizeof("Content")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_Priority,	{"Priority", sizeof("Priority")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_SIPHeader,	{"SIPHeader", sizeof("SIPHeader")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
-    SCSCF_IFC_RequestURI,	{"RequestURI", sizeof("RequestURI")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_ServerName,	{"ServerName", sizeof("ServerName")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_SessionCase,	{"SessionCase", sizeof("SessionCase")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_TriggerPoint,	{"TriggerPoint", sizeof("TriggerPoint")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
-    SCSCF_IFC_DefaultHandling,	{"DefaultHandling", sizeof("DefaultHandling"-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_ConditionNegated,	{"ConditionNegated", sizeof("ConditionNegated"-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_ConditionTypeCNF,	{"ConditionTypeCNF", sizeof("ConditionTypeCNF"-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    SCSCF_IFC_InitialFilterCriteria, {"InitialFilterCriteria", sizeof("InitialFilterCriteria"-1}, OS_XML_DATA_TYPE_COMPLEX, true},
+    {SCSCF_IFC_SPT,		{"SPT", sizeof("SPT")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
+    {SCSCF_IFC_Group,	{"Group", sizeof("Group")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_Method,	{"Method", sizeof("Method")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_Header,	{"Header", sizeof("Header")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_Content,	{"Content", sizeof("Content")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_Priority,	{"Priority", sizeof("Priority")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_SIPHeader,	{"SIPHeader", sizeof("SIPHeader")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
+    {SCSCF_IFC_RequestURI,	{"RequestURI", sizeof("RequestURI")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_ServerName,	{"ServerName", sizeof("ServerName")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_SessionCase,	{"SessionCase", sizeof("SessionCase")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_TriggerPoint,	{"TriggerPoint", sizeof("TriggerPoint")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
+    {SCSCF_IFC_DefaultHandling,	{"DefaultHandling", sizeof("DefaultHandling")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_ConditionNegated,	{"ConditionNegated", sizeof("ConditionNegated")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_ConditionTypeCNF,	{"ConditionTypeCNF", sizeof("ConditionTypeCNF")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_InitialFilterCriteria, {"InitialFilterCriteria", sizeof("InitialFilterCriteria")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
 }; 
 
 
 static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* appData);
 static bool scscfIfcSptGrpIsMatch(scscfIfcSptGrp_t* pSptGrp, bool isOr, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent);
+static bool scscfIfc_isIdMatch(sIfcIdList_t* pSIfcIdList, uint32_t sIfcGrpId);
 
 
 static osList_t gSIfcSet;	//each entry contains a scscfIfcInfo_t
@@ -133,7 +136,7 @@ static osList_t gSIfcSet;	//each entry contains a scscfIfcInfo_t
 
 osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet)
 {
-	osStatus_e statys = OS_STATUS_OK;
+	osStatus_e status = OS_STATUS_OK;
 
     osXmlDataCallbackInfo_t cbInfo = {true, false, false, scscfIfc_parseSIfcCB, pSIfcSet, scscfIfc_xmlData, SCSCF_IFC_XML_MAX_DATA_NAME_NUM};
 	osMBuf_t* xmlMBuf = osMBuf_setPL(pSIfc);
@@ -158,7 +161,7 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 	osListElement_t* pLE = *ppLastSIfc ? (*ppLastSIfc)->next : gSIfcSet.head;
 	while(pLE)
 	{
-		*pLastSIfc = pLE;
+		*ppLastSIfc = pLE;
 
 		scscfIfcInfo_t* pIfcInfo = pLE->data;
 		if(!scscfIfc_isIdMatch(pSIfcIdList, pIfcInfo->sIfcGrpId))
@@ -167,7 +170,7 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 			continue;
 		}
 
-		scscfIfc_t* pIfc = pIfcInfo->sIfc;
+		scscfIfc_t* pIfc = &pIfcInfo->sIfc;
 	
 		//if last As failed, and the default handling is terminated, stop here.
 		if(!pIfcEvent->isLastAsOK && !pIfc->isDefaultSessContinued)
@@ -325,8 +328,6 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 			}
 			fpIfc->priority = pXmlValue->xmlInt;
 			break;
-		case SCSCF_IFC_TriggerPoint:
-			return;
 		case SCSCF_IFC_ConditionTypeCNF:
 			if(!fpIfc)
             {
@@ -386,7 +387,7 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 			}
 			break;
 		case SCSCF_IFC_Header:
-			fpCurHdr->hdrName = sipHdrPL2enum(&pXmlValue->xmlStr);
+			fpCurHdr->hdrName = sipHdr_getNameCode(&pXmlValue->xmlStr);
 			break;
 		case SCSCF_IFC_Content:
 			fpCurHdr->hdrContent = pXmlValue->xmlStr;
@@ -425,9 +426,9 @@ scscfIfcRegType_e scscfIfc_mapSar2IfcRegType(scscfRegSarRegType_e sarRegType)
     	case SCSCF_REG_SAR_DE_REGISTER:
 			return SCSCF_IFC_REG_TYPE_DE_REG;
 			break;
-        case SCSCF_REG_SAR_REGISTER,
-    	case SCSCF_REG_SAR_UN_REGISTER,
-        case SCSCF_REG_SAR_INVALID,
+        case SCSCF_REG_SAR_REGISTER:
+    	case SCSCF_REG_SAR_UN_REGISTER:
+        case SCSCF_REG_SAR_INVALID:
 		default:
 			break;
 	}
@@ -448,8 +449,3 @@ static bool scscfIfc_isIdMatch(sIfcIdList_t* pSIfcIdList, uint32_t sIfcGrpId)
 
 	return false;
 }
-        {
-            pLE = pLE->next;
-            continue;
-        }
-

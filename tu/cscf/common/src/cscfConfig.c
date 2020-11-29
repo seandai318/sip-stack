@@ -5,8 +5,8 @@
  ********************************************************/
 
 #include "osPL.h"
-#inc;ude "osMBuf.h"
-
+#include "osMBuf.h"
+#include "osSockAddr.h"
 
 #include "cscfConfig.h"
 
@@ -105,3 +105,30 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
 	}
 }
 
+
+struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseListenPort)
+{
+	struct sockaddr_in sockAddr = {};
+
+	switch(cscfType)
+	{
+		case CSCF_TYPE_ICSCF:
+		{
+			osIpPort_t ipPort = {{{ICSCF_IP_ADDR, strlen(ICSCF_IP_ADDR)}}, isUseListenPort ? ICSCF_LISTEN_PORT : 0};
+			osConvertPLton(&ipPort, true, &sockAddr);
+			break;
+		}
+		case CSCF_TYPE_SCSCF:
+        {
+            osIpPort_t ipPort = {{{SCSCF_IP_ADDR, strlen(SCSCF_IP_ADDR)}}, isUseListenPort ? SCSCF_LISTEN_PORT : 0};
+            osConvertPLton(&ipPort, true, &sockAddr);
+            break;
+        }
+		default:
+			logError("unexpected cscfType(%d).", cscfType);
+			break;
+		}
+	}
+
+	return sockAddr;
+}	
