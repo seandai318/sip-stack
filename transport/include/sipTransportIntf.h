@@ -26,6 +26,7 @@ typedef struct sipTransportMsgBuf {
     bool isCom;
     int tcpFd;      //if tcpFd=-1, the response may be sent via udp or another tcp connection
 	struct sockaddr_in peer;
+	struct sockaddr_in local;
     osMBuf_t* pSipBuf;
 //    void* tpId;     //contains the tcm address when tcpFd != 0
 } sipTransportMsgBuf_t;

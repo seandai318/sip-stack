@@ -142,4 +142,16 @@ void sipFirstLine_cleanup(void* pData);
 void* sipFirstLine_alloc();
 
 
+static inline bool sipMsg_isRsp2xx(sipResponse_e rspCode)
+{
+	if(rspCode >= SIP_RESPONSE_200 && rspCode < SIP_RESPONSE_300)
+	{
+		return true;
+	}
+	
+	return false;
+}
+
+
+
 #endif

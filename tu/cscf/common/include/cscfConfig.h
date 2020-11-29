@@ -9,17 +9,21 @@
 
 #include "osPL.h"
 
-#include "scscfRegistrar.h"
-
 
 #define SCSCF_MAX_ALLOWED_SIFC_ID_NUM	20	
 #define SCSCF_MAX_ALLOWED_IMPU_ID_NUM   10
 
 
-#define SCSCFREG_USER_PURGE_TIME		36000		//sec, user purge time for no activity, 10 hour
+#define SCSCF_REG_DEFAULT_EXPIRE		7200		//sec
+#define SCSCF_REG_MIN_EXPIRE			600			//sec
+#define SCSCF_REG_MAX_EXPIRE			36000		//sec
+#define SCSCF_REG_USER_PURGE_TIME		36000		//sec, user purge time for no activity, 10 hour
 
-#define SCSCF_URI
-#define SCSCF_URI_WITH_PORT
+#define SCSCF_IS_AUTH_ENABLED			false
+#define SCSCF_IS_REREG_PERFORM_AUTH		false
+
+#define SCSCF_URI						"scscf01.globalstar.com"
+#define SCSCF_URI_WITH_PORT				"scscf01.globalstar.com:5060"
 
 typedef enum {
     SCSCF_USR_PROFILE_IDENTITY,             //Identity
@@ -41,8 +45,22 @@ osXmlData_t scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM] =
 };
 
 
+typedef struct {
+    uint32_t sIfcId[SCSCF_MAX_ALLOWED_SIFC_ID_NUM];
+    uint32_t sIfcIdNum;
+} sIfcIdList_t;
+
+
+typedef struct {
+    osPointerLen_t impi;
+    osList_t impuList;          //each entry contains impuInfo_t
+    sIfcIdList_t sIfcIdList;
+//  osList_t sIfcId;            //each entry contains a int, sorted from small to bigger
+} scscfUserProfile_t;
+
+
 void cscfConfig_init(char* cxFolder, char* cxXsdFileName);
-osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfReg_userProfile_t* pDecodedUserProfile);
+osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUserProfile_t* pDecodedUserProfile);
 
 
 

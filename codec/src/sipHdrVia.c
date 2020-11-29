@@ -301,9 +301,9 @@ osStatus_e sipHdrVia_rspEncode(osMBuf_t* pSipBuf, sipHdrMultiVia_t* pTopMultiVia
 {
     osStatus_e status = OS_STATUS_OK;
 
-    if(!pSipBuf || !pDecodedRaw || !pTopMultiVia || !pPeer)
+    if(!pSipBuf || !pDecodedRaw || !pTopMultiVia)
     {
-        logError("null pointer, pSipBuf=%p, pDecodedRaw=%p, pTopMultiVia=%p, pPeer=%p.", pSipBuf, pDecodedRaw, pTopMultiVia, pPeer);
+        logError("null pointer, pSipBuf=%p, pDecodedRaw=%p, pTopMultiVia=%p.", pSipBuf, pDecodedRaw, pTopMultiVia);
         status = OS_ERROR_NULL_POINTER;
         goto EXIT;
     }
@@ -334,6 +334,12 @@ osStatus_e sipHdrVia_rspEncode(osMBuf_t* pSipBuf, sipHdrMultiVia_t* pTopMultiVia
     {
         sipHdrAddCtrl_t ctrl = {true, false, false, NULL};
         status = sipMsgAddHdr(pSipBuf, SIP_HDR_VIA, pDecodedRaw->msgHdrList[SIP_HDR_VIA], NULL, ctrl);
+        goto EXIT;
+    }
+	else if(!pPeer)
+	{
+		logError("top via has rport parameter, but pPeer is NULL.");
+		status = OS_ERROR_NULL_POINTER;
         goto EXIT;
     }
 

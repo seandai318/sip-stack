@@ -114,7 +114,7 @@ EXIT:
 //add a via, remove top Route if there is lr, decrease Max-Forwarded by 1
 //pTransViaId is IN/OUT, as IN, it passes the real peer's IP/port, when OUT, it contains the top via's branch ID, and host/port
 //if isProxy=false, a new call id is to be generated, there is no need for external to delete/modify/specify a new callid
-osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipUri_t* pReqlineUri, size_t* pViaProtocolPos)
+osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipTuUri_t* pReqlineUri, size_t* pViaProtocolPos, sipPointerLen_t* pCallId)
 {
 	DEBUG_BEGIN
 
@@ -249,13 +249,21 @@ logError("to-remove, VIA-MEMORY, 2");
 		osPointerLen_t src = {pReqDecodedRaw->sipMsgBuf.pSipMsg->buf, pReqDecodedRaw->sipMsgBuf.hdrStartPos};
 		osMBuf_writeUntil(pSipBufReq, &src, &method, true);
 		osMBuf_writeU8(pSipBufReq, ' ', true);
-		osMBuf_writePL(pSipBufReq, &pReqlineUri->sipUser, true);
-		if(pReqlineUri->hostport.portValue != 0)
+
+		if(pReqlineUri->isRaw)
 		{
-			status = osMBuf_writeU8(pSipBufReq, ':', true);
-			status = osMBuf_writeU32Str(pSipBufReq, pReqlineUri->hostport.portValue, true);
+			osMBuf_writePL(pSipBufReq, &pReqlineUri->rawSipUri, true);
 		}
-		status = osMBuf_writeStr(pSipBufReq, " SIP/2.0\r\n", true);
+		else
+		{
+			osMBuf_writePL(pSipBufReq, &pReqlineUri->sipUri.sipUser, true);
+			if(pReqlineUri->sipUri.hostport.portValue != 0)
+			{
+				status = osMBuf_writeU8(pSipBufReq, ':', true);
+				status = osMBuf_writeU32Str(pSipBufReq, pReqlineUri->sipUri.hostport.portValue, true);
+			}
+			status = osMBuf_writeStr(pSipBufReq, " SIP/2.0\r\n", true);
+		}
 	}
 	else
 	{
@@ -280,7 +288,7 @@ logError("to-remove, VIA-MEMORY, 2-1");
 	else
 	{
 		//create and insert call-id if not proxy
-		status = sipHdrCallId_createAndAdd(pSipBufReq, NULL);
+		status = sipHdrCallId_createAndAdd(pSipBufReq, pCallId);
 	}
 
 logError("to-remove, VIA-MEMORY, 2-2");
@@ -311,7 +319,7 @@ logError("to-remove, VIA-MEMORY, 4");
 
 //create a UAC request with req line, via, from, to, callId and max forward.  Other headers needs to be added by user as needed
 //be noted this function does not include the extra "\r\n" at the last of header, user needs to add it when completing the creation of a SIP message
-osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipUri_t* pReqlineUri, osPointerLen_t* called, osPointerLen_t* caller, sipTransViaInfo_t* pTransViaId, size_t* pViaProtocolPos)
+osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipTuUri_t* pReqlineUri, osPointerLen_t* called, osPointerLen_t* caller, sipTransViaInfo_t* pTransViaId, osPointerLen_t* pCallId, size_t* pViaProtocolPos)
 {
     DEBUG_BEGIN
 
@@ -338,12 +346,19 @@ osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipUri_t* pReqlineUri, osPoin
 	osMBuf_writePL(pSipBufReq, &method, true);
 
     osMBuf_writeU8(pSipBufReq, ' ', true);
-    osMBuf_writePL(pSipBufReq, &pReqlineUri->sipUser, true);
-    if(pReqlineUri->hostport.portValue != 0)
-    {
-        status = osMBuf_writeU8(pSipBufReq, ':', true);
-        status = osMBuf_writeU32Str(pSipBufReq, pReqlineUri->hostport.portValue, true);
-    }
+	if(pReqlineUri->isRaw)
+	{
+		osMBuf_writePL(pSipBufReq, &pReqlineUri->rawSipUri, true);
+	}
+	else
+	{
+    	osMBuf_writePL(pSipBufReq, &pReqlineUri->sipUri.sipUser, true);
+    	if(pReqlineUri->sipUri.hostport.portValue != 0)
+    	{
+        	status = osMBuf_writeU8(pSipBufReq, ':', true);
+        	status = osMBuf_writeU32Str(pSipBufReq, pReqlineUri->sipUri.hostport.portValue, true);
+    	}
+	}
     status = osMBuf_writeStr(pSipBufReq, " SIP/2.0\r\n", true);
 
     //insert a new via hdr as the first header
@@ -371,7 +386,15 @@ osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipUri_t* pReqlineUri, osPoin
 	osMBuf_writeStr(pSipBufReq, "\r\n", true);
 	osDPL_dealloc(&fromTag);
 
-	status = sipHdrCallId_createAndAdd(pSipBufReq, NULL);
+	if(pCallId)
+	{
+		osMBuf_writePL(pSipBufReq, pCallId, true);
+    	osMBuf_writeStr(pSipBufReq, "\r\n", true);
+	}
+	else
+	{
+		status = sipHdrCallId_createAndAdd(pSipBufReq, NULL);
+	}
 
 	//encode max-forward
 	osMBuf_writeStr(pSipBufReq, "Max-Forwards: 69\r\n", true);

@@ -39,6 +39,7 @@ typedef struct connStatusMsg {
 typedef struct diaTransportMsg {
 	diaTransportMsgType_e tpMsgType;
     struct sockaddr_in peer;
+	struct sockaddr_in local;
     void* diaId;    //id in diameter stack that started the connection request
 	union {
 		diaTransportMsgBuf_t peerMsg;

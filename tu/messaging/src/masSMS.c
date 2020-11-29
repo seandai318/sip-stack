@@ -88,7 +88,7 @@ static osStatus_e masSMS_onSipRequest(sipTUMsg_t* pSipTUMsg)
     osStatus_e status = OS_STATUS_OK;
     sipResponse_e rspCode = SIP_RESPONSE_INVALID;
 
-    sipMsgDecodedRawHdr_t* pReqDecodedRaw = sipDecodeMsgRawHdr(pSipTUMsg->pSipMsgBuf, NULL, 0);
+    sipMsgDecodedRawHdr_t* pReqDecodedRaw = sipDecodeMsgRawHdr(&pSipTUMsg->sipMsgBuf, NULL, 0);
     if(pReqDecodedRaw == NULL)
     {
         logError("fails to sipDecodeMsgRawHdr.  Since the received SIP message was not decoded, there will not be any sip response.");
@@ -96,9 +96,9 @@ static osStatus_e masSMS_onSipRequest(sipTUMsg_t* pSipTUMsg)
         goto EXIT;
     }
 
-	if(pSipTUMsg->pSipMsgBuf->reqCode != SIP_METHOD_MESSAGE)
+	if(pSipTUMsg->sipMsgBuf.reqCode != SIP_METHOD_MESSAGE)
 	{
-   		logError("receives unexpected sip message type (%d).", pSipTUMsg->pSipMsgBuf->reqCode);
+   		logError("receives unexpected sip message type (%d).", pSipTUMsg->sipMsgBuf.reqCode);
 		rspCode = SIP_RESPONSE_503;
 		status = OS_ERROR_INVALID_VALUE;
 		goto BUILD_RESPONSE;
@@ -304,18 +304,18 @@ static osStatus_e masSMS_onSipResponse(sipTUMsg_t* pSipTUMsg)
 	masInfo_t* pMasInfo = pSipTUMsg->pTUId;
 	if(!pMasInfo)
 	{
-		logError("received rspCode(%d), but pMasInfo=NULL", pSipTUMsg->pSipMsgBuf->rspCode);
+		logError("received rspCode(%d), but pMasInfo=NULL", pSipTUMsg->sipMsgBuf.rspCode);
 		goto CLEAN_UP;
 	}		
 
-	if(pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_200)
+	if(pSipTUMsg->sipMsgBuf.rspCode < SIP_RESPONSE_200)
 	{
-		debug("received rspCode(%d) for masInfo (%p), ignore.", pSipTUMsg->pSipMsgBuf->rspCode, pMasInfo);
+		debug("received rspCode(%d) for masInfo (%p), ignore.", pSipTUMsg->sipMsgBuf.rspCode, pMasInfo);
 		goto EXIT;
 	}
-	else if(pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_300)
+	else if(pSipTUMsg->sipMsgBuf.rspCode >= SIP_RESPONSE_200 && pSipTUMsg->sipMsgBuf.rspCode < SIP_RESPONSE_300)
 	{
-		debug("received rspCode(%d) for masInfo (%p)", pSipTUMsg->pSipMsgBuf->rspCode, pMasInfo);
+		debug("received rspCode(%d) for masInfo (%p)", pSipTUMsg->sipMsgBuf.rspCode, pMasInfo);
 
 		//delete the stored SMS if successfullyr eceived by the called
 		if(pMasInfo->smsType == MAS_SMS_TYPE_DB)
@@ -324,9 +324,9 @@ static osStatus_e masSMS_onSipResponse(sipTUMsg_t* pSipTUMsg)
 		}
 		goto CLEAN_UP;
 	}
-	else if(pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_300)
+	else if(pSipTUMsg->sipMsgBuf.rspCode >= SIP_RESPONSE_300)
 	{
-		debug("received rspCode(%d) for masInfo (%p).", pSipTUMsg->pSipMsgBuf->rspCode, pMasInfo);
+		debug("received rspCode(%d) for masInfo (%p).", pSipTUMsg->sipMsgBuf.rspCode, pMasInfo);
 
 		//for MAS_SMS_TYPE_DB, the msg has been stored and timer has been updated
 		if(pMasInfo->smsType != MAS_SMS_TYPE_DB)

@@ -8,14 +8,19 @@
 #include "osTypes.h"
 #include "osDebug.h"
 #include "osSockAddr.h"
+#include "osPL.h"
 
 #include "sipConfig.h"
 #include "sipTransIntf.h"
 #include "transportIntf.h"
 #include "sipHdrVia.h"
+#include "sipTU.h"
 
 
-void* sipTU_sendReq2Tr(sipRequest_e nameCode, osMBuf_t* pReq, sipTransViaInfo_t* pViaId, transportIpPort_t* nextHop, bool isTpDirect, sipTuAppType_e appType, size_t topViaProtocolPos, void* pTuInfo)
+static osStatus_e sipTu_convertPL2NextHop(osPointerLen_t* pUri, transportIpPort_t* pNextHop);
+
+
+void* sipTU_sendReq2Tr(sipRequest_e nameCode, osMBuf_t* pReq, sipTransViaInfo_t* pViaId, sipTuAddr_t* nextHop, bool isTpDirect, sipTuAppType_e appType, size_t topViaProtocolPos, void* pTuInfo)
 {
 	osStatus_e status = OS_STATUS_OK;
     sipTransInfo_t sipTransInfo;
@@ -35,8 +40,15 @@ void* sipTU_sendReq2Tr(sipRequest_e nameCode, osMBuf_t* pReq, sipTransViaInfo_t*
     sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.hdrStartPos = 0;
     sipTransMsg.request.pTransInfo = &sipTransInfo;
 
-	osIpPort_t ipPort = {{nextHop->ip, false, false}, nextHop->port};
-	osConvertPLton(&ipPort, true, &sipTransMsg.request.sipTrMsgBuf.tpInfo.peer);
+	if(!nextHop->isSockAddr)
+	{
+		osIpPort_t ipPort = {{nextHop->ipPort.ip, false, false}, nextHop->ipPort.port};
+		osConvertPLton(&ipPort, true, &sipTransMsg.request.sipTrMsgBuf.tpInfo.peer);
+	}
+	else
+	{
+		sipTransMsg.request.sipTrMsgBuf.tpInfo.peer = nextHop->sockAddr;
+	}
 
 	sipConfig_getHost1(&sipTransMsg.request.sipTrMsgBuf.tpInfo.local);
     sipTransMsg.request.sipTrMsgBuf.tpInfo.protocolUpdatePos = topViaProtocolPos;
@@ -87,3 +99,231 @@ EXIT:
 }
 
 
+void sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pRegExpire, sipTuRegTimeConfig_t regTimeConfig, sipResponse_e* pRspCode)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	sipHdrDecoded_t* pContactHdr = NULL;
+    *pRspCode = SIP_RESPONSE_INVALID;
+
+    //check the expire header
+    bool isExpiresFound = false;
+	osPointerLen_t* pContactExpire = NULL;
+    if(pReqDecodedRaw->msgHdrList[SIP_HDR_EXPIRES] != NULL)
+    {
+        sipHdrDecoded_t expiryHdr;
+        status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_EXPIRES]->pRawHdr, &expiryHdr, false);
+        if(status != OS_STATUS_OK)
+        {
+            logError("fails to get expires value from expires hdr by sipDecodeHdr.");
+            *pRspCode = SIP_RESPONSE_400;
+            goto EXIT;
+        }
+
+        *pRegExpire = *(uint32_t*)expiryHdr.decodedHdr;
+        osfree(expiryHdr.decodedHdr);
+        isExpiresFound = true;
+    }
+    else
+    {
+        pContactHdr = oszalloc(sizeof(sipHdrDecoded_t), sipHdrDecoded_cleanup);
+        status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT]->pRawHdr, pContactHdr, true);
+        if(status != OS_STATUS_OK)
+        {
+            logError("fails to decode contact hdr in sipDecodeHdr.");
+            *pRspCode = SIP_RESPONSE_400;
+            goto EXIT;
+        }
+
+        osPointerLen_t expireName={"expires", 7};
+        //pContactExpire is not allocated an new memory, it just refer to a already allocated memory in pGNP->hdrValue, no need to dealloc memory for pContactExpire
+        pContactExpire = sipHdrGenericNameParam_getGPValue(&((sipHdrMultiContact_t*)pContactHdr->decodedHdr)->contactList.pGNP->hdrValue, &expireName);
+        if(pContactExpire != NULL)
+        {
+            isExpiresFound = true;
+            *pRegExpire = osPL_str2u32(pContactExpire);
+        }
+    }
+
+    if(!isExpiresFound)
+    {
+        *pRegExpire = regTimeConfig.defaultRegTime;
+    }
+
+    if(*pRegExpire != 0 && *pRegExpire < regTimeConfig.minRegTime)
+    {
+        *pRegExpire = regTimeConfig.minRegTime;
+        *pRspCode = SIP_RESPONSE_423;
+        goto EXIT;
+    }
+    else if (*pRegExpire > regTimeConfig.maxRegTime)
+    {
+        *pRegExpire = regTimeConfig.maxRegTime;
+        if(pContactExpire)
+        {
+            osPL_modifyu32(pContactExpire, *pRegExpire);
+        }
+    }
+
+EXIT:
+	osfree(pContactHdr);
+    return;
+}
+
+
+osStatus_e sipTu_convertUri2NextHop(sipTuUri_t* pUri, transportIpPort_t* pNextHop)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	if(pUri->isRaw)
+	{
+		status = sipTu_convertPL2NextHop(&pUri->rawSipUri, pNextHop);
+	}
+	else
+	{
+		status = sipTu_convertPL2NextHop(&pUri->sipUri.hostport.host, pNextHop);
+		pNextHop->port = pUri->sipUri.hostport.portValue;
+	}
+
+	return status;
+}
+
+
+typedef enum {
+	SIP_TU_URI_SERACH_STATE_NONE,	//beginning of a search
+	SIP_TU_URI_SERACH_STATE_USER,	//searching for user
+	SIP_TU_URI_SERACH_STATE_HOST,	//searching for host
+	SIP_TU_URI_SERACH_STATE_PORT,	//searching for port
+} sipTuUriSearchState_e;
+
+
+//<sip:123.com>, <sip:123.com:5060>, <sip:user@123.com>, <sip:user@123.com:5060>, sip:123.com, sip:123.com:5060, sip:user@123.com, sip:user@123.com:5060
+static osStatus_e sipTu_convertPL2NextHop(osPointerLen_t* pUri, transportIpPort_t* pNextHop)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	size_t startPos = 0;
+	sipTuUriSearchState_e sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_NONE;
+	size_t pos = 0;
+	for(pos = 0; pos < pUri->l; pos++)
+	{
+		if(pUri->p[pos] != '@' && pUri->p[pos] != ';' && pUri->p[pos] != '>' && pUri->p[pos] != ':')
+		{
+			continue;
+		}
+
+		switch(sipTuUriSearchState)
+		{
+			case SIP_TU_URI_SERACH_STATE_NONE:
+				if(pUri->p[pos] == ':')
+				{
+					startPos = pos+1;
+					sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_USER;
+				}
+				else
+				{
+					status = OS_ERROR_INVALID_VALUE;
+					goto EXIT;
+				}
+				break;
+			case SIP_TU_URI_SERACH_STATE_USER:
+				if(pUri->p[pos] == '@')
+				{
+					sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_HOST;
+					startPos = pos+1;
+				}
+				else
+				{
+					pNextHop->ip.p = &pUri->p[startPos];
+					pNextHop->ip.l = pos - startPos;
+				
+					if(pUri->p[pos] == ':')
+					{
+						sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_PORT;
+						startPos = pos+1;
+					}
+					else
+					{
+						pNextHop->port = 0;
+						goto EXIT;
+					}
+				}
+				break;
+			case SIP_TU_URI_SERACH_STATE_HOST:
+				if(pUri->p[pos] == '@')
+				{
+					status = OS_ERROR_INVALID_VALUE;
+					goto EXIT;
+				}
+				else
+				{
+					pNextHop->ip.p = &pUri->p[startPos];
+					pNextHop->ip.l = pos - startPos;
+					if(pUri->p[pos] == ':')
+					{
+						sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_PORT;
+						startPos = pos+1;
+                   	}
+                   	else
+                   	{
+                       	pNextHop->port = 0;
+                       	goto EXIT;
+                   	}
+				}
+				break;
+			case SIP_TU_URI_SERACH_STATE_PORT:
+				if(pUri->p[pos] == '@' || pUri->p[pos] == ':')
+				{
+					status = OS_ERROR_INVALID_VALUE;
+				}
+				else
+				{
+					osPointerLen_t portStr = {&pUri->p[startPos], pos - startPos};
+					osPL_compact(&portStr);
+					pNextHop->port = osPL_str2u32(&portStr);
+				}
+				goto EXIT;
+				break;
+			default:
+				break;
+		}
+	}
+
+	switch(sipTuUriSearchState)
+	{
+		case SIP_TU_URI_SERACH_STATE_USER:
+		case SIP_TU_URI_SERACH_STATE_HOST:
+			pNextHop->ip.p = &pUri->p[startPos];
+			pNextHop->ip.l = pos - startPos;
+			pNextHop->port = 0;
+			break;
+		case SIP_TU_URI_SERACH_STATE_PORT:
+		{
+			osPointerLen_t portStr = {&pUri->p[startPos], pos - startPos};
+			osPL_compact(&portStr);
+			pNextHop->port = osPL_str2u32(&portStr);
+		}
+		default:
+			break;
+	}
+
+	osPL_compact(&pNextHop->ip);
+
+EXIT:
+	return status;
+}
+
+
+void sipTUMsg_cleanup(void* data)
+{
+	while(!data)
+	{
+		return;
+	}
+
+	sipTUMsg_t* pTuMsg = data;
+	if(pTuMsg->sipTuMsgType == SIP_TU_MSG_TYPE_MESSAGE)
+	{
+		osfree(pTuMsg->sipMsgBuf.pSipMsg);
+	}
+}

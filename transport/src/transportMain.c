@@ -28,6 +28,7 @@
 #include "osConfig.h"
 #include "osResourceMgmt.h"
 #include "osHexDump.h"
+#include "osSockAddr.h"
 
 #include "sipConfig.h"
 #include "sipMsgFirstLine.h"
@@ -40,24 +41,33 @@
 #include "diaTransportIntf.h"
 
 
+
+typedef struct tpListenerInfo {
+    transportAppType_e appType;
+    int fd;
+	struct sockaddr_in local;		//local address
+} tpListenerInfo_t;
+
+
 static void sipTpServerOnIpcMsg(osIPCMsg_t* pIpcMsg);
 static void sipTpServerTimeout(uint64_t timerId, void* ptr);
-static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int tcpFd, struct sockaddr_in* peer);
+static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int tcpFd, struct sockaddr_in* peer, struct sockaddr_in* local);
 static void sipTpServerUpdateLBInfo(void* pMsg);
-static int sipTpSetTcpListener(transportIpPort_t* pIpPort);
-static bool tpIsListenFd(int fd, transportAppType_e* appType);
+static int sipTpSetSocketListener(transportIpPort_t* pIpPort, bool isTcp, struct sockaddr_in* pLocalAddr);
+static tpListenerInfo_t* tpIsListenFd(int fd, bool isTcp, transportAppType_e* appType);
 static transportStatus_e tpCreateAndSendTcp(transportAppType_e appType, void* appId, transportInfo_t* pTpInfo, osMBuf_t* pBuf, int* fd);
 static sipTransportStatus_e tpConnectedTcpSend(transportInfo_t* pTpInfo, osMBuf_t* pMsgBuf);
 static sipTransportStatus_e tpUdpSend(transportAppType_e appType, transportInfo_t* pTpInfo, osMBuf_t* pMsgBuf);
+static int tpGetFdFromListener(struct sockaddr_in* pLocal, bool isCheckPort, bool isTcp);
 
-
-static __thread osList_t tpListenerList;
+static __thread osList_t tpTcpListenerList;		//each element contains a tpListenerInfo_t for TCP
+//can not be __thread since it may be used by transaction layer directly for sending message via UDP. to-do, check for sycnronization
+static  osList_t tpUdpListenerList;     //each element contains a tpListenerInfo_t for UDP
 static int tpEpFd=-1;
 static __thread osHash_t* lbHash;
 static __thread int lbFd[SIP_CONFIG_TRANSACTION_THREAD_NUM];
 static __thread osHash_t* sipTransportLBHash;
 //can not be __thread since it may be used by transaction layer directly for sending message via UDP
-static int sipUdpFd=-1;
 
 
 
@@ -88,7 +98,7 @@ EXIT:
 
 void* transportMainStart(void* pData)
 {
-	struct sockaddr_in localAddr;
+//	struct sockaddr_in localAddr;
 	struct epoll_event event, events[SYS_MAX_EPOLL_WAIT_EVENTS];
 
     transportMainSetting_t tpSetting = *(transportMainSetting_t*)pData;
@@ -120,6 +130,7 @@ void* transportMainStart(void* pData)
 
     debug("ownIpcFd(%d) is added into epoll fd (%d).", tpSetting.ownIpcFd[0], tpEpFd);
 
+#if 0	//replaced with tpSetting.udpInfoNum
     memset(&localAddr, 0, sizeof(localAddr));
 //    memset(&peerAddr, 0, sizeof(peerAddr));
 
@@ -164,34 +175,54 @@ void* transportMainStart(void* pData)
         logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", sipUdpFd, tpEpFd, errno);
         goto EXIT;
     }
+#endif
+    for(int i=0; i< tpSetting.udpInfoNum; i++)
+    {
+        tpListenerInfo_t* pAppListener = osmalloc(sizeof(tpListenerInfo_t), NULL);
+        if(!pAppListener)
+        {
+            logError("fails to osmalloc for pAppListener for local ip=%r, port=%d, appType=%d.", &tpSetting.serverUdpInfo[i].local.ip, tpSetting.serverUdpInfo[i].local.port, tpSetting.serverUdpInfo[i].appType);
+            goto EXIT;
+        }
+        pAppListener->appType = tpSetting.serverUdpInfo[i].appType;
 
-	debug("udp listening fd =%d (ip=%r, port=%d) is added into epoll fd (%d).", sipUdpFd, &tpSetting.udpLocal.ip, tpSetting.udpLocal.port, tpEpFd);
+        pAppListener->fd = sipTpSetSocketListener(&tpSetting.serverUdpInfo[i].local, false, &pAppListener->local);
+        if(pAppListener->fd < 0)
+        {
+            logError("fails to create UDP listener for (%r:%d).", &tpSetting.serverUdpInfo[i].local.ip, tpSetting.serverUdpInfo[i].local.port);
+            goto EXIT;
+        }
+
+        osList_append(&tpUdpListenerList, pAppListener);
+
+		debug("udp listening fd =%d (ip=%r, port=%d, appType=%d) is added into epoll fd (%d).", pAppListener->fd, &tpSetting.serverUdpInfo[i].local.ip, tpSetting.serverUdpInfo[i].local.port, pAppListener->appType, tpEpFd);
+	}
 
     //create TCP listening socket
 	for(int i=0; i< tpSetting.tcpInfoNum; i++)
 	{
-		int tcpListenFd = sipTpSetTcpListener(&tpSetting.serverTcpInfo[i].local);
-		if(tcpListenFd < 0)
-		{
-			logError("fails to create TCP listener for (%r:%d).", &tpSetting.serverTcpInfo[i].local.ip, tpSetting.serverTcpInfo[i].local.port);
-			goto EXIT;
-		}
-
 		tpListenerInfo_t* pAppListener = osmalloc(sizeof(tpListenerInfo_t), NULL);
 		if(!pAppListener)
 		{
-			logError("fails to osmalloc for pAppListener, fd=%d, appType=%d.", tcpListenFd, tpSetting.serverTcpInfo[i].appType);
+            logError("fails to osmalloc for pAppListener for local ip=%r, port=%d, appType=%d.", &tpSetting.serverTcpInfo[i].local.ip, tpSetting.serverTcpInfo[i].local.port, tpSetting.serverTcpInfo[i].appType);
 			goto EXIT;
 		}
+        pAppListener->appType = tpSetting.serverTcpInfo[i].appType;
 
-		pAppListener->tcpFd = tcpListenFd;
-		pAppListener->appType = tpSetting.serverTcpInfo[i].appType;
-		osList_append(&tpListenerList, pAppListener);
+        pAppListener->fd = sipTpSetSocketListener(&tpSetting.serverTcpInfo[i].local, true, &pAppListener->local);
+        if(pAppListener->fd < 0)
+        {
+            logError("fails to create TCP listener for (%r:%d).", &tpSetting.serverTcpInfo[i].local.ip, tpSetting.serverTcpInfo[i].local.port);
+            goto EXIT;
+        }
 
-    	debug("tcp listening fd =%d (ip=%r, port=%d, appType=%d) is added into epoll fd (%d).", tcpListenFd, &tpSetting.serverTcpInfo[i].local.ip, tpSetting.serverTcpInfo[i].local.port, tpSetting.serverTcpInfo[i].appType, tpEpFd);
+		osList_append(&tpTcpListenerList, pAppListener);
+
+    	debug("tcp listening fd =%d (ip=%r, port=%d, appType=%d) is added into epoll fd (%d).", pAppListener->fd, &tpSetting.serverTcpInfo[i].local.ip, tpSetting.serverTcpInfo[i].local.port, pAppListener->appType, tpEpFd);
 	}
 
 	transportAppType_e appType;
+	tpListenerInfo_t* pListenerInfo;
 	ssize_t len;
 	size_t bufLen;
 	char* buffer;
@@ -225,7 +256,8 @@ void* transportMainStart(void* pData)
                     sipTpServerOnIpcMsg(&ipcMsg);
 				}
 			}
-			else if(events[i].data.fd == sipUdpFd)
+			else if((pListenerInfo = tpIsListenFd(events[i].data.fd, false, &appType)) != NULL)
+			//else if(events[i].data.fd == sipUdpFd)
 			{
 				//char* udpRcv[SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE];
 				while(1)
@@ -233,16 +265,16 @@ void* transportMainStart(void* pData)
 					struct sockaddr_in peerAddr;
 					int peerAddrLen = sizeof(peerAddr);
 				//	udpBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
-					len = recvfrom(sipUdpFd, udpRcv, SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE, MSG_DONTWAIT, (struct sockaddr *) &peerAddr, &peerAddrLen);
+					len = recvfrom(events[i].data.fd, udpRcv, SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE, MSG_DONTWAIT, (struct sockaddr *) &peerAddr, &peerAddrLen);
 					if(len == -1 && (errno == EWOULDBLOCK || errno == EAGAIN || errno == EBADF))
 					{
-						debug("EAGAIN received for udpfd(%d).", sipUdpFd);
+						debug("EAGAIN received for udpfd(%d).", events[i].data.fd);
 						break;
 					}
 
 					if(len < 10)
 					{
-						debug("received udp message with len(%d) less than minimum packet size for udp (%d).", len, sipUdpFd);
+						debug("received udp message with len(%d) less than minimum packet size for udp (%d).", len, events[i].data.fd);
 						continue;
 					}
 
@@ -251,10 +283,10 @@ void* transportMainStart(void* pData)
 
 					debug("to-remove, peer=%A.", &peerAddr);
 					udpBuf->end = len;
-					tpServerForwardMsg(TRANSPORT_APP_TYPE_SIP, udpBuf, -1, &peerAddr);
+					tpServerForwardMsg(pListenerInfo->appType, udpBuf, -1, &peerAddr, &pListenerInfo->local);
 				}
 			}
-			else if(tpIsListenFd(events[i].data.fd, &appType))
+			else if((pListenerInfo = tpIsListenFd(events[i].data.fd, true, &appType)) != NULL)
 			{
 				struct sockaddr tcpPeer;
 				int tcpAddrLen = sizeof(tcpPeer);
@@ -282,7 +314,7 @@ void* transportMainStart(void* pData)
                 mlogInfo(LM_TRANSPORT, "accepted a tcp connection, tcpFd=%d, added into epoll fd(%d)", tcpfd, tpEpFd);
 
 				//add into tcm
-				osStatus_e status = tpTcmAddFd(tcpfd, (struct sockaddr_in*) &tcpPeer, appType);
+				osStatus_e status = tpTcmAddFd(tcpfd, (struct sockaddr_in*) &tcpPeer, &pListenerInfo->local, appType);
 				if(status != OS_STATUS_OK)
 				{
 					mlogInfo(LM_TRANSPORT, "fails to tpTcmAddFd for tcpfd(%d), appType(%d), close this fd.", tcpfd, appType);
@@ -298,14 +330,14 @@ void* transportMainStart(void* pData)
 					//if was found that events may return 0x14, 0x201c, and tcp connect() may still return properly.  Also, return from epoll_wait() may be before or after connect() return() (probably due to multi threads).  EPOLLHUP means th assigned fd is not useable, probably due to previous close has not completely done in the OS due to underneith TCP mechanism.  Waiting a little bit, EPOLLHUP shall be cleared for the fd by the OS.  it is observed that when I killed an app by doing ctrl-c, then restarts the app, the same fd will be returned after the app called socket().  but when performing connect() using the reassigned fd, EPOLLHUP may return.  waiting a bit to redo, EPOLLHUP would not be returned   
                     if(events[i].events & (EPOLLERR|EPOLLHUP))
                     {
-						debug("received event=0x%x, close the connection (fd=%d), notifying app.", events[i].events, events[i].data.fd);
+						logInfo("received event=0x%x, close the connection (fd=%d), notifying app.", events[i].events, events[i].data.fd);
 						tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
                         //close(events[i].data.fd);	
                         //tpDeleteTcm(events[i].data.fd);
                     }
                     else
                     {
-                        debug("fd(%d) is conncted, events=0x%x.", events[i].data.fd, events[i].events);
+                        logInfo("fd(%d) is conncted, events=0x%x.", events[i].data.fd, events[i].events);
 
                         event.events = EPOLLIN | EPOLLRDHUP;
                         event.data.fd = events[i].data.fd;
@@ -319,6 +351,7 @@ void* transportMainStart(void* pData)
 				//for all other already established TCP connections
 				if(events[i].events & EPOLLERR)
 				{
+					logInfo("received EPOLLERR, close the connection (fd=%d), notifying app.", events[i].data.fd);
 					tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
 					continue;
 				}
@@ -388,7 +421,7 @@ void* transportMainStart(void* pData)
 						if(events[i].events & EPOLLRDHUP)
 						{
 							//close the fd
-							debug("peer closed the TCP connection for tcpfd (%d).", events[i].data.fd);
+							logInfo("peer closed the TCP connection for tcpfd (%d).", events[i].data.fd);
                             tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
 							//close(events[i].data.fd);
 							//tpDeleteTcm(events[i].data.fd);
@@ -420,7 +453,7 @@ void* transportMainStart(void* pData)
 					if(isForwardMsg)
 					{
                     	int tcpFd = events[i].data.fd;
-                    	tpServerForwardMsg(pTcm->appType, aMsg, tcpFd, &pTcm->peer);	
+                    	tpServerForwardMsg(pTcm->appType, aMsg, tcpFd, &pTcm->peer, &pTcm->local);	
 					}
 				}
         	}
@@ -433,10 +466,6 @@ EXIT:
 	if(tpSetting.ownIpcFd >= 0)
 	{
         close(tpSetting.ownIpcFd[0]);
-	}
-	if(sipUdpFd >= 0)
-	{
-        close(sipUdpFd);
 	}
 
 	tpDeleteAllTcm();
@@ -550,6 +579,15 @@ static sipTransportStatus_e tpUdpSend(transportAppType_e appType, transportInfo_
 	{
 		logInfo("appType(%d) is not allowed to use UDP.", appType);
 		tpStatus = TRANSPORT_STATUS_FAIL;
+		goto EXIT;
+	}
+
+	int sipUdpFd = tpGetFdFromListener(&pTpInfo->local, false, false);
+	if(sipUdpFd == -1)
+	{
+		logError("there is no udp fd for local(%A).", &pTpInfo->local);
+		tpStatus = TRANSPORT_STATUS_FAIL;
+		goto EXIT;
 	}
 
 	//for now, only allow sip to use UDP
@@ -678,7 +716,7 @@ static void sipTpServerForwardMsg(osMBuf_t* pSipBuf, int tcpFd, struct sockaddr_
 #endif
 
 
-static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int tcpFd, struct sockaddr_in* peer)
+static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int tcpFd, struct sockaddr_in* peer, struct sockaddr_in* local)
 {
     osIPCMsg_t ipcMsg;
 	//sipTransportMsgBuf_t* pMsg;
@@ -697,6 +735,10 @@ static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int t
     		{
         		pSipMsg->peer = *peer;
     		}
+            if(local)
+            {
+                pSipMsg->local = *local;
+            }
 			break;
 		case TRANSPORT_APP_TYPE_DIAMETER:
 			ipcMsg.interface = OS_DIA_TRANSPORT;
@@ -707,6 +749,10 @@ static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int t
             if(peer)
             {
                 pDiaMsg->peer = *peer;
+            }
+            if(local)
+            {
+                pDiaMsg->local = *local;
             }
 			break;	
         case TRANSPORT_APP_TYPE_UNKNOWN:
@@ -753,82 +799,87 @@ static void sipTpServerTimeout(uint64_t timerId, void* ptr)
 }
 	
 
-static int sipTpSetTcpListener(transportIpPort_t* pIpPort)
+static int sipTpSetSocketListener(transportIpPort_t* pIpPort, bool isTcp, struct sockaddr_in* pLocalAddr)
 {
-	int tcpListenFd = -1;
-	struct sockaddr_in localAddr;
+	int listenFd = -1;
 
-    memset(&localAddr, 0, sizeof(localAddr));
+    memset(pLocalAddr, 0, sizeof(struct sockaddr_in));
 
-    if(tpConvertPLton(pIpPort, true, &localAddr) != OS_STATUS_OK)
+    if(tpConvertPLton(pIpPort, true, pLocalAddr) != OS_STATUS_OK)
     {
         logError("fails to tpConvertPLton for TCP, IP=%r, port=%d.", &pIpPort->ip, pIpPort->port);
         goto EXIT;
     }
 
     //create TCP listening socket
-    if((tcpListenFd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)) < 0)
+    if((listenFd = socket(AF_INET, isTcp ? SOCK_STREAM:SOCK_DGRAM | SOCK_NONBLOCK, 0)) < 0)
     {
-        logError("fails to create TCP socket.");
+        logError("fails to create %s socket.", isTcp ? "TCP":"UDP");
         goto EXIT;
     }
 
 	int opt = 1;
-    if(setsockopt(tcpListenFd,SOL_SOCKET,SO_REUSEPORT, &opt, sizeof(int)) != 0)
+    if(setsockopt(listenFd,SOL_SOCKET,SO_REUSEPORT, &opt, sizeof(int)) != 0)
     {
         logError("fails to setsockopt for SO_REUSEPORT.");
-		tcpListenFd = -1;
+		listenFd = -1;
         goto EXIT;
     }
 
     // Bind the socket with the server address
-    if(bind(tcpListenFd, (const struct sockaddr *)&localAddr, sizeof(localAddr)) < 0 )
+    if(bind(listenFd, (const struct sockaddr *)pLocalAddr, sizeof(struct sockaddr_in)) < 0 )
     {
-        logError("tcpListenSocket bind fails, tcpListenfd=%d.", tcpListenFd);
-		tcpListenFd = -1;
+        logError("tcpListenSocket bind fails, tcpListenfd=%d.", listenFd);
+		listenFd = -1;
         goto EXIT;
     }
 
-    if(listen(tcpListenFd, 5) != 0)
-    {
-        logError("fails to ,listen tcpListenFd (%d), errno=%d.", tcpListenFd, errno);
-		tcpListenFd = -1;
-        goto EXIT;
-    }
-
+	if(isTcp)
+	{
+    	if(listen(listenFd, 5) != 0)
+    	{
+        	logError("fails to ,listen listenFd (%d), errno=%d.", listenFd, errno);
+			listenFd = -1;
+        	goto EXIT;
+    	}
+	}
+	
     struct epoll_event event;
 	event.events = EPOLLIN;
-    event.data.fd = tcpListenFd;
-    if(epoll_ctl(tpEpFd, EPOLL_CTL_ADD, tcpListenFd, &event))
+    event.data.fd = listenFd;
+    if(epoll_ctl(tpEpFd, EPOLL_CTL_ADD, listenFd, &event))
     {
-        logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", sipUdpFd, tpEpFd, errno);
-		tcpListenFd = -1;
+        logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", listenFd, tpEpFd, errno);
+		listenFd = -1;
         goto EXIT;
     }
 
-    debug("tcpListenFd(%d) is added into epoll fd (%d).", tcpListenFd, tpEpFd);
+    debug("%s listening fd=%d(ip=%r, port=%d) is added into epoll fd (%d).", isTcp ? "TCP":"UDP", listenFd, &pIpPort->ip, pIpPort->port, tpEpFd);
 
 EXIT:
-	return tcpListenFd;
+	return listenFd;
 }
 
 
-static bool tpIsListenFd(int fd, transportAppType_e* appType)
+static tpListenerInfo_t* tpIsListenFd(int fd, bool isTcp, transportAppType_e* appType)
 {
-	osListElement_t* pLE = tpListenerList.head;
+	tpListenerInfo_t* pListenInfo = NULL;
+
+	osListElement_t* pLE = isTcp ? tpTcpListenerList.head : tpUdpListenerList.head;
 	while(pLE)
 	{
-		if(((tpListenerInfo_t*)pLE->data)->tcpFd == fd)
+		if(((tpListenerInfo_t*)pLE->data)->fd == fd)
 		{
-			*appType = ((tpListenerInfo_t*)pLE->data)->appType;
-			return true;
+			pListenInfo = pLE->data;
+			*appType = pListenInfo->appType;
+			return pListenInfo;
 		}
 
 		pLE = pLE->next;
 	}
 
 	*appType = TRANSPORT_APP_TYPE_UNKNOWN;
-	return false;
+	return NULL;
 }
 
 
@@ -934,3 +985,31 @@ int com_getTpFd()
 {
 	return tpEpFd;
 }
+
+
+static int tpGetFdFromListener(struct sockaddr_in* pLocal, bool isCheckPort, bool isTcp)
+{
+	osListElement_t* pLE = isTcp ? tpTcpListenerList.head : tpUdpListenerList.head;
+	while(pLE)
+	{
+		if(isCheckPort)
+		{
+			if(osIsSameSA(pLocal, &((tpListenerInfo_t*)pLE->data)->local))
+			{
+				return ((tpListenerInfo_t*)pLE->data)->fd;
+			}
+		}
+		else
+		{
+			if(pLocal->sin_addr.s_addr == ((tpListenerInfo_t*)pLE->data)->local.sin_addr.s_addr)
+			{
+				return ((tpListenerInfo_t*)pLE->data)->fd;
+			}
+		}
+
+		pLE = pLE->next;
+	}
+
+	return -1;
+}	
+

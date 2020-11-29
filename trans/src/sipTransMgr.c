@@ -38,7 +38,7 @@ static sipTransaction_t* sipTransHashLookup(osHash_t* sipTransHash, sipTransInfo
 static void sipTransTimerFunc(uint64_t timerId, void* ptr);
 static bool sipTrans_transIdCmp(osListElement_t *le, void *data);
 static osStatus_e sipDecodeTransInfo(sipMsgBuf_t* pSipMsgBuf, sipTransInfo_t* pTransId);
-static void sipTrans_delete(void* pData);
+static void sipTrans_cleanup(void* pData);
 static void sipTransHashData_delete(void* pData);
 
 //to-do, shall we add __thread?
@@ -146,10 +146,11 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
 	//check if is a ACK.  For ACK message, send to TU to find pTrans
 	if(sipTransInfo.isRequest && sipTransInfo.transId.reqCode == SIP_METHOD_ACK)
 	{
-		sipTUMsg_t ackMsg2TU={};
-		ackMsg2TU.sipMsgType = SIP_MSG_REQUEST;
-		ackMsg2TU.pSipMsgBuf = &sipMsgBuf;
-		ackMsg2TU.pSipMsgBuf->reqCode = SIP_METHOD_ACK;
+		sipTUMsg_t* pAckMsg2TU = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+		pAckMsg2TU->sipTuMsgType = SIP_TU_MSG_TYPE_MESSAGE;
+		pAckMsg2TU->sipMsgType = SIP_MSG_REQUEST;
+		pAckMsg2TU->sipMsgBuf = sipMsgBuf;
+		pAckMsg2TU->sipMsgBuf.reqCode = SIP_METHOD_ACK;
 		
 		//for ACK, we do not need to store peer address	
 #if 0	//use network address
@@ -158,11 +159,14 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
         inet_ntop(AF_INET, &((sipTransportMsgBuf_t*) sipBuf)->peer.sin_addr, (char*)&ipaddr, INET_ADDRSTRLEN);
         osPL_setStr(&peer.ip, (const char *)&ipaddr, 0);
         peer.port = ntohs(((sipTransportMsgBuf_t*) sipBuf)->peer.sin_port);
-		ackMsg2TU.pPeer = &peer;
+		pAckMsg2TU->pPeer = &peer;
 #else
-		ackMsg2TU.pPeer = &((sipTransportMsgBuf_t*) sipBuf)->peer;
-#endif	
-		sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &ackMsg2TU);
+		pAckMsg2TU->pPeer = &((sipTransportMsgBuf_t*) sipBuf)->peer;
+#endif
+			
+		sipTU_onMsg(pAckMsg2TU->sipTuMsgType, pAckMsg2TU);
+		osfree(pAckMsg2TU);
+
 		goto EXIT;
 	}
 
@@ -187,7 +191,7 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
 				goto EXIT;
 			}
 
-			pTrans = oszalloc(sizeof(sipTransaction_t), sipTrans_delete);
+			pTrans = oszalloc(sizeof(sipTransaction_t), sipTrans_cleanup);
             pTrans->state = SIP_TRANS_STATE_NONE;
 			pHashData->pData = pTrans;
 			pTrans->req = sipMsgBuf;
@@ -196,8 +200,8 @@ osStatus_e sipTrans_onPeerMsg(sipTransportMsgBuf_t* sipBuf)
 			pTrans->tpInfo.tpType = pTrans->tpInfo.tcpFd == -1 ? SIP_TRANSPORT_TYPE_ANY : SIP_TRANSPORT_TYPE_TCP; 
 			pTrans->tpInfo.isCom = ((sipTransportMsgBuf_t*) sipBuf)->isCom;
             pTrans->tpInfo.peer = ((sipTransportMsgBuf_t*) sipBuf)->peer;
-            debug("to-remove, pTrans=%p, received (sipTransportMsgBuf_t*) sipBuf=%p, tcpFd=%d, isCom=%d, pTrans->tpInfo.tcpFd=%d, pTrans->tpInfo.tpType=%d.", pTrans, sipBuf, ((sipTransportMsgBuf_t*) sipBuf)->tcpFd, ((sipTransportMsgBuf_t*) sipBuf)->isCom, pTrans->tpInfo.tcpFd, pTrans->tpInfo.tpType);
-logError("to-remove, PEER=%A", &pTrans->tpInfo.peer);
+			pTrans->tpInfo.local = ((sipTransportMsgBuf_t*) sipBuf)->local;
+            debug("to-remove, pTrans=%p, received (sipTransportMsgBuf_t*) sipBuf=%p, tcpFd=%d, isCom=%d, pTrans->tpInfo.tcpFd=%d(peer=%A, local=%A), pTrans->tpInfo.tpType=%d.", pTrans, sipBuf, ((sipTransportMsgBuf_t*) sipBuf)->tcpFd, ((sipTransportMsgBuf_t*) sipBuf)->isCom, pTrans->tpInfo.tcpFd, &pTrans->tpInfo.peer, &pTrans->tpInfo.local, pTrans->tpInfo.tpType);
 
             pHashData->hashKeyType = OSHASHKEY_INT;
             pHashData->hashKeyInt = hashKey;
@@ -309,7 +313,7 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
                 goto EXIT;
             }
 
-            sipTransaction_t* pTrans = oszalloc(sizeof(sipTransaction_t), sipTrans_delete);
+            sipTransaction_t* pTrans = oszalloc(sizeof(sipTransaction_t), sipTrans_cleanup);
             pHashData->pData = pTrans;
             pTrans->state = SIP_TRANS_STATE_NONE;
             pTrans->req.pSipMsg = osmemref(pSipTUMsg->request.sipTrMsgBuf.sipMsgBuf.pSipMsg);
@@ -597,7 +601,7 @@ EXIT:
 }
 
 
-static void sipTrans_delete(void* pData)
+static void sipTrans_cleanup(void* pData)
 {
 	DEBUG_BEGIN
 

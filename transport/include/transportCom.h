@@ -26,8 +26,10 @@ typedef struct sipTransportServerSetting {
 	int ownIpcFd[2];
     int timerfd;		//this is the write end of the timer module
 	uint8_t tcpInfoNum;
+	uint8_t udpInfoNum;
 	tpServerTcpInfo_t serverTcpInfo[TRANSPORT_MAX_TCP_LISTENER_NUM];
-	transportIpPort_t udpLocal;	//for now, only one for SIP
+	tpServerTcpInfo_t serverUdpInfo[TRANSPORT_MAX_UDP_LISTENER_NUM];	//to replace udpLocal
+//	transportIpPort_t udpLocal;	//for now, only one for SIP
 	int lbFd[SIP_CONFIG_TRANSACTION_THREAD_NUM];
 } transportMainSetting_t;
 

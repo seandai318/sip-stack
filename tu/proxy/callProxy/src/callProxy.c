@@ -246,16 +246,16 @@ osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t
 		goto EXIT;
 	}
 
-	if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_ACK)
+	if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_ACK)
 	{
 		logInfo("received ACK in SIP_CALLPROXY_STATE_INIT_NONE state, do nothing.");
 		status = OS_ERROR_INVALID_VALUE;
 		goto EXIT;
 	}
 
-	if(pSipTUMsg->pSipMsgBuf->reqCode != SIP_METHOD_INVITE)
+	if(pSipTUMsg->sipMsgBuf.reqCode != SIP_METHOD_INVITE)
 	{
-		logError("receives unexpected sip message type (%d).", pSipTUMsg->pSipMsgBuf->reqCode);
+		logError("receives unexpected sip message type (%d).", pSipTUMsg->sipMsgBuf.reqCode);
 		sipProxy_uasResponse(SIP_RESPONSE_503, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
         status = OS_ERROR_INVALID_VALUE;
         goto EXIT;
@@ -328,7 +328,7 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
     //to-do, for now, we do not check if the top route is this proxy, just assume it is, and remove it
     bool isMultiRoute = sipMsg_isHdrMultiValue(SIP_HDR_ROUTE, pReqDecodedRaw, false, NULL);
 
-    transportIpPort_t nextHop;
+    sipTuAddr_t nextHop={};
     if(!isMultiRoute)
     {
         bool isNextHopDone = false;
@@ -360,16 +360,16 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
                 goto EXIT;
             }
 
-            nextHop.ip = pTargetUri->hostport.host;
-            nextHop.port = pTargetUri->hostport.portValue;
+            nextHop.ipPort.ip = pTargetUri->hostport.host;
+            nextHop.ipPort.port = pTargetUri->hostport.portValue;
             isNextHopDone = true;
         }
         //first check if there is next hop configured
-        else if(proxyConfig_getNextHop(&nextHop))
+        else if(proxyConfig_getNextHop(&nextHop.ipPort))
         {
 			tempTargetUri.sipUriType = URI_TYPE_SIP;
-			tempTargetUri.hostport.host = nextHop.ip;
-			tempTargetUri.hostport.portValue = nextHop.port;
+			tempTargetUri.hostport.host = nextHop.ipPort.ip;
+			tempTargetUri.hostport.portValue = nextHop.ipPort.port;
 			pTargetUri = &tempTargetUri;
             isNextHopDone = true;
         }
@@ -378,10 +378,10 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
         if(!isNextHopDone)
         {
             sipFirstline_t firstLine;
-            status = sipParser_firstLine(pSipTUMsg->pSipMsgBuf->pSipMsg, &firstLine, true);
-            nextHop.ip = firstLine.u.sipReqLine.sipUri.hostport.host;
-            nextHop.port = firstLine.u.sipReqLine.sipUri.hostport.portValue;
-            logInfo("there is no route left, no configured next hop and this proxy does not support registrar, route based on req URI (%r:%d).", &nextHop.ip, nextHop.port);
+            status = sipParser_firstLine(pSipTUMsg->sipMsgBuf.pSipMsg, &firstLine, true);
+            nextHop.ipPort.ip = firstLine.u.sipReqLine.sipUri.hostport.host;
+            nextHop.ipPort.port = firstLine.u.sipReqLine.sipUri.hostport.portValue;
+            logInfo("there is no route left, no configured next hop and this proxy does not support registrar, route based on req URI (%r:%d).", &nextHop.ipPort.ip, nextHop.ipPort.port);
         }
 	}
 
@@ -394,8 +394,16 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
 
 	sipHdrCSeq_getValue(pReqDecodedRaw, &pCallInfo->seqNum, NULL);
 #endif
-	osDPL_dup((osDPointerLen_t*)&pCallInfo->cancelNextHop.ip, &nextHop.ip);
-	pCallInfo->cancelNextHop.port = nextHop.port;
+	if(nextHop.isSockAddr)
+	{
+		pCallInfo->cancelNextHop = nextHop;
+	}
+	else
+	{
+		pCallInfo->cancelNextHop.isSockAddr = true;
+        osIpPort_t ipPort = {{nextHop.ipPort.ip, false, false}, nextHop.ipPort.port};
+        osConvertPLton(&ipPort, true, &pCallInfo->cancelNextHop.sockAddr);
+	}
 
 #if 0
     pCallInfo->state = SIP_CALLPROXY_STATE_INIT_INVITE;
@@ -439,7 +447,15 @@ logError("to-remvoe, just to check the creation of a address.");
 
 	void* pTransId = NULL;
 	sipProxy_msgModInfo_t msgModInfo = {true, true};
-	status = sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, pTargetUri, &msgModInfo, &nextHop, false, pCallInfo->pProxyInfo, &pTransId);
+#if 1	//to be replaxced to change pTargetUri type to sipTuUri_t, to-do
+	sipTuUri_t targetUri;
+	if(pTargetUri)
+	{
+		targetUri.isRaw = false;
+		targetUri.sipUri = *pTargetUri;
+	}
+#endif
+	status = sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, pTargetUri ? &targetUri : NULL, &msgModInfo, &nextHop, false, pCallInfo->pProxyInfo, &pTransId);
 	if(status != OS_STATUS_OK || !pTransId)
 	{
 		logError("fails to forward sip request, status=%d, pTransId=%p.", status, pTransId);
@@ -494,15 +510,15 @@ osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRa
     {
         case SIP_MSG_REQUEST:
 		{
-			debug("received a sip request, reqCode=%d.", pSipTUMsg->pSipMsgBuf->reqCode);
-			if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_INVITE || pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_ACK || pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_BYE)
+			debug("received a sip request, reqCode=%d.", pSipTUMsg->sipMsgBuf.reqCode);
+			if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_INVITE || pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_ACK || pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_BYE)
 			{
-				logError("received unexpected request(%d), this usually shall not happen, ignore.", pSipTUMsg->pSipMsgBuf->reqCode);
+				logError("received unexpected request(%d), this usually shall not happen, ignore.", pSipTUMsg->sipMsgBuf.reqCode);
 				status = OS_ERROR_INVALID_VALUE;
 				goto EXIT;
 			}
 			
-			if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_CANCEL)
+			if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_CANCEL)
 			{
 				//check if seqNum matches, if yes, send back 200 OK response right away
 				if(pCallInfo->seqNum == seqNum)
@@ -529,13 +545,13 @@ osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRa
 				
             }
 
-            callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->pSipMsgBuf->reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
+            callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
 
 		 	break;
 		}
         case SIP_MSG_RESPONSE:
 		{
-			debug("received a sip response, rspCode=%d.", pSipTUMsg->pSipMsgBuf->rspCode);
+			debug("received a sip response, rspCode=%d.", pSipTUMsg->sipMsgBuf.rspCode);
 
 			//check the seq num, and method, if seq and method match, if 1xx, restart timerC, and forward the response, if 2xx, change state, and stop timer C.  if >300, stop timerC, close the session. if not match, simply forward the response, stay in the same state.  Do not expect to receive response for CANCEL as transaction layer will drop it.
 			sipCallProxyState_e newState = pCallInfo->state;
@@ -543,11 +559,11 @@ debug("to-remove, pCallInfo->seqNum=%d, seqNum=%d, seqEqual=%d, method=%r, osPL_
 			if(pCallInfo->seqNum == seqNum && osPL_strcmp(&method, "INVITE")==0)
 			{
 debug("to-remove, I am here.");
-				if(pSipTUMsg->pSipMsgBuf->rspCode > SIP_RESPONSE_100 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_200)
+				if(pSipTUMsg->sipMsgBuf.rspCode > SIP_RESPONSE_100 && pSipTUMsg->sipMsgBuf.rspCode < SIP_RESPONSE_200)
 				{
 					pCallInfo->timerIdC = osRestartTimer(pCallInfo->timerIdC);
 				}
-				else if(pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_300)
+				else if(pSipTUMsg->sipMsgBuf.rspCode >= SIP_RESPONSE_200 && pSipTUMsg->sipMsgBuf.rspCode < SIP_RESPONSE_300)
 				{
 					osStopTimer(pCallInfo->timerIdC);
 					pCallInfo->timerIdWaitAck = osStartTimer(SIP_TIMER_WAIT_ACK, callProxy_onTimeout, pCallInfo);
@@ -582,7 +598,7 @@ debug("to-remove, before sipProxy_forwardResp.");
 				}
 
 				bool isRemove = false;
-				if(pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200)
+				if(pSipTUMsg->sipMsgBuf.rspCode >= SIP_RESPONSE_200)
 				{
 					isRemove = true;
 				}
@@ -620,12 +636,12 @@ static osStatus_e callProxyStateInitError_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDec
         case SIP_MSG_REQUEST:
         {
             //drop CANCEL
-            if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_CANCEL && seqNum == pCallInfo->seqNum)
+            if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_CANCEL && seqNum == pCallInfo->seqNum)
             {
                 sipProxy_uasResponse(SIP_RESPONSE_404, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
                 goto EXIT;
             }
-            else if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_ACK && seqNum == pCallInfo->seqNum)
+            else if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_ACK && seqNum == pCallInfo->seqNum)
             {
 				sipTransMsg_t ackMsg2Tr;
 				sipTransInfo_t sipTransInfo;
@@ -634,7 +650,7 @@ static osStatus_e callProxyStateInitError_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDec
 
 				ackMsg2Tr.sipMsgType = SIP_TRANS_MSG_CONTENT_ACK;
 				ackMsg2Tr.isTpDirect = false;
-				ackMsg2Tr.request.sipTrMsgBuf.sipMsgBuf = *pSipTUMsg->pSipMsgBuf;
+				ackMsg2Tr.request.sipTrMsgBuf.sipMsgBuf = pSipTUMsg->sipMsgBuf;
 				ackMsg2Tr.request.pTransInfo = &sipTransInfo;
 				ackMsg2Tr.pTransId = sipProxy_getPairPrimaryUasTrId(&pCallInfo->proxyTransInfo);
 
@@ -643,7 +659,7 @@ static osStatus_e callProxyStateInitError_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDec
 			break;
 		}
 		default:
-			logInfo("received a sip response(%d) in SIP_CALLPROXY_STATE_INIT_ERROR , ignore.", pSipTUMsg->pSipMsgBuf->rspCode);	
+			logInfo("received a sip response(%d) in SIP_CALLPROXY_STATE_INIT_ERROR , ignore.", pSipTUMsg->sipMsgBuf.rspCode);	
 			break;
 	}
 
@@ -673,12 +689,12 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
         case SIP_MSG_REQUEST:
 		{
 			//drop CANCEL
-			if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_CANCEL && seqNum == pCallInfo->seqNum)
+			if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_CANCEL && seqNum == pCallInfo->seqNum)
             {
                 sipProxy_uasResponse(SIP_RESPONSE_200, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
 				goto EXIT;
             }
-			else if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_INVITE)
+			else if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_INVITE)
             {
                 //not allow re-invite at this state
                 sipProxy_uasResponse(SIP_RESPONSE_403, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
@@ -687,7 +703,7 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 
 			void* pUacTransId;
 			bool isTpDirect = false;
-			if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_ACK)
+			if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_ACK)
 			{
 				isTpDirect = true;
 			}
@@ -700,17 +716,17 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 				goto EXIT;
             }
 
-			if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_BYE)
+			if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_BYE)
 			{
 				osStopTimer(pCallInfo->timerIdWaitAck);
 				pCallInfo->timerIdWaitAck = 0;
 
 				callProxyEnterState(SIP_CALLPROXY_STATE_BYE, pCallInfo);
 			}
-			else if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_ACK)
+			else if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_ACK)
 			{
                 //need to free the buf allocated for the ACK message after forwarding the request.
-                osfree(pSipTUMsg->pSipMsgBuf->pSipMsg);
+                osfree(pSipTUMsg->sipMsgBuf.pSipMsg);
 
 				if(seqNum == pCallInfo->seqNum)
 				{
@@ -723,7 +739,7 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 			}
 			else
 			{
-				callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->pSipMsgBuf->reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
+				callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
 			}		
 	
 			break;
@@ -735,7 +751,7 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
             if(pCallInfo->seqNum == seqNum && osPL_strcmp(&method, "INVITE")==0)
 			{
 				//continue forward 200 OK, for the primary session, otherwise, drop
-				if(pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_300)
+				if(pSipTUMsg->sipMsgBuf.rspCode >= SIP_RESPONSE_200 && pSipTUMsg->sipMsgBuf.rspCode < SIP_RESPONSE_300)
 				{
 					isPrimary = true;
 				}
@@ -744,7 +760,7 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 					goto EXIT;
 				}
 			}
-            else if(pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200)
+            else if(pSipTUMsg->sipMsgBuf.rspCode >= SIP_RESPONSE_200)
             {
                 isRemove = true;
             }
@@ -789,9 +805,9 @@ osStatus_e callProxyStateInitAck_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHd
 			void* pUacTransId;
 		    sipProxy_msgModInfo_t msgModInfo = {true, true};
             status = sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, NULL, false, pCallInfo->pProxyInfo, &pUacTransId);
-            callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->pSipMsgBuf->reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
+            callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
 
-            if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_BYE)
+            if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_BYE)
             {
                 callProxyEnterState(SIP_CALLPROXY_STATE_BYE, pCallInfo);
             }
@@ -800,7 +816,7 @@ osStatus_e callProxyStateInitAck_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHd
         case SIP_MSG_RESPONSE:
         {
             bool isRemove = false;
-            if(pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200)
+            if(pSipTUMsg->sipMsgBuf.rspCode >= SIP_RESPONSE_200)
             {
                 isRemove = true;
             }
@@ -840,11 +856,11 @@ osStatus_e callProxyStateBye_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t*
     switch(pSipTUMsg->sipMsgType)
     {
         case SIP_MSG_REQUEST:
-			if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_CANCEL)
+			if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_CANCEL)
 			{
                 sipProxy_uasResponse(SIP_RESPONSE_200, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
 			}
-			else if(pSipTUMsg->pSipMsgBuf->reqCode != SIP_METHOD_ACK)
+			else if(pSipTUMsg->sipMsgBuf.reqCode != SIP_METHOD_ACK)
 			{
                 sipProxy_uasResponse(SIP_RESPONSE_403, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
 			}
@@ -858,7 +874,7 @@ osStatus_e callProxyStateBye_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t*
                 status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo);
             }
 
-			if(osPL_strcmp(&method, "BYE") == 0 && (pSipTUMsg->pSipMsgBuf->rspCode >= SIP_RESPONSE_200 && pSipTUMsg->pSipMsgBuf->rspCode < SIP_RESPONSE_300))
+			if(osPL_strcmp(&method, "BYE") == 0 && (pSipTUMsg->sipMsgBuf.rspCode >= SIP_RESPONSE_200 && pSipTUMsg->sipMsgBuf.rspCode < SIP_RESPONSE_300))
 			{
                 callProxyEnterState(SIP_CALLPROXY_STATE_NONE, pCallInfo);
 			}
@@ -966,6 +982,5 @@ static void callProxyInfo_cleanup(void* pData)
 	}
 
 	osDPL_dealloc(&pCallInfo->callId);
-	osDPL_dealloc((osDPointerLen_t*)&pCallInfo->cancelNextHop.ip);
 	osListPlus_delete(&pCallInfo->proxyTransInfo);
 }

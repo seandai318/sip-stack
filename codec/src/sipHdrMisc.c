@@ -17,7 +17,7 @@
 #include "sipConfig.h"
 #include "sipHeader.h"
 #include "sipMsgRequest.h"
-
+#include "sipHdrMisc.h"
 
 
 osStatus_e sipParserHdr_str(osMBuf_t* pSipMsg, size_t hdrEndPos, sipHdrStr_t* pCallid)
@@ -530,48 +530,39 @@ EXIT:
 }
 
 
-osStatus_e sipHdrCallId_createCallId(osPointerLen_t* pl)
+osStatus_e sipHdrCallId_createCallId(osPointerLen_t* callIdPl)
 {
 	osStatus_e status = OS_STATUS_OK;
 	char* callIdValue = NULL;
-	if(!pl)
+	if(!callIdPl)
 	{
-		logError("null pointer, pl.");
+		logError("null pointer, callIdPl.");
 		status = OS_ERROR_NULL_POINTER;
 		goto EXIT;
 	}
-
-    callIdValue = osmalloc(SIP_MAX_CALL_ID_LEN, NULL);
-    if(callIdValue == NULL)
-    {
-        logError("allocate callId memory fails.");
-        status = OS_ERROR_MEMORY_ALLOC_FAILURE;
-        goto EXIT;
-    }
-    pl->p = callIdValue;
 
     struct timespec tp;
     clock_gettime(CLOCK_REALTIME, &tp);
     srand(time(NULL));
     int randValue=rand();
 
-	pl->l = osPrintf_buffer(callIdValue, SIP_MAX_CALL_ID_LEN, "%lx%lx%x@%r", tp.tv_sec, tp.tv_nsec, randValue, sipConfig_getHostIP());
+	callIdPl->l = osPrintf_buffer((char*)callIdPl->p, SIP_HDR_MAX_SIZE, "%lx%lx%x@%r", tp.tv_sec, tp.tv_nsec, randValue, sipConfig_getHostIP());
 
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osfree(callIdValue);
-		pl->l = 0;
+		callIdPl->l = 0;
 	}
 
 	return status;
 }
 
 
-osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, osPointerLen_t* pCallId)
+osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, sipPointerLen_t* pCallId)
 {
 	osStatus_e status = OS_STATUS_OK;
-    osPointerLen_t pl={};
+    sipPointerLen_t pl= SIPPL_INIT(pl);
+	
 
 	if(!pSipBuf)
 	{
@@ -580,7 +571,18 @@ osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, osPointerLen_t* pCallId)
 		goto EXIT;
 	}
 
-	status = sipHdrCallId_createCallId(pCallId ? pCallId : &pl);
+	osPointerLen_t* pPL = NULL;
+	if(pCallId)
+	{
+		sipPL_init(pCallId);
+		pPL = &pCallId->pl;
+	}
+	else
+	{
+		pPL = &pl.pl;
+	}
+
+	status = sipHdrCallId_createCallId(pPL);
 	if(status != OS_STATUS_OK)
 	{
 		logError("fails to create call id.");
@@ -588,14 +590,10 @@ osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, osPointerLen_t* pCallId)
 	}
 
 	osMBuf_writeStr(pSipBuf, "Call-ID: ", true);
-	osMBuf_writePL(pSipBuf, pCallId ? pCallId : &pl, true);
+	osMBuf_writePL(pSipBuf, pPL, true);
 	osMBuf_writeStr(pSipBuf, "\r\n", true);
 
 EXIT:
-	if(!pCallId && status == OS_STATUS_OK)
-	{
-		osfree((void*)pl.p);
-	}
 
 	return status;
 }

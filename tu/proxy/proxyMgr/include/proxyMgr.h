@@ -31,7 +31,7 @@ typedef osStatus_e (*proxy_onMsgCallback) (sipTUMsgType_e msgType, sipTUMsg_t* p
 
 typedef struct proxyInfo {
 	proxy_onMsgCallback proxyOnMsg;	
-	void* pCallInfo;		//contains proxy user info
+	void* pCallInfo;	//contains proxy user info, like pRegInfo (scscfRegInfo_t) for scscf, etc. will be passed back as ((proxyInfo_t*)pSipTUMsg->pTUId)->pCallInfo when proxyOnMsg is called
 } proxyInfo_t;
 
 

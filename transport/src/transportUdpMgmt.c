@@ -76,13 +76,6 @@ tpLocalSendCallback_h tpUdpMgmtGetUdpCallback(int fd)
 	return NULL;
 }
 
-    transportAppType_e appType;
-    int fd;
-    struct sockaddr_in local;       //if local==0, the default local, which was passed in durint thread starts, will be used
-    tpLocalSendCallback_h callback;
-    uint64_t udpKeepAliveTimerId;   //if the udp is not used (measued by access of this data structure) for KA time, the udp socket will be closed.
-    uint32_t accessCount;           //will be cleared each time udpKeepAliveTimer timeout
-
 
 osStatus_e tpUdpMgmtSetFd(transportAppType_e appType, struct sockaddr_in localAddr, tpLocalSendCallback_h callback, int fd)
 {

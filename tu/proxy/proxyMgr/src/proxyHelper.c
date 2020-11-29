@@ -23,11 +23,11 @@
 
 
 //proxy forwards the request
-osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipUri_t* pTargetUri,  sipProxy_msgModInfo_t* pHdrModInfo, transportIpPort_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId)
+osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipTuUri_t* pTargetUri,  sipProxy_msgModInfo_t* pHdrModInfo, sipTuAddr_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId)
 
 {
 	osStatus_e status = OS_STATUS_OK;
-	transportIpPort_t nextHop;
+	sipTuAddr_t nextHop={};
 	osMBuf_t* pReq = NULL;
 
 	if(!pSipTUMsg || !pReqDecodedRaw || !proxyInfo ||!pHdrModInfo)
@@ -37,7 +37,7 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 		goto EXIT;
 	}
 
-	if(!pSipTUMsg->pSipMsgBuf->isRequest)
+	if(!pSipTUMsg->sipMsgBuf.isRequest)
 	{
 		logError("not a request.");
         status = OS_ERROR_INVALID_VALUE;
@@ -94,12 +94,12 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
     //forward the SIP INVITE, add top via, remove top Route, reduce the max-forarded by 1.  The viaId shall be filled with the real peer IP/port
 	if(pHdrModInfo->isAuto)
 	{
-	   	pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, true, &delList, delNum, &addList, addNum, &viaId, pTargetUri, &topViaProtocolPos);
+	   	pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, true, &delList, delNum, &addList, addNum, &viaId, pTargetUri, &topViaProtocolPos, NULL);
 	    osfree(ipPort);
 	}
 	else
 	{
-        pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, pHdrModInfo->isChangeCallId ? false:true, pHdrModInfo->extraDelHdr, pHdrModInfo->delNum, pHdrModInfo->extraAddHdr, pHdrModInfo->addNum, &viaId, pTargetUri, &topViaProtocolPos);
+        pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, pHdrModInfo->isChangeCallId ? false:true, pHdrModInfo->extraDelHdr, pHdrModInfo->delNum, pHdrModInfo->extraAddHdr, pHdrModInfo->addNum, &viaId, pTargetUri, &topViaProtocolPos, &pHdrModInfo->newCallId);
 	}
 
     if(!pReq)
@@ -114,22 +114,22 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 	if(pNextHop == NULL)
 	{
 		//get the 2nd route hostname if exists, otherwise, get from req Uri
-		status = sipProxy_getNextHopFrom2ndHdrValue(SIP_HDR_ROUTE, pReqDecodedRaw, &nextHop);
+		status = sipProxy_getNextHopFrom2ndHdrValue(SIP_HDR_ROUTE, pReqDecodedRaw, &nextHop.ipPort);
 		if(status != OS_STATUS_OK)
 		{
             goto EXIT;
         }
 
-		if(nextHop.ip.l == 0)
+		if(nextHop.ipPort.ip.l == 0)
 		{
             sipFirstline_t firstLine;
-            status = sipParser_firstLine(pSipTUMsg->pSipMsgBuf->pSipMsg, &firstLine, true);
-            nextHop.ip = firstLine.u.sipReqLine.sipUri.hostport.host;
-            nextHop.port = firstLine.u.sipReqLine.sipUri.hostport.portValue;
+            status = sipParser_firstLine(pSipTUMsg->sipMsgBuf.pSipMsg, &firstLine, true);
+            nextHop.ipPort.ip = firstLine.u.sipReqLine.sipUri.hostport.host;
+            nextHop.ipPort.port = firstLine.u.sipReqLine.sipUri.hostport.portValue;
 		}
 	}
 
-    void* pTransId = sipTU_sendReq2Tr(pSipTUMsg->pSipMsgBuf->reqCode, pReq, &viaId, pNextHop ? pNextHop : &nextHop, isTpDirect, SIPTU_APP_TYPE_PROXY, topViaProtocolPos, proxyInfo);
+    void* pTransId = sipTU_sendReq2Tr(pSipTUMsg->sipMsgBuf.reqCode, pReq, &viaId, pNextHop ? pNextHop : &nextHop, isTpDirect, SIPTU_APP_TYPE_PROXY, topViaProtocolPos, proxyInfo);
 	if(!pTransId && !isTpDirect)
 	{
 		logError("fails to sipTU_sendReq2Tr.");
@@ -156,7 +156,7 @@ osStatus_e sipProxy_forwardResp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
     transportIpPort_t nextHop;
     osMBuf_t* pResp = NULL;
 
-    if(pSipTUMsg->pSipMsgBuf->isRequest)
+    if(pSipTUMsg->sipMsgBuf.isRequest)
     {
         logError("not a response.");
 
@@ -177,7 +177,7 @@ osStatus_e sipProxy_forwardResp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
 	logInfo("the response message=\n%M", pResp);
 
 	//the peerViaIdx=1, as pReqDecodedRaw is what has been received from peer UAS, the top via is proxy itself
-	status = sipTU_sendRsp2Tr(pSipTUMsg->pSipMsgBuf->rspCode, pResp, pReqDecodedRaw, 1, pTransId, proxyInfo);
+	status = sipTU_sendRsp2Tr(pSipTUMsg->sipMsgBuf.rspCode, pResp, pReqDecodedRaw, 1, pTransId, proxyInfo);
 
 EXIT:
     //proxy does not need to keep pResp.  If other laters need it, it is expected they will add ref to it

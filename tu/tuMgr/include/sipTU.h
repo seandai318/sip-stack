@@ -7,12 +7,18 @@
 #ifndef _SIP_TU_H
 #define _SIP_TU_H
 
+
+#include <netinet/in.h>
+
 #include "osTypes.h"
 #include "osMBuf.h"
 #include "osPL.h"
 
+#include "dnsResolverIntf.h"
+
 #include "sipHeader.h"
 #include "sipMsgRequest.h"
+#include "sipHdrMisc.h"
 
 #include "sipTransIntf.h"
 
@@ -31,10 +37,43 @@ typedef struct sipHdrRawValueId {
 } sipHdrRawValueId_t;
 
 
+typedef struct {
+	union {
+		sipUri_t sipUri;
+		osPointerLen_t rawSipUri;
+	};
+	bool isRaw;		//intentionally put at the bottom, so that earlier used "sipUri_t* pReqlineUri" only needs to change data type from sipUri_t to sipTuUri_t, no need to create sipTuUri_t to reduce the impact.
+} sipTuUri_t;
+
+
+typedef struct {
+	bool isSockAddr;
+	transportType_e tpType; 
+	union {
+		transportIpPort_t ipPort;
+		struct sockaddr_in sockAddr;
+	};
+} sipTuAddr_t;
+
+
+typedef struct {
+	uint32_t minRegTime;
+	uint32_t maxRegTime;
+	uint32_t defaultRegTime;
+} sipTuRegTimeConfig_t;
+
+
+
+bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_t* pNextHop);
+bool sipTu_getBestNextHopByName(osPointerLen_t* pQName, sipTuAddr_t* pNextHop);
+bool sipTu_setDestFailure(osPointerLen_t* dest, struct sockaddr_in* destAddr);
+bool sipTu_replaceDest(osPointerLen_t* dest, sipTuAddr_t* pNextHop);
+
+void sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pRegExpire, sipTuRegTimeConfig_t regTimeConfig, sipResponse_e* pRspCode);
 
 //create a UAC request with req line, via, from, to, callId and max forward.  Other headers needs to be added by user as needed
 //be noted this function does not include the extra "\r\n" at the last of header, user needs to add it when completing the creation of a SIP message
-osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipUri_t* pReqlineUri, osPointerLen_t* called, osPointerLen_t* caller, sipTransViaInfo_t* pTransViaId, size_t* pViaProtocolPos);
+osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipTuUri_t* pReqlineUri, osPointerLen_t* called, osPointerLen_t* caller, sipTransViaInfo_t* pTransViaId, osPointerLen_t* pCallId, size_t* pViaProtocolPos);
 
 
 /* build a proxy request based on the received SIP reuest
@@ -42,7 +81,7 @@ osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipUri_t* pReqlineUri, osPoin
  * can also add/delete extra hdrs.
  * if isProxy=true, all received via headers will be included, otherwise, they will be removed
  */
-osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipUri_t* pReqlineUri, size_t* pProtocolViaPos);
+osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipTuUri_t* pReqlineUri, size_t* pProtocolViaPos, sipPointerLen_t* pCallId);
 
 /* build a proxy response based on the received SIP response
  * remove top via, and hdr in delHdrList, and add hdr in addHdrList
@@ -98,14 +137,14 @@ osStatus_e sipTU_asGetSescase(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool* isOri
 /* extract the AS user from the received SIP message */
 osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* sipUser, bool isOrigUser, bool isOrigAS);
 
-
+#if 0
 /*
  * branchExtraStr: a string that caller wants to be inserted into branch ID.
  * pParamList: list of sipHdrParamNameValue_t, like: sipHdrParamNameValue_t param1={{"comp", 4}, {"sigcomp", 7}};
  * pParamList: a list of header parameters other than branchId.
  */
 osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pParamList, osPointerLen_t* pBranchId, osPointerLen_t* pHost, uint32_t* pPort, size_t* pProtocolViaPos);
-
+#endif
 /* end the building of a sip message.  This shall be always called as the last method of a sip message building, except when isAddNullContent=true in sipTU_buildUasResponse and sipTU_buildUasRequest
  * isExistContent: true, there is content in the sip message, false: no content in the sip message
  */

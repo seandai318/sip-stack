@@ -1,6 +1,10 @@
 #ifndef _SCSCF_REGISTRAR_H
 #define _SCSCF_REGISTRAR_H
 
+
+#include "cscfConfig.h"
+
+
 typedef enum {
 	SCSCF_REG_STATE_NOT_REGISTERED,		//HSS has no UE server assignment record
 	SCSCF_REG_STATE_UN_REGISTERED,		//HSS has UE server assignment record due to SCSCF received a no-register request for the UE
@@ -45,21 +49,29 @@ typedef struct {
 	osListElement_t*	pRegHashLE;	//points to hash listElement that contains this identity
 } scscfRegIdentity_t;
 
-
+#if 0
 typedef struct {
 	osPointerLen_t impi;
 	osList_t impuList;			//each entry contains impuInfo_t
-	osList_t sIfcId;			//each entry contains a int, sorted from small to bigger
+	sIfcIdList_t sIfcIdList;	
+//	osList_t sIfcId;			//each entry contains a int, sorted from small to bigger
 } scscfUserProfile_t;
 
+
+typedef struct {
+    uint32_t sIfcId[SCSCF_MAX_ALLOWED_SIFC_ID_NUM];
+    uint32_t sIfcIdNum;
+} sIfcIdList_t;
+#endif
+
+#if 0
 typedef struct {
     osPointerLen_t impi;
     scscfImpuInfo_t impuInfo;
-    uint32_t sIfcId[SCSCF_MAX_ALLOWED_SIFC_ID_NUM];
+	sIfcIdList_t sIfcIdList;
     uint32_t impuNum;
-    uint32_t sIfcIdNum;
-} scscfRegUuserProfile_t;
-
+} scscfRegUserProfile_t;
+#endif
 
 typedef struct {
     osDPointerLen_t user;       //it keeps its own memory, not point to other place like sipMsgBuf
@@ -79,19 +91,31 @@ typedef struct {
 
 
 typedef enum {
-	SCSCF_REG_WORK_STATE_WAIT_DNS_ON_3RD_PARTY_REG,
+	SCSCF_REG_WORK_STATE_NONE,
 	SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE,
+	SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_NW_DEREG_RESPONSE,
 	SCSCF_REG_WORK_STATE_WAIT_MAA,
 	SCSCF_REG_WORK_STATE_WAIT_SAA,
 } scscfRegWorkState_e;
 
 
+typedef struct {
+	sipTuAddr_t asAddr;
+	osPointerLen_t asUri;
+	sipPointerLen_t callId;
+} scscfAsRegInfo_t;
+ 
+
 //this data structure stores info for short period of time, like during the UE initial registration procedure, etc.
 typedef struct {
 	scscfRegWorkState_e	regWorkState;	//indicating in what stage a registration is
     scscfRegSarRegType_e sarRegType;    //when not in SAR procedure, this shall be set to SCSCF_REG_SAR_INVALID
+	osPointerLen_t impi;
+	osPointerLen_t impu;
+	sipTUMsg_t* pTUMsg;
 	sipMsgDecodedRawHdr_t* pReqDecodedRaw;
     osListElement_t* pRegHashLE;    //points to hash element of this data structure, this is redundant to what's in ueList, here for convenience
+	osPointerLen_t* pAs;			//the application server from ifc query, need to store for dns query
 	osListElement_t* pLastIfc;		//points to the last ifc that was used to find the AS
 } scscfRegTempWorkInfo_t;
 
@@ -109,6 +133,7 @@ typedef struct {
 	scscfChgInfo_t hssChgInfo;
 	scscfRegContactInfo_t ueContactInfo;	//contact info, expiry, etc.
 	scscfRegTempWorkInfo_t tempWorkInfo;	//store info to assist registration procedure
+    osList_t asRegInfoList; //stores the asReg proxyInfo, each entry contains a scscfAsRegInfo_t block.  Used to send deregister for network initiated 3rd party deregistration
 	uint64_t expiryTimerId;
 	uint64_t purgeTimerId;
 } scscfRegInfo_t;

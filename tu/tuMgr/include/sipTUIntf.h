@@ -11,10 +11,12 @@
 #include <netinet/in.h>
 
 #include "osList.h"
+#include "osPL.h"
+#include "osMBuf.h"
 #include "sipMsgRequest.h"
 #include "sipMsgFirstLine.h"
 #include "transportIntf.h"
-//#include "sipTransport.h" 
+
 
 
 typedef enum {
@@ -22,23 +24,36 @@ typedef enum {
     SIPTU_APP_TYPE_PROXY,
     SIPTU_APP_TYPE_MAS,
     SIPTU_APP_TYPE_REG,
+	SIPTU_APP_TYPE_CSCF,
+	SIPTU_APP_TYPE_ICSCF,
+	SIPTU_APP_TYPE_SCSCF,
     SIPTU_APP_TYPE_COUNT,
 } sipTuAppType_e;
 
 
 typedef enum {
 	SIP_TU_MSG_TYPE_MESSAGE,
-	SIP_TU_MSG_TYPE_NETWORK_ERROR,
+	SIP_TU_MSG_TYPE_TRANSPORT_ERROR,	//due to local transport error
+	SIP_TU_MSG_TYPE_RMT_NOT_ACCESSIBLE,	//when transport layer reports the remote is not accessible.  tpStatus  TCP_CONN_ERROR shall also map to this error
     SIP_TU_MSG_TYPE_TRANSACTION_ERROR,
 } sipTUMsgType_e;
 
 
+typedef struct {
+	bool isServerTransaction;	//if failure happens in a client transaction/transport
+} sipTuErrorInfo_t;
+
+
 typedef struct sipTUMsg {
-    sipMsgType_e sipMsgType;
+	sipTUMsgType_e sipTuMsgType;
+    sipMsgType_e sipMsgType;	//to-do, move into sipMsgBuf_t and replace isRequest in sipMsgBuf_t with sipMsgType_e
 	sipTuAppType_e appType;
 	struct sockaddr_in* pPeer;
-//    transportIpPort_t* pPeer;
-    sipMsgBuf_t* pSipMsgBuf;		//contains raw sip buffer
+	struct sockaddr_in* pLocal;
+	union {
+    	sipMsgBuf_t  sipMsgBuf;			//contains raw sip buffer when sipTuMsgType = SIP_TU_MSG_TYPE_MESSAGE
+		sipTuErrorInfo_t errorInfo;		//contain extra error info if the sipMsgType != SIP_TU_MSG_TYPE_MESSAGE 
+	};
 //	int tcpFd;						//tcp fd of the received message when > 0
 	void* pTransId;
 	void* pTUId;
@@ -54,5 +69,13 @@ typedef osStatus_e (*sipTUAppOnSipMsg_h)(sipTUMsgType_e msgType, sipTUMsg_t* pSi
 //if sipTrans calls this function and get error response, it shall remove the transaction.  TU shall return OS_STATUS_OK even if it returns error response.  TU shall only return !OS_STATUS_OK if it can not habdle the SIP MESSAGE properly, like could not decode, memory error, etc. 
 osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg);
 void sipTU_attach(sipTuAppType_e appType, sipTUAppOnSipMsg_h appOnSipMsg);
+/*
+ * branchExtraStr: a string that caller wants to be inserted into branch ID.
+ * pParamList: list of sipHdrParamNameValue_t, like: sipHdrParamNameValue_t param1={{"comp", 4}, {"sigcomp", 7}};
+ * pParamList: a list of header parameters other than branchId.
+ */
+osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pParamList, osPointerLen_t* pBranchId, osPointerLen_t* pHost, uint32_t* pPort, size_t* pProtocolViaPos);
+void sipTUMsg_cleanup(void* data);
+
 
 #endif

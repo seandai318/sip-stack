@@ -47,8 +47,8 @@ static uint8_t sipTcmMaxNum = 0;
 
 //in TpServer.c, pTcm->msgConnInfo.is modified and is not Rwlock protected, it is assumed nobody messes with this field except TpServer.c, the same for TpClient.c
 static pthread_rwlock_t tcmRwlock;
-static __thread tpQuarantine_t sipTpQList[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
-static __thread uint8_t sipTpMaxQNum = 0;
+static tpQuarantine_t sipTpQList[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
+static uint8_t sipTpMaxQNum = 0;
 static  notifyTcpConnUser_h notifyTcpConnUser[TRANSPORT_APP_TYPE_COUNT];
 
 
@@ -242,7 +242,7 @@ osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp)
             continue;
         }
 
-        if(sipTCM[i].sockfd = tcpfd)
+        if(sipTCM[i].sockfd == tcpfd)
         {
 			sipTCM[i].isUsing = false;
 			mdebug(LM_TRANSPORT, "pTcm(%p, sipTCM[%d]).isUsing=false, tcpfd=%d", &sipTCM[i], i, tcpfd);
@@ -366,7 +366,7 @@ EXIT:
 }
 
 
-osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, transportAppType_e appType)
+osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, struct sockaddr_in* local, transportAppType_e appType)
 {
     osStatus_e status = OS_STATUS_OK;
 	tpTcm_t* pTcm = NULL;
@@ -407,6 +407,7 @@ osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, transportAppType_e ap
 		pTcm->appType = appType;
 		pTcm->sockfd = tcpfd;
 		pTcm->peer = *peer;
+		pTcm->local = *local;
         tpTcmBufInit(pTcm, true);
 
 		mdebug(LM_TRANSPORT, "pTcm(%p).isUsing=true, fd=%d, pTcm->appType=%d, notifyTcpConnUser[pTcm->appType]=%p.", pTcm, tcpfd, pTcm->appType, notifyTcpConnUser[pTcm->appType]);
@@ -593,7 +594,7 @@ static void sipTpOnKATimeout(uint64_t timerId, void* ptr)
 
     if(pTcm->msgConnInfo.keepAliveTimerId != timerId)
     {
-        logError("timeout, but the returned timerId (%ld) does not match the local timerId (%ld).", timerId, pTcm->msgConnInfo.keepAliveTimerId);
+        logError("timeout, but the returned timerId (0x%lx) does not match the local timerId (0x%lx).", timerId, pTcm->msgConnInfo.keepAliveTimerId);
         goto EXIT;
     }
 

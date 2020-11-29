@@ -54,7 +54,7 @@ osStatus_e proxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
     {
         case SIP_TU_MSG_TYPE_MESSAGE:
 		{
-		    sipMsgDecodedRawHdr_t* pReqDecodedRaw = sipDecodeMsgRawHdr(pSipTUMsg->pSipMsgBuf, NULL, 0);
+		    sipMsgDecodedRawHdr_t* pReqDecodedRaw = sipDecodeMsgRawHdr(&pSipTUMsg->sipMsgBuf, NULL, 0);
     		if(pReqDecodedRaw == NULL)
     		{
         		logError("fails to sipDecodeMsgRawHdr. The received sip message may not be correctly encoded.");
@@ -76,7 +76,7 @@ osStatus_e proxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 			}
 			else
 			{
-				if(pSipTUMsg->pSipMsgBuf->reqCode == SIP_METHOD_INVITE)
+				if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_INVITE)
 				{
 					status = callProxy_onSipTUMsg(SIP_TU_MSG_TYPE_MESSAGE, pSipTUMsg, pReqDecodedRaw, NULL);
 				}

@@ -57,7 +57,7 @@ static osStatus_e masMgr_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 		goto EXIT;
 	}
 		
-	switch(pSipTUMsg->pSipMsgBuf->reqCode)
+	switch(pSipTUMsg->sipMsgBuf.reqCode)
 	{
 		case SIP_METHOD_REGISTER:
 			masReg_onTUMsg(msgType, pSipTUMsg);

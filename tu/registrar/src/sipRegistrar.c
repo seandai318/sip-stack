@@ -107,7 +107,7 @@ static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
     tuRegistrar_t* pRegData = NULL;
 
 	//raw parse the whole sip message 
-	sipMsgDecodedRawHdr_t* pReqDecodedRaw = sipDecodeMsgRawHdr(pSipTUMsg->pSipMsgBuf, NULL, 0);
+	sipMsgDecodedRawHdr_t* pReqDecodedRaw = sipDecodeMsgRawHdr(&pSipTUMsg->sipMsgBuf, NULL, 0);
     if(pReqDecodedRaw == NULL)
     {
     	logError("fails to sipDecodeMsgRawHdr.");

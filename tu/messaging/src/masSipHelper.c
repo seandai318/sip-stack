@@ -146,10 +146,11 @@ osMBuf_t* masSip_buildRequest(osPointerLen_t* user, osPointerLen_t* caller, sipU
 	}
 
 	osDPointerLen_t content={};
-    osMBuf_t* pSipBuf = sipTU_uacBuildRequest(SIP_METHOD_MESSAGE, pCalledContactUser, user, caller, pTransViaId, pViaProtocolPos);
+	sipTuUri_t reqUri = {*pCalledContactUser, false};
+    osMBuf_t* pSipBuf = sipTU_uacBuildRequest(SIP_METHOD_MESSAGE, &reqUri, user, caller, pTransViaId, NULL, pViaProtocolPos);
     if(!pSipBuf)
     {
-        logError("fails to sipTU_uacBuildRequest for a SMS from(%r) to(%r).", caller, user);
+        logError("fails to sipTU_uacBuildRequest() for a SMS from(%r) to(%r).", caller, user);
         status = OS_ERROR_MEMORY_ALLOC_FAILURE;
         goto EXIT;
     }

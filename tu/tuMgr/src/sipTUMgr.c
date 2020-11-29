@@ -26,7 +26,7 @@ osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg)
 		case SIPTU_PRODUCT_TYPE_PROXY_AND_MAS_AND_REG:
 			if(pMsg->sipMsgType == SIP_MSG_REQUEST)
 			{
-				if(pMsg->pSipMsgBuf->reqCode == SIP_METHOD_REGISTER || pMsg->pSipMsgBuf->reqCode == SIP_METHOD_MESSAGE)
+				if(pMsg->sipMsgBuf.reqCode == SIP_METHOD_REGISTER || pMsg->sipMsgBuf.reqCode == SIP_METHOD_MESSAGE)
 				{
 					return sipTU_appOnMsg[SIPTU_APP_TYPE_MAS](msgType, pMsg);
 				}

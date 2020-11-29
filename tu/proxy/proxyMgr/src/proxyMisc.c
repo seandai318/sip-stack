@@ -132,7 +132,7 @@ void* sipProxy_getPairUasTrId(osListPlus_t* pList, void* uacTrId, bool isPrimary
 
 		if(isRemove && pLE != NULL)
 		{
-			osList_deleteElementAll(pLE);
+			osList_deleteElementAll(pLE, true);
 		}
 	}
 
@@ -218,7 +218,7 @@ osStatus_e sipProxy_removePairTrInfo(osListPlus_t* pList, void* trId, bool isPri
 
 		if(pLE)
 		{
-			osList_deleteElementAll(pLE);
+			osList_deleteElementAll(pLE, true);
 			pList->num--;
 		}
 		else

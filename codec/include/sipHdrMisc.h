@@ -43,7 +43,7 @@ osStatus_e sipHdrPL_encode(osMBuf_t* pSipBuf, void* pl, void* other);
 osStatus_e sipHdrPL_create(void* pl, void* pHdrInDecoded, void* pExtraInfo);
 osStatus_e sipHdrCallId_createCallId(osPointerLen_t* pl);
 //if pCallId=NULL, after adding call-id to the pSipBuf, the call-id memory will be deleted, otherwise, call-id will be stored in pCallId->p for user to use
-osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, osPointerLen_t* pCallId);
+osStatus_e sipHdrCallId_createAndAdd(osMBuf_t* pSipBuf, sipPointerLen_t* pCallId);
 osStatus_e sipHdrCallId_getValue(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* pCallId);
 osStatus_e sipHdrCSeq_getValue(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pSeqNum, osPointerLen_t* pMethod);
 uint32_t sipHdrCSeq_generateValue();

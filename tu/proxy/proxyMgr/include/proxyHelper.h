@@ -26,6 +26,7 @@ typedef struct {
         bool isAddRR;   //when isAuto = true;
         struct {        //when isAuto = false
 			bool isChangeCallId;	//most a proxy would not change callid, but sometimes like when SCSCF forwards REGISTER to AS, callid is changed
+			sipPointerLen_t newCallId;	//contains new callId when isChangeCallId = true, feed back to the caller
             sipHdrRawValueStr_t extraAddHdr[SIP_TU_PROXY_MAX_EXTRA_HDR_ADD_NUM];
             int addNum;
             sipHdrRawValueId_t extraDelHdr[SIP_TU_PROXY_MAX_EXTRA_HDR_DEL_NUM];
@@ -35,7 +36,7 @@ typedef struct {
 } sipProxy_msgModInfo_t;
 
 
-osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw,  sipUri_t* pTargetUri, sipProxy_msgModInfo_t* pHdrModInfo, transportIpPort_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId);
+osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw,  sipTuUri_t* pTargetUri, sipProxy_msgModInfo_t* pHdrModInfo, sipTuAddr_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId);
 
 osStatus_e sipProxy_forwardResp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, void* pTransId, void* proxyInfo);
 

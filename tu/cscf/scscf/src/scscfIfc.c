@@ -32,7 +32,7 @@
 #include "sipMsgFirstLine.h"
 #include "sipHeaderData.h"
 #include "scscfIfc.h"
-
+#include "scscfRegistrar.h"
 
 
 
@@ -79,6 +79,12 @@ typedef struct {
 } scscfIfc_t;	
 
 
+typedef struct {
+	uint32_t sIfcGrpId;	//a sifc group id, multiple sIfc may share one group Id
+	scscfIfc_t sIfc;		
+} scscfIfcInfo_t;
+
+
 typedef enum {
 	SCSCF_IFC_SPT,
 	SCSCF_IFC_Group,
@@ -122,6 +128,8 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 static bool scscfIfcSptGrpIsMatch(scscfIfcSptGrp_t* pSptGrp, bool isOr, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent);
 
 
+static osList_t gSIfcSet;	//each entry contains a scscfIfcInfo_t
+
 
 osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet)
 {
@@ -136,28 +144,31 @@ osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet)
 	return status;
 }
 
-typedef struct {
-    bool conditionTypeCNF;
-    osList_t sptGrpList;    //each entry contains a scscfIfcSptGrp_t
-    osPointerLen_t asName;
-    bool isDefaultSessContinued;    //default handling
-} scscfIfc_t;
 
 
-osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent)
+osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent)
 {
 	osPointerLen_t* pAs = NULL;
-	if(!pLastSIfc)
+	if(!ppLastSIfc || !pSIfcIdList)
 	{
+		logError("null pointer, ppLastSIfc=%p, pSIfcIdList=%p.", ppLastSIfc, pSIfcIdList);
 		goto EXIT;
 	}
 
-	osListElement_t* pLE = (*ppLastSIfc)->next;
+	osListElement_t* pLE = *ppLastSIfc ? (*ppLastSIfc)->next : gSIfcSet.head;
 	while(pLE)
 	{
 		*pLastSIfc = pLE;
 
-		scscfIfc_t* pIfc = pLE->data;
+		scscfIfcInfo_t* pIfcInfo = pLE->data;
+		if(!scscfIfc_isIdMatch(pSIfcIdList, pIfcInfo->sIfcGrpId))
+		{
+			pLE = pLE->next;
+			continue;
+		}
+
+		scscfIfc_t* pIfc = pIfcInfo->sIfc;
+	
 		//if last As failed, and the default handling is terminated, stop here.
 		if(!pIfcEvent->isLastAsOK && !pIfc->isDefaultSessContinued)
 		{
@@ -272,6 +283,7 @@ EXIT:
 	return isMatch;
 }
 		
+
 static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* appData)
 {
     if(!pXmlValue)
@@ -400,4 +412,44 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 
 	return;
 }
+
+
+
+scscfIfcRegType_e scscfIfc_mapSar2IfcRegType(scscfRegSarRegType_e sarRegType)
+{
+	switch(sarRegType)
+	{
+    	case SCSCF_REG_SAR_RE_REGISTER:
+			return SCSCF_IFC_REG_TYPE_RE_REG;
+			break;
+    	case SCSCF_REG_SAR_DE_REGISTER:
+			return SCSCF_IFC_REG_TYPE_DE_REG;
+			break;
+        case SCSCF_REG_SAR_REGISTER,
+    	case SCSCF_REG_SAR_UN_REGISTER,
+        case SCSCF_REG_SAR_INVALID,
+		default:
+			break;
+	}
+
+	return SCSCF_IFC_REG_TYPE_INITIAL_REG;
+}
+
+
+static bool scscfIfc_isIdMatch(sIfcIdList_t* pSIfcIdList, uint32_t sIfcGrpId)
+{
+	for(int i=0; i<pSIfcIdList->sIfcIdNum; i++)
+	{
+		if(pSIfcIdList->sIfcId[i] == sIfcGrpId)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+        {
+            pLE = pLE->next;
+            continue;
+        }
 

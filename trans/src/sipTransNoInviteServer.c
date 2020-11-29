@@ -19,6 +19,7 @@
 #include "sipTransIntf.h"
 #include "sipTUIntf.h"
 #include "sipTransportIntf.h"
+#include "sipCodecUtil.h"
 
 
 static osStatus_e sipTransNISEnterState(sipTransState_e newState, sipTransMsgType_e msgType, sipTransaction_t* pTrans);
@@ -523,15 +524,19 @@ osStatus_e sipTransNISEnterState(sipTransState_e newState, sipTransMsgType_e msg
 	{
 		case SIP_TRANS_STATE_TRYING:
 		{
-            sipTUMsg_t sipTUMsg;
-            sipTUMsg.sipMsgType = SIP_MSG_REQUEST;
-			sipTUMsg.pPeer = &pTrans->tpInfo.peer;
-            sipTUMsg.pSipMsgBuf = &pTrans->req;
-            sipTUMsg.pTransId = pTrans;
-			sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-            sipTUMsg.pTUId = pTrans->pTUId;
+            sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+            pSipTUMsg->sipTuMsgType = SIP_TU_MSG_TYPE_MESSAGE;
+            pSipTUMsg->sipMsgType = SIP_MSG_REQUEST;
+			pSipTUMsg->pPeer = &pTrans->tpInfo.peer;
+			pSipTUMsg->pLocal = &pTrans->tpInfo.local;
+            sipMsgBuf_copy(&pSipTUMsg->sipMsgBuf, &pTrans->req);
+debug("to-remove, pSipTUMsg->sipMsgBuf.pSipMsg=%p, pTrans->resp.pSipMsg=%p.", pSipTUMsg->sipMsgBuf.pSipMsg, pTrans->resp.pSipMsg);
+            pSipTUMsg->pTransId = pTrans;
+			pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+            pSipTUMsg->pTUId = pTrans->pTUId;
 
-            sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
+            sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, pSipTUMsg);
+			osfree(pSipTUMsg);
 			break;
 		}
 		case SIP_TRANS_STATE_PROCEEDING:
@@ -553,26 +558,30 @@ osStatus_e sipTransNISEnterState(sipTransState_e newState, sipTransMsgType_e msg
                 case SIP_TRANS_STATE_PROCEEDING:
 				{
 					//something wrong, notify UT, treat the error as a transport error
-		            sipTUMsg_t sipTUMsg;
-					sipTUMsg.pSipMsgBuf = &pTrans->req;
-                    sipTUMsg.pTransId = pTrans;
-		            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-            		sipTUMsg.pTUId = pTrans->pTUId;
+		            sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+   			        pSipTUMsg->sipTuMsgType = SIP_TU_MSG_TYPE_TRANSACTION_ERROR;
+                    pSipTUMsg->errorInfo.isServerTransaction = true;
+                    pSipTUMsg->pTransId = pTrans;
+		            pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+            		pSipTUMsg->pTUId = pTrans->pTUId;
 
-					sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
+					sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, pSipTUMsg);
+					osfree(pSipTUMsg);
 					break;
 				}
 				case SIP_TRANS_STATE_COMPLETED:
 					if(msgType == SIP_TRANS_MSG_TYPE_TX_FAILED)
 					{
                         //transport error
-	                    sipTUMsg_t sipTUMsg;
-                    	sipTUMsg.pSipMsgBuf = &pTrans->req;
-    	                sipTUMsg.pTransId = pTrans;
-			            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-        	            sipTUMsg.pTUId = pTrans->pTUId;
+	                    sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+	                    pSipTUMsg->sipTuMsgType = SIP_TU_MSG_TYPE_TRANSACTION_ERROR;
+	                    pSipTUMsg->errorInfo.isServerTransaction = true;
+    	                pSipTUMsg->pTransId = pTrans;
+			            pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+        	            pSipTUMsg->pTUId = pTrans->pTUId;
 
-	                    sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
+	                    sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, pSipTUMsg);
+						osfree(pSipTUMsg);
 					}
 					break;
 				default:

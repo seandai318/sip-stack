@@ -16,6 +16,7 @@
 #include "sipTUIntf.h"
 #include "sipTransportIntf.h"
 #include "sipConfig.h"
+#include "sipCodecUtil.h"
 
 
 static osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgType, sipTransaction_t* pTrans);
@@ -187,15 +188,18 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 			sipTransaction_t* pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
 
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
+            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_RMT_NOT_ACCESSIBLE)
             {
                 //notify TU
-                sipTUMsg_t sipTUMsg;
-             //   sipTUMsg.pTransId = pMsg;
-                sipTUMsg.pTransId = pTrans;
-	            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-                sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
-                sipTU_onMsg(SIP_TU_MSG_TYPE_NETWORK_ERROR, &sipTUMsg);
+                sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+                pSipTUMsg->pTransId = pTrans;
+	            pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+                pSipTUMsg->pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+                pSipTUMsg->sipTuMsgType = tpStatus == TRANSPORT_STATUS_FAIL ? SIP_TU_MSG_TYPE_TRANSPORT_ERROR : SIP_TU_MSG_TYPE_RMT_NOT_ACCESSIBLE;
+                pSipTUMsg->errorInfo.isServerTransaction = true;
+
+                sipTU_onMsg(pSipTUMsg->sipTuMsgType, pSipTUMsg);
+				osfree(pSipTUMsg);
 
                 sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
                 goto EXIT;
@@ -238,15 +242,19 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 			pTrans->resp.pSipMsg = osmemref(((sipTransMsg_t*)pMsg)->response.sipTrMsgBuf.sipMsgBuf.pSipMsg);
 
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
+            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_RMT_NOT_ACCESSIBLE)
             {
                 //notify TU
-                sipTUMsg_t sipTUMsg;
-               // sipTUMsg.pTransId = pMsg;
-                sipTUMsg.pTransId = pTrans;
-                sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-                sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
-                sipTU_onMsg(SIP_TU_MSG_TYPE_NETWORK_ERROR, &sipTUMsg);
+                sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+                pSipTUMsg->pTransId = pTrans;
+                pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+                pSipTUMsg->pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+
+                pSipTUMsg->sipTuMsgType = tpStatus == TRANSPORT_STATUS_FAIL ? SIP_TU_MSG_TYPE_TRANSPORT_ERROR : SIP_TU_MSG_TYPE_RMT_NOT_ACCESSIBLE;
+                pSipTUMsg->errorInfo.isServerTransaction = true;
+
+                sipTU_onMsg(pSipTUMsg->sipTuMsgType, pSipTUMsg);
+				osfree(pSipTUMsg);
 
                 sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
                 goto EXIT;
@@ -286,14 +294,19 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
             pTrans->tpInfo.tpType = SIP_TRANSPORT_TYPE_TCP;
             pTrans->tpInfo.tcpFd = ((sipTransportStatusMsg_t*)pMsg)->tcpFd;
             sipTransportStatus_e tpStatus = sipTransport_send(pTrans, &pTrans->tpInfo, pTrans->resp.pSipMsg);
-            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL)
+            if(tpStatus == TRANSPORT_STATUS_TCP_FAIL || tpStatus == TRANSPORT_STATUS_FAIL || tpStatus == TRANSPORT_STATUS_RMT_NOT_ACCESSIBLE)
             {
 				//notify TU
-	            sipTUMsg_t sipTUMsg;
-    	        sipTUMsg.pTransId = pMsg;
-                sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-        	    sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
-            	sipTU_onMsg(SIP_TU_MSG_TYPE_NETWORK_ERROR, &sipTUMsg);
+                sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+    	        pSipTUMsg->pTransId = pMsg;
+                pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+        	    pSipTUMsg->pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+
+                pSipTUMsg->sipTuMsgType = tpStatus == TRANSPORT_STATUS_FAIL ? SIP_TU_MSG_TYPE_TRANSPORT_ERROR : SIP_TU_MSG_TYPE_RMT_NOT_ACCESSIBLE;
+                pSipTUMsg->errorInfo.isServerTransaction = true;
+
+                sipTU_onMsg(pSipTUMsg->sipTuMsgType, pSipTUMsg);
+				osfree(pSipTUMsg);
 
                 sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
                 goto EXIT;
@@ -320,12 +333,17 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
 			logInfo("fails to transmit message, received SIP_TRANS_MSG_TYPE_TX_FAILED.");
             sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*)pMsg)->pTransId;
 
-            sipTUMsg_t sipTUMsg;
-            sipTUMsg.pTransId = pTrans;
-            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-            sipTUMsg.pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+            sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+            pSipTUMsg->pTransId = pTrans;
+            pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+            pSipTUMsg->pTUId = ((sipTransaction_t*)pMsg)->pTUId;
 
-			sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
+            pSipTUMsg->sipTuMsgType = SIP_TU_MSG_TYPE_TRANSACTION_ERROR;
+            pSipTUMsg->errorInfo.isServerTransaction = true;
+
+            sipTU_onMsg(pSipTUMsg->sipTuMsgType, pSipTUMsg);
+			osfree(pSipTUMsg);
+
 			sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
 			break;
 		}
@@ -421,12 +439,16 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
                 //    osfree(pTrans);
                 }
 
-	            sipTUMsg_t sipTUMsg;
-    	        sipTUMsg.pTransId = pTrans;
-                sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-        	    sipTUMsg.pTUId = pTrans->pTUId;
+                sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+    	        pSipTUMsg->pTransId = pTrans;
+                pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+        	    pSipTUMsg->pTUId = pTrans->pTUId;
 
-                sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
+	            pSipTUMsg->sipTuMsgType = SIP_TU_MSG_TYPE_TRANSACTION_ERROR;
+    	        pSipTUMsg->errorInfo.isServerTransaction = true;
+
+        	    sipTU_onMsg(pSipTUMsg->sipTuMsgType, pSipTUMsg);
+				osfree(pSipTUMsg);
 
                 sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
 			}
@@ -437,12 +459,15 @@ osStatus_e sipTransISStateCompleted_onMsg(sipTransMsgType_e msgType, void* pMsg,
             logInfo("fails to transmit message, received SIP_TRANS_MSG_TYPE_TX_FAILED.");
             sipTransaction_t* pTrans = ((sipTransportStatusMsg_t*)pMsg)->pTransId;
 
-            sipTUMsg_t sipTUMsg;
-            sipTUMsg.pTransId = pTrans;
-            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-            sipTUMsg.pTUId = pTrans->pTUId;
+            sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+            pSipTUMsg->pTransId = pTrans;
+            pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+            pSipTUMsg->pTUId = pTrans->pTUId;
+            pSipTUMsg->sipTuMsgType = SIP_TU_MSG_TYPE_TRANSACTION_ERROR;
+            pSipTUMsg->errorInfo.isServerTransaction = true;
 
-            sipTU_onMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, &sipTUMsg);
+            sipTU_onMsg(pSipTUMsg->sipTuMsgType, pSipTUMsg);
+			osfree(pSipTUMsg);
 
 			sipTransISEnterState(SIP_TRANS_STATE_TERMINATED, msgType, pTrans);
 			break;
@@ -518,15 +543,18 @@ osStatus_e sipTransISEnterState(sipTransState_e newState, sipTransMsgType_e msgT
     {
         case SIP_TRANS_STATE_PROCEEDING:
 		{
-            sipTUMsg_t sipTUMsg;
-            sipTUMsg.sipMsgType = SIP_MSG_REQUEST;
-            sipTUMsg.pPeer = &pTrans->tpInfo.peer;
-            sipTUMsg.pSipMsgBuf = &pTrans->req;
-            sipTUMsg.pTransId = pTrans;
-            sipTUMsg.appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-            sipTUMsg.pTUId = pTrans->pTUId;
+            sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
+            pSipTUMsg->sipMsgType = SIP_MSG_REQUEST;
+            pSipTUMsg->pPeer = &pTrans->tpInfo.peer;
+			pSipTUMsg->pLocal = &pTrans->tpInfo.local;
+            sipMsgBuf_copy(&pSipTUMsg->sipMsgBuf, &pTrans->req);
+            pSipTUMsg->pTransId = pTrans;
+            pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
+            pSipTUMsg->pTUId = pTrans->pTUId;
 
-			sipTU_onMsg(SIP_TU_MSG_TYPE_MESSAGE, &sipTUMsg);
+			pSipTUMsg->sipTuMsgType = SIP_TU_MSG_TYPE_MESSAGE;
+			sipTU_onMsg(pSipTUMsg->sipTuMsgType, pSipTUMsg);
+			osfree(pSipTUMsg);
 
 			break;
 		}

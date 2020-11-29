@@ -31,13 +31,12 @@ typedef struct {
 	sipRequest_e sipMethod;
 	scscfIfcSessCase_e sessCase;
 	scscfIfcRegType_e regType;
-	bool 
 } scscfIfcEvent_t;
 
 
 osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet);
-void scscfIfc_getNextAS(osList_t* pIfcSet, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent);
+osPointerLen_t* scscfIfc_getNextAS(osListElement_t* pLastifc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent);
 osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet);
-
+scscfIfcRegType_e scscfIfc_mapSar2IfcRegType(scscfRegSarRegType_e sarRegType);
 
 #endif

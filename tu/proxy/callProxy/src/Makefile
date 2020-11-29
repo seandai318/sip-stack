@@ -1,5 +1,6 @@
 PROJECT_DIR = /home/ama/project
-IDIR = ../include $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/transport/include  $(PROJECT_DIR)/sip-stack/tu/tuMgr/include $(PROJECT_DIR)/sip-stack/tu/proxy/proxyMgr/include $(PROJECT_DIR)/sip-stack/tu/registrar/include
+PROJECT_DNS_DIR = $(PROJECT_DIR)/dnsResolver
+IDIR = ../include $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/transport/include  $(PROJECT_DIR)/sip-stack/tu/tuMgr/include $(PROJECT_DIR)/sip-stack/tu/proxy/proxyMgr/include $(PROJECT_DIR)/sip-stack/tu/registrar/include $(PROJECT_DNS_DIR)/include
 #INC=$(foreach d, $(IDIR), -I$d)
 INC=$(IDIR:%=-I%)
 AR=ar

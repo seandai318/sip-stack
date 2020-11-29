@@ -95,6 +95,9 @@ static void appMain_timerReady()
         return;
     }
 
+	logInfo("read cscf configuration from %s.", configDir);
+//	cscf_init(configDir);
+
     logInfo("read diameter configuration from %s.", configDir);
     dia_init(configDir);
 
@@ -232,8 +235,8 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 				{
 					if(events[i].events & (EPOLLERR|EPOLLHUP))
 					{
+                        logInfo("received events(0x%x), close connection(fd=%d), notify app.", events[i].events, tpEpFd);
 						tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
-						logInfo("received events(%0x%x), close connection(fd=%d), notify app.", events[i].events, tpEpFd);
 						//close(events[i].data.fd);	
                         //tpDeleteTcm(events[i].data.fd);
 					}
@@ -291,7 +294,7 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 						if(events[i].events & EPOLLRDHUP)
 						{
 							//close the fd
-							mdebug(LM_TRANSPORT, "peer closed the TCP connection for tcpfd (%d).", events[i].data.fd);
+							logInfo("peer closed the TCP connection for tcpfd (%d).", events[i].data.fd);
 	                        tpTcmCloseTcpConn(tpEpFd, events[i].data.fd, true);
 						}
 						break;
