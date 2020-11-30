@@ -30,9 +30,12 @@
 #define SCSCF_IP_ADDR					"1.2.3.4"
 #define SCSCF_LISTEN_PORT				5060
 
+#define SCSCF_SIFC_FILE_NAME			"sifc.xml"
+
 #define ICSCF_IP_ADDR					"2.3.4.5"
 #define ICSCF_LISTEN_PORT				5060
 
+#define CSCF_CONFIG_FOLDER              "/project/app/mas/config"
 #define CSCF_HSS_URI				"hss.ims.com"
 
 

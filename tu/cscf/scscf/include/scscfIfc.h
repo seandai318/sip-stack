@@ -37,7 +37,8 @@ typedef struct {
 } scscfIfcEvent_t;
 
 
-osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet);
+
+osStatus_e scscfIfc_init(char* sIfcFileFolder, char* sIfcFileName);
 osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastifc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent);
 osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet);
 scscfIfcRegType_e scscfIfc_mapSar2IfcRegType(scscfRegSarRegType_e sarRegType);

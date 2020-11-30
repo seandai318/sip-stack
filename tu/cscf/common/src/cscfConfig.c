@@ -34,7 +34,7 @@ void cscfConfig_init(char* cxFolder, char* cxXsdFileName)
 osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfReg_userProfile_t* pDecodedUserProfile)
 {
 	osMBuf_t* pXmlBuf = osMBuf_setPL(pRawUserProfile);
-    osXmlDataCallbackInfo_t cbInfo={true, false, false, scscfUserProfileCB, pDecodedUserProfile, scscfConfig_xmlUsrProfileData, SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM};
+    osXmlDataCallbackInfo_t cbInfo={true, false, false, scscfConfig_userProfileCB, pDecodedUserProfile, scscfConfig_xmlUsrProfileData, SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM};
 	osXml_getElemValue(&cxXsdName, NULL, xmlMBuf, true, &cbInfo);
 	osMBuf_freeHdr(pXmlBuf);
 }	

@@ -649,12 +649,12 @@ static bool sipTuDest_sortDestInfo(osListElement_t *le1, osListElement_t *le2, v
 	sipTuDestInfo_t* pDest1 = le1->data;
 	sipTuDestInfo_t* pDest2 = le2->data;
 
-	if(pDest1->priority > pDest1->priority)
+	if(pDest1->priority > pDest2->priority)
 	{
 		isSwitch = true;
 		goto EXIT;
 	}
-	else if(pDest1->priority == pDest1->priority)
+	else if(pDest1->priority == pDest2->priority)
 	{
 		if(pDest1->weight > pDest2->weight)
 		{

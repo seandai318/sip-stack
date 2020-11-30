@@ -6,6 +6,8 @@
  ********************************************************************8***********************/
 
 
+#include "stdlib.h"
+
 #include "osHash.h"
 #include "osTimer.h"
 #include "osSockAddr.h"
@@ -73,6 +75,16 @@ osStatus_e scscfReg_init(uint32_t bucketSize)
         status = OS_ERROR_MEMORY_ALLOC_FAILURE;
         goto EXIT;
     }
+
+    char configDir[80];
+    if(snprintf(configDir, 80, "%s%s", getenv("HOME"), CSCF_CONFIG_FOLDER) >= 80)
+    {
+        logError("the size of config directory is larger than 80.");
+		status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+	status = scscfIfc_init(configDir, SCSCF_SIFC_FILE_NAME);
 
 EXIT:
     return status;

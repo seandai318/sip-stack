@@ -27,6 +27,7 @@
 
 
 #include "osMBuf.h"
+#include "osConfig.h"
 
 #include "sipMsgFirstLine.h"
 #include "sipHeaderData.h"
@@ -73,6 +74,7 @@ typedef struct {
 } scscfIfcSptGrp_t;
 		
 typedef struct {
+    uint32_t sIfcGrpId; 	//a sifc group id, multiple sIfc may share one group Id.  This is NOT part of IFC
 	bool conditionTypeCNF;
 	uint32_t priority;
 	osList_t sptGrpList;	//each entry contains a scscfIfcSptGrp_t
@@ -81,11 +83,12 @@ typedef struct {
 } scscfIfc_t;	
 
 
+#if 0
 typedef struct {
 	uint32_t sIfcGrpId;	//a sifc group id, multiple sIfc may share one group Id
 	scscfIfc_t sIfc;		
 } scscfIfcInfo_t;
-
+#endif
 
 typedef enum {
 	SCSCF_IFC_SPT,
@@ -99,6 +102,7 @@ typedef enum {
 	SCSCF_IFC_ServerName,
 	SCSCF_IFC_SessionCase,
     SCSCF_IFC_TriggerPoint,
+	SCSCF_IFC_SharedIFCSetID,
 	SCSCF_IFC_DefaultHandling,
 	SCSCF_IFC_ConditionNegated,
 	SCSCF_IFC_ConditionTypeCNF,	
@@ -119,6 +123,7 @@ osXmlData_t scscfIfc_xmlData[SCSCF_IFC_XML_MAX_DATA_NAME_NUM] = {
     {SCSCF_IFC_ServerName,	{"ServerName", sizeof("ServerName")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
     {SCSCF_IFC_SessionCase,	{"SessionCase", sizeof("SessionCase")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
     {SCSCF_IFC_TriggerPoint,	{"TriggerPoint", sizeof("TriggerPoint")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
+	{SCSCF_IFC_SharedIFCSetID,	{"SharedIFCSetID", sizeof("SharedIFCSetID")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
     {SCSCF_IFC_DefaultHandling,	{"DefaultHandling", sizeof("DefaultHandling")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
     {SCSCF_IFC_ConditionNegated,	{"ConditionNegated", sizeof("ConditionNegated")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
     {SCSCF_IFC_ConditionTypeCNF,	{"ConditionTypeCNF", sizeof("ConditionTypeCNF")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
@@ -129,20 +134,50 @@ osXmlData_t scscfIfc_xmlData[SCSCF_IFC_XML_MAX_DATA_NAME_NUM] = {
 static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* appData);
 static bool scscfIfcSptGrpIsMatch(scscfIfcSptGrp_t* pSptGrp, bool isOr, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent);
 static bool scscfIfc_isIdMatch(sIfcIdList_t* pSIfcIdList, uint32_t sIfcGrpId);
+static bool scscfIfc_sortPriority(osListElement_t *le1, osListElement_t *le2, void *arg);
 
 
-static osList_t gSIfcSet;	//each entry contains a scscfIfcInfo_t
+static osList_t gSIfcSet;	//each entry contains a scscfIfc_t
 
 
-osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet)
+osStatus_e scscfIfc_init(char* sIfcFileFolder, char* sIfcFileName)
 {
-	osStatus_e status = OS_STATUS_OK;
+    osStatus_e status = OS_STATUS_OK;
+    osMBuf_t* sIfcXmlBuf = NULL;
 
-    osXmlDataCallbackInfo_t cbInfo = {true, false, false, scscfIfc_parseSIfcCB, pSIfcSet, scscfIfc_xmlData, SCSCF_IFC_XML_MAX_DATA_NAME_NUM};
-	osMBuf_t* xmlMBuf = osMBuf_setPL(pSIfc);
+    if(!sIfcFileName)
+    {
+        logError("null pointer, sIfcFileName=%p.", sIfcFileName);
+        status = OS_ERROR_NULL_POINTER;
+        goto EXIT;
+    }
 
-	status = osXml_parse(xmlMBuf, &cbInfo);
+    char sIfcFile[OS_MAX_FILE_NAME_SIZE];
+
+    if(snprintf(sIfcFile, OS_MAX_FILE_NAME_SIZE, "%s/%s", sIfcFileFolder ? sIfcFileFolder : ".", sIfcFileName) >= OS_MAX_FILE_NAME_SIZE)
+    {
+        logError("sIfcFile name is truncated.");
+        status = OS_ERROR_INVALID_VALUE;
+    }
+
+    //8000 is the initial mBuf size.  If the reading needs more than 8000, the function will realloc new memory
+    sIfcXmlBuf = osMBuf_readFile(sIfcFile, 8000);
+    if(!sIfcXmlBuf)
+    {
+        logError("read sIfcXmlBuf fails, sIfcFile=%s", sIfcFile);
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+    osXmlDataCallbackInfo_t cbInfo = {true, false, false, scscfIfc_parseSIfcCB, &gSIfcSet, scscfIfc_xmlData, SCSCF_IFC_XML_MAX_DATA_NAME_NUM};
+	status = osXml_parse(sIfcXmlBuf, &cbInfo);
     //osXml_getElemValue(&xsdName, NULL, xmlMBuf, false, &cbInfo);
+
+EXIT:
+	if(status != OS_STATUS_OK)
+	{
+		osfree(sIfcXmlBuf);
+	}
 
 	return status;
 }
@@ -163,15 +198,13 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 	{
 		*ppLastSIfc = pLE;
 
-		scscfIfcInfo_t* pIfcInfo = pLE->data;
-		if(!scscfIfc_isIdMatch(pSIfcIdList, pIfcInfo->sIfcGrpId))
+		scscfIfc_t* pIfc = pLE->data;
+		if(!scscfIfc_isIdMatch(pSIfcIdList, pIfc->sIfcGrpId))
 		{
 			pLE = pLE->next;
 			continue;
 		}
 
-		scscfIfc_t* pIfc = &pIfcInfo->sIfc;
-	
 		//if last As failed, and the default handling is terminated, stop here.
 		if(!pIfcEvent->isLastAsOK && !pIfc->isDefaultSessContinued)
 		{
@@ -297,6 +330,7 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 
 	osList_t* pSIfcSet = appData;
 
+	static __thread uint32_t fsIfcGrpId = 0; 
     static __thread scscfIfc_t* fpIfc = NULL;
 	static __thread scscfIfcSptGrp_t* fpCurSptGrp = NULL;
 	static __thread scscfIfcSptInfo_t* fpCurSpt = NULL;
@@ -305,9 +339,13 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 
     switch(pXmlValue->eDataName)
     {
+		case SCSCF_IFC_SharedIFCSetID:
+			fsIfcGrpId = pXmlValue->xmlInt;
+			break;	
 		case SCSCF_IFC_InitialFilterCriteria:
 			if(pXmlValue->isEOT)
 			{
+				fpIfc->sIfcGrpId = fsIfcGrpId;
 				osList_append(pSIfcSet, fpIfc);
 				fpIfc = NULL;
 				return;
@@ -411,6 +449,9 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 			break;
 	}
 
+	//sort ifc based on priority
+	osList_sort(&gSIfcSet, scscfIfc_sortPriority, NULL);
+ 
 	return;
 }
 
@@ -449,3 +490,21 @@ static bool scscfIfc_isIdMatch(sIfcIdList_t* pSIfcIdList, uint32_t sIfcGrpId)
 
 	return false;
 }
+
+
+static bool scscfIfc_sortPriority(osListElement_t *le1, osListElement_t *le2, void *arg)
+{
+    bool isSwitch = false;
+	scscfIfc_t* pIfc1 = le1->data;
+	scscfIfc_t* pIfc2 = le2->data;
+
+    if(pIfc1->priority > pIfc2->priority)
+    {
+        isSwitch = true;
+        goto EXIT;
+    }
+
+EXIT:
+    return isSwitch;
+}
+
