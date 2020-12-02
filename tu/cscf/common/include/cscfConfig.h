@@ -30,7 +30,8 @@
 #define SCSCF_IP_ADDR					"1.2.3.4"
 #define SCSCF_LISTEN_PORT				5060
 
-#define SCSCF_SIFC_FILE_NAME			"sifc.xml"
+#define SCSCF_SIFC_XML_FILE_NAME			"sifc.xml"
+#define SCSCF_SIFC_XSD_FILE_NAME            "sifc.xsd"
 
 #define ICSCF_IP_ADDR					"2.3.4.5"
 #define ICSCF_LISTEN_PORT				5060

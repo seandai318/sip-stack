@@ -138,47 +138,70 @@ static bool scscfIfc_sortPriority(osListElement_t *le1, osListElement_t *le2, vo
 
 
 static osList_t gSIfcSet;	//each entry contains a scscfIfc_t
+static osMBuf_t* gSIfcXmlBuf = NULL;	//shall be freed/replaced when ifcXml changes
 
 
-osStatus_e scscfIfc_init(char* sIfcFileFolder, char* sIfcFileName)
+
+osStatus_e scscfIfc_init(char* sIfcFileFolder, char* sIfcXsdFileName, char* sIfcXmlFileName)
 {
     osStatus_e status = OS_STATUS_OK;
-    osMBuf_t* sIfcXmlBuf = NULL;
+	osMBuf_t* sIfcXsdBuf = NULL;
 
-    if(!sIfcFileName)
+    if(!sIfcXsdFileName || !sIfcXmlFileName)
     {
-        logError("null pointer, sIfcFileName=%p.", sIfcFileName);
+        logError("null pointer, sIfcXsdFileName=%p, sIfcXmlFileName=%p.", sIfcXsdFileName, sIfcXmlFileName);
         status = OS_ERROR_NULL_POINTER;
         goto EXIT;
     }
 
-    char sIfcFile[OS_MAX_FILE_NAME_SIZE];
+    char sIfcXmlFile[OS_MAX_FILE_NAME_SIZE], sIfcXsdFile[OS_MAX_FILE_NAME_SIZE];
 
-    if(snprintf(sIfcFile, OS_MAX_FILE_NAME_SIZE, "%s/%s", sIfcFileFolder ? sIfcFileFolder : ".", sIfcFileName) >= OS_MAX_FILE_NAME_SIZE)
+    if(snprintf(sIfcXmlFile, OS_MAX_FILE_NAME_SIZE, "%s/%s", sIfcFileFolder ? sIfcFileFolder : ".", sIfcXmlFileName) >= OS_MAX_FILE_NAME_SIZE)
     {
-        logError("sIfcFile name is truncated.");
+        logError("sIfcXmlFile name is truncated.");
+        status = OS_ERROR_INVALID_VALUE;
+    }
+
+	int xsdFileNameSize = snprintf(sIfcXsdFile, OS_MAX_FILE_NAME_SIZE, "%s/%s", sIfcFileFolder ? sIfcFileFolder : ".", sIfcXsdFileName);
+    if(xsdFileNameSize >= OS_MAX_FILE_NAME_SIZE)
+    {
+        logError("sIfcXsdFile name is truncated.");
         status = OS_ERROR_INVALID_VALUE;
     }
 
     //8000 is the initial mBuf size.  If the reading needs more than 8000, the function will realloc new memory
-    sIfcXmlBuf = osMBuf_readFile(sIfcFile, 8000);
-    if(!sIfcXmlBuf)
+    gSIfcXmlBuf = osMBuf_readFile(sIfcXmlFile, 8000);
+    if(!gSIfcXmlBuf)
     {
-        logError("read sIfcXmlBuf fails, sIfcFile=%s", sIfcFile);
+        logError("read gSIfcXmlBuf fails, sIfcXmlFile=%s", sIfcXmlFile);
         status = OS_ERROR_INVALID_VALUE;
         goto EXIT;
     }
 
+    sIfcXsdBuf = osMBuf_readFile(sIfcXsdFile, 8000);
+    if(!sIfcXsdBuf)
+    {
+        logError("read sIfcXsdBuf fails, sIfcXsdFile=%s", sIfcXsdFile);
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+	osPointerLen_t xsdName = {sIfcXsdFile, xsdFileNameSize};
     osXmlDataCallbackInfo_t cbInfo = {true, false, false, scscfIfc_parseSIfcCB, &gSIfcSet, scscfIfc_xmlData, SCSCF_IFC_XML_MAX_DATA_NAME_NUM};
-	status = osXml_parse(sIfcXmlBuf, &cbInfo);
+	status = osXml_parse(gSIfcXmlBuf, sIfcXsdBuf, &xsdName, &cbInfo);
+
     //osXml_getElemValue(&xsdName, NULL, xmlMBuf, false, &cbInfo);
 
 EXIT:
 	if(status != OS_STATUS_OK)
 	{
-		osfree(sIfcXmlBuf);
+		osfree(gSIfcXmlBuf);
 	}
 
+	//needs to free sIfcXsdBuf after the parsing is done cause it is useless in the application layer.  xml module may refer it if it wants to keep it.
+	//shall not free gSIfcXmlBuf, as some data structure (osPL_t) in the callback will refer it.  As long as th application wants to use the data structure 
+	//in th callback, it shall keep it.
+	osfree(sIfcXsdBuf);
 	return status;
 }
 

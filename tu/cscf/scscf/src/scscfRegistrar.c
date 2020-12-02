@@ -84,7 +84,7 @@ osStatus_e scscfReg_init(uint32_t bucketSize)
         goto EXIT;
     }
 
-	status = scscfIfc_init(configDir, SCSCF_SIFC_FILE_NAME);
+	status = scscfIfc_init(configDir, SCSCF_SIFC_XSD_FILE_NAME, SCSCF_SIFC_XML_FILE_NAME);
 
 EXIT:
     return status;
