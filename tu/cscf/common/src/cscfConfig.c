@@ -13,8 +13,11 @@
 
 
 static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void* appData);
+static void cscfConfig_setGlobalSockAddr();
+
 
 static osPointerLen_t cxXsdName;
+static struct sockaddr_in gScscfSockAddr, gIcscfSockAddr;
 
 
 void cscfConfig_init(char* cxFolder, char* cxXsdFileName)
@@ -28,6 +31,11 @@ void cscfConfig_init(char* cxFolder, char* cxXsdFileName)
 
 	char* cxXsdNamePtr = osmalloc(strlen(cxXsdFileName), NULL);
 	osPL_setStr(&cxXsdName, cxXsdNamePtr, strlen(cxXsdFileName));
+
+	//perform cscf config xml parsing
+
+	//set gScscfSockAddr and gIcscfSockAddr
+	cscfConfig_setGlobalSockAddr();
 }
 
 
@@ -108,27 +116,28 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
 
 struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseListenPort)
 {
-	struct sockaddr_in sockAddr = {};
+	struct sockaddr_in sockAddr = cscfType == CSCF_TYPE_ICSCF ? gIcscfSockAddr : gScscfSockAddr;
 
-	switch(cscfType)
+	if(!isUseListenPort)
 	{
-		case CSCF_TYPE_ICSCF:
-		{
-			osIpPort_t ipPort = {{{ICSCF_IP_ADDR, strlen(ICSCF_IP_ADDR)}}, isUseListenPort ? ICSCF_LISTEN_PORT : 0};
-			osConvertPLton(&ipPort, true, &sockAddr);
-			break;
-		}
-		case CSCF_TYPE_SCSCF:
-        {
-            osIpPort_t ipPort = {{{SCSCF_IP_ADDR, strlen(SCSCF_IP_ADDR)}}, isUseListenPort ? SCSCF_LISTEN_PORT : 0};
-            osConvertPLton(&ipPort, true, &sockAddr);
-            break;
-        }
-		default:
-			logError("unexpected cscfType(%d).", cscfType);
-			break;
-		}
+		sockAddr.sin_port = 0;
 	}
 
 	return sockAddr;
-}	
+}
+
+
+bool cscf_isS(struct sockaddr_in* rcvLocal)
+{
+	return osIsSameSA(rcvLocal, &gScscfSockAddr) ? true : false;
+}
+
+
+static void cscfConfig_setGlobalSockAddr()
+{
+	osIpPort_t ipPort = {{{ICSCF_IP_ADDR, strlen(ICSCF_IP_ADDR)}}, ICSCF_LISTEN_PORT};
+	osConvertPLton(&ipPort, true, &gIcscfSockAddr);
+
+    osIpPort_t ipPort = {{{SCSCF_IP_ADDR, strlen(SCSCF_IP_ADDR)}}, SCSCF_LISTEN_PORT};
+    osConvertPLton(&ipPort, true, &gScscfSockAddr);
+}

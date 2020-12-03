@@ -140,7 +140,7 @@ osStatus_e cscf_sendRegResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfRegI
     sipTransMsg.isTpDirect = false;
     sipTransMsg.response.sipTrMsgBuf.sipMsgBuf.pSipMsg = pSipResp;
     sipTransMsg.pTransId = pSipTUMsg->pTransId;
-    sipTransMsg.appType = SIPTU_APP_TYPE_REG;
+    sipTransMsg.appType = SIPTU_APP_TYPE_CSCF;
     sipTransMsg.response.rspCode = rspCode;
     sipTransMsg.pSenderId = pRegInfo;
     status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);

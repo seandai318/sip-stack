@@ -121,6 +121,7 @@ typedef struct {
     osListElement_t* pRegHashLE;    //points to hash element of this data structure, this is redundant to what's in ueList, here for convenience
 	osPointerLen_t* pAs;			//the application server from ifc query, need to store for dns query
 	osListElement_t* pLastIfc;		//points to the last ifc that was used to find the AS
+	struct sockaddr_in sipLocalHost;	//if reg was recived via icscf, this stores icscf address, otherwise, scscf address
 } scscfRegTempWorkInfo_t;
 
 
@@ -129,14 +130,13 @@ typedef struct {
 	bool isLR;					//loose-route indication.. For now, always do loose-route
 //	scscfRegIdentity_t	identity;
 	osList_t ueList;			//a list of UE identities for a UE, including impu and impi, each element is a scscfRegIdentity_t
-	union {
-		osList_t sessDatalist;		//a list of sessions waiting for user profile.  only relevent when waiting for SAA and state = SCSCF_REG_STATE_UN_REGISTERED
-		scscfRegMsgInfo_t regMsgInfo;	//when received a sip REGISTER message from UE
-	};
+	osList_t sessDatalist;		//a list of sessions waiting for user profile.  only relevent when waiting for SAA and state = SCSCF_REG_STATE_UN_REGISTERED
+	scscfRegTempWorkInfo_t tempWorkInfo;    //store info to assist registration procedure
+		//scscfRegMsgInfo_t regMsgInfo;	//when received a sip REGISTER message from UE
 	scscfUserProfile_t userProfile;
 	scscfChgInfo_t hssChgInfo;
 	scscfRegContactInfo_t ueContactInfo;	//contact info, expiry, etc.
-	scscfRegTempWorkInfo_t tempWorkInfo;	//store info to assist registration procedure
+//	scscfRegTempWorkInfo_t tempWorkInfo;	//store info to assist registration procedure
     osList_t asRegInfoList; //stores the asReg proxyInfo, each entry contains a scscfAsRegInfo_t block.  Used to send deregister for network initiated 3rd party deregistration
 	uint64_t expiryTimerId;
 	uint64_t purgeTimerId;

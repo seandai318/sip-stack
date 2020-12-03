@@ -11,6 +11,14 @@
 static sipTUAppOnSipMsg_h sipTU_appOnMsg[SIPTU_APP_TYPE_COUNT];
 
 
+
+/* about the distribution of tu messages to app.
+ * primary based on the production type(SIP_TU_PRODUCT_TYPE).  This is hard defined in sipTUConfig.h.  This will be changed to user defined variable
+ * For request, SIP_TU_PRODUCT_TYPE is the only criteria used to distribute messages to app.
+ * for response, when system starts, each app attach its appType with a onMsg function towards TU.  When an app sends out a request, it will assign 
+ * an appType in the request, which will be passed back by the transaction for the response message. TU can use the appType to determine where to pass 
+ * to the application based on the appType attach() in the system start up.
+ */ 
 osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg)
 {
 	if(!pMsg)
@@ -52,6 +60,30 @@ osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg)
 				else
 				{
 					logError("try to forward a response to a not supported app(%d).", pMsg->appType);
+				}
+			}
+			break;
+		case SIPTU_PRODUCT_TYPE_CSCF:
+			if(pMsg->sipMsgType == SIP_MSG_REQUEST)
+			{
+				return sipTU_appOnMsg[SIPTU_PRODUCT_TYPE_CSCF](msgType, pMsg);
+			}
+			else
+			{
+				switch(pMsg->appType)
+				{
+					case SIPTU_APP_TYPE_ICSCF:
+						return sipTU_appOnMsg[SIPTU_APP_TYPE_ICSCF](msgType, pMsg);
+						break;
+					case SIPTU_APP_TYPE_SCSCF_REG:
+						return sipTU_appOnMsg[SIPTU_APP_TYPE_SCSCF_REG](msgType, pMsg);
+						break;
+					case SIPTU_APP_TYPE_SCSCF_SESSION:
+						return sipTU_appOnMsg[SIPTU_APP_TYPE_SCSCF_SESSION](msgType, pMsg);
+                        break;
+					default:
+						logError("appType(%d) is not supported for SIPTU_PRODUCT_TYPE_CSCF.", pMsg->appType);
+						break;
 				}
 			}
 			break;

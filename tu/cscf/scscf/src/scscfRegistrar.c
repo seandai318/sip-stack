@@ -35,13 +35,13 @@
 #include "scscfCx.h"
 #include "cscfHelper.h"
 #include "scscfIfc.h"
+#include "scscfIntf.h"
 
 
 
 static void scscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
-static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw);
+static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isViaIcscf);
 static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAddr_t* pNextHop);
-static bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfcEvent);
 static void scscfReg_dnsCallback(dnsResResponse_t* pRR, void* pData);
 static osStatus_e scscfReg_onSipResponse(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
 static osStatus_e scscfReg_onTrFailure(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
@@ -85,6 +85,8 @@ osStatus_e scscfReg_init(uint32_t bucketSize)
     }
 
 	status = scscfIfc_init(configDir, SCSCF_SIFC_XSD_FILE_NAME, SCSCF_SIFC_XML_FILE_NAME);
+
+    sipTU_attach(SIPTU_APP_TYPE_SCSCF_REG, scscfReg_onTUMsg);
 
 EXIT:
     return status;
@@ -182,12 +184,13 @@ osStatus_e scscfReg_onIcscfMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, si
 	}
 
 	//need to copy the TUMsg and DecodedRaw here when the message is directly from icscf via function call
-	scscfReg_processRegMsg(pImpi, pImpu, osmemref(pSipTUMsg), osmemref(pReqDecodedRaw));
+	scscfReg_processRegMsg(pImpi, pImpu, osmemref(pSipTUMsg), osmemref(pReqDecodedRaw), true);
 
 	return OS_STATUS_OK;
 }
 
 
+//msg directly from TR/TU layer
 static void scscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 {
     if(!pSipTUMsg)
@@ -221,7 +224,7 @@ static void scscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 		goto EXIT;
 	}
 
-	scscfReg_processRegMsg(&impi, &impu, pSipTUMsg, pReqDecodedRaw);
+	scscfReg_processRegMsg(&impi, &impu, pSipTUMsg, pReqDecodedRaw, false);
 
 EXIT:
 	if(rspCode != SIP_RESPONSE_INVALID)
@@ -234,7 +237,7 @@ EXIT:
 
 
 //common function for messages both from transaction or from icscf
-static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw)
+static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isViaIcscf)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -294,6 +297,7 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
     pRegInfo->tempWorkInfo.impu = *pImpu;
     pRegInfo->tempWorkInfo.pTUMsg = pSipTUMsg;
     pRegInfo->tempWorkInfo.pReqDecodedRaw = pReqDecodedRaw;
+    pRegInfo->tempWorkInfo.sipLocalHost = isViaIcscf ? cscfConfig_getLocalSockAddr(CSCF_TYPE_ICSCF, false) : cscfConfig_getLocalSockAddr(CSCF_TYPE_SCSCF, false);
 
 	if(SCSCF_IS_AUTH_ENABLED && scscfReg_isPerformMar(pRegInfo->regState, SCSCF_IS_REREG_PERFORM_AUTH))
 	{
@@ -370,7 +374,7 @@ EXIT:
 
 
 //this function will recursively calling itself if fails to send REGISTER to 3rd party AS until no more AS to try (for sessCase=continued)
-static bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfcEvent)
+bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfcEvent)
 {
 	bool isDone = false;
     dnsResResponse_t* pDnsResponse = NULL;
@@ -672,7 +676,7 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_CONTACT, true);
 
     proxyInfo_t* pProxyInfo = oszalloc(sizeof(proxyInfo_t), NULL);
-    //revisit20201128, pProxyInfo->proxyOnMsg = scscfReg_onTUMsg;
+    pProxyInfo->proxyOnMsg = NULL;		//for cscf proxyOnMsg is not used since cscf does not distribute message further after receiving from TU
     pProxyInfo->pCallInfo = pRegInfo;
     
 	sipTuUri_t targetUri = {*pRegInfo->tempWorkInfo.pAs, true};
@@ -780,7 +784,7 @@ static osStatus_e scscfReg_createAndSendSipDeRegister(scscfRegInfo_t* pRegInfo, 
     sipTransMsg_t sipTransMsg;
     sipTransMsg.sipMsgType = SIP_TRANS_MSG_CONTENT_REQUEST;
     sipTransMsg.isTpDirect = false;
-    sipTransMsg.appType = SIPTU_APP_TYPE_SCSCF;
+    sipTransMsg.appType = SIPTU_APP_TYPE_SCSCF_REG;
 
     sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.pSipMsg = pReq;
     sipTransMsg.request.sipTrMsgBuf.sipMsgBuf.reqCode = SIP_METHOD_REGISTER;

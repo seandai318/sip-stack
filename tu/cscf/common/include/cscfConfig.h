@@ -84,6 +84,7 @@ typedef struct {
 void cscfConfig_init(char* cxFolder, char* cxXsdFileName);
 osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUserProfile_t* pDecodedUserProfile);
 struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseListenPort);
+bool cscf_isS(struct sockaddr_in* rcvLocal);
 
 
 

@@ -415,7 +415,7 @@ transportStatus_e tpLocal_udpSend(transportAppType_e appType, transportInfo_t* p
 		}
 	}
 
-	struct sockaddr_in localAddr;
+	struct sockaddr_in localAddr = pTpInfo->local;
 	if(pTpInfo->local.sin_addr.s_addr == 0)
 	{
 		localAddr.sin_family = defaultLocalAddr.sin_family;

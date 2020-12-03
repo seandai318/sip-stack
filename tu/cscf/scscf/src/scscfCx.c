@@ -128,7 +128,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->regMsgInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->regMsgInfo.pSipTUMsg->pPeer, osSA_isInvalid(&pRegInfo->regMsgInfo.sipLocalHost)? NULL : &pRegInfo->regMsgInfo.sipLocalHost, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
 
             if(rspCode < 200 || rspCode >= 300)
             {
@@ -156,7 +156,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_RE_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->regMsgInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->regMsgInfo.pSipTUMsg->pPeer, osSA_isInvalid(&pRegInfo->regMsgInfo.sipLocalHost)? NULL : &pRegInfo->regMsgInfo.sipLocalHost, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
 
             if(rspCode > 199 && rspCode < 299)
             {
@@ -176,7 +176,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_DE_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->regMsgInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->regMsgInfo.pSipTUMsg->pPeer, osSA_isInvalid(&pRegInfo->regMsgInfo.sipLocalHost)? NULL : &pRegInfo->regMsgInfo.sipLocalHost, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
 
             //continue 3rd party registration
             pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE;

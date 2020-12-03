@@ -18,8 +18,8 @@
 
 typedef enum {
 	TRANSPORT_APP_TYPE_SIP,
-	TRANSPORT_APP_TYPE_SIP_ICSCF,	//ICSCF and SCSCF are special since they may share the same program.  Any apps that share the same program shall be listed individually
-	TRANSPORT_APP_TYPE_SIP_SCSCF,	//ICSCF and SCSCF are special since they may share the same program.  Any apps that share the same program shall be listed individually
+	TRANSPORT_APP_TYPE_SIP_ICSCF,	//ICSCF and SCSCF are special since they may share the same program.  Any apps that share the same program shall be listed seperatedly
+	TRANSPORT_APP_TYPE_SIP_SCSCF,	//ICSCF and SCSCF are special since they may share the same program.  Any apps that share the same program shall be listed seperatedly
 	TRANSPORT_APP_TYPE_DIAMETER,
 	TRANSPORT_APP_TYPE_DNS,
 	TRANSPORT_APP_TYPE_UNKNOWN,
