@@ -9,14 +9,24 @@
 #define _SIP_APP_MAIN_H
 
 #include "sipTransportIntf.h"
+#include "transportConfig.h"
 
+
+typedef struct {
+    transportAppType_e appType;
+    transportIpPort_t local;
+} tpClientLocalInfo_t;
 
 
 typedef struct sipTransportClientSetting {
 //    int epollId;    //if epollId = -1, thread has to create its own epollId
 	int ownIpcFd[2];
     int timerfd;	//this is the write end of the timer module
-    transportIpPort_t local;
+    uint8_t tcpInfoNum;
+    uint8_t udpInfoNum;
+    tpClientLocalInfo_t clientTcpInfo[TRANSPORT_MAX_TCP_LISTENER_NUM];
+    tpClientLocalInfo_t clientUdpInfo[TRANSPORT_MAX_UDP_LISTENER_NUM];    
+    //transportIpPort_t local;
 	sipTp_appStartup_h appStartup;	//hockup to start certain functions in application layer
 	void* appStartupData;
 } sipTransportClientSetting_t;

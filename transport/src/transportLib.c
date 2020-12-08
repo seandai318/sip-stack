@@ -115,3 +115,21 @@ EXIT:
 }
 
 
+transportAppType_e tpGetAppTypeFromLocalAddr(struct sockaddr_in* pLocal, bool isTcp, osList_t* pTcpAddrList, osList_t* pUdpAddrList)
+{
+    transportAppType_e appType = TRANSPORT_APP_TYPE_UNKNOWN;
+
+    osListElement_t* pLE = isTcp ? pTcpAddrList->head : pUdpAddrList->head;
+    while(pLE)
+    {
+        if(pLocal->sin_addr.s_addr == ((tpLocalAddrInfo_t*)pLE->data)->local.sin_addr.s_addr)
+        {
+            appType = ((tpLocalAddrInfo_t*)pLE->data)->appType;
+            break;
+        }
+
+        pLE = pLE->next;
+    }
+
+    return appType;
+}

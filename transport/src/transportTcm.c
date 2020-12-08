@@ -39,11 +39,21 @@
 
 static void sipTpOnKATimeout(uint64_t timerId, void* ptr);
 static void sipTpOnQTimeout(uint64_t timerId, void* ptr);
+static tpTcm_t* tpGetConnectedTcmInternal(int tcpFd, tpTcm_t* tcmList, uint8_t maxTcmMaxNum);
+static osStatus_e tpDeleteTcmInternal(int tcpfd, bool isNotifyApp, tpTcm_t* tcmList, uint8_t maxTcmMaxNum);
+static osStatus_e  tpDeleteTcm(int tcpFd, bool isNotifyApp, bool isCom);
+static void tpDeleteAllTcmInternal(tpTcm_t* tcmList, uint8_t maxTcmMaxNum);
+static osStatus_e tpTcmUpdateConnInternal(int tcpfd, bool isConnEstablished, tpTcm_t* tcmList, uint8_t tcmMaxNum);
+static void tpListUsedTcmInternal(tpTcm_t* tcmList, uint8_t tcmMaxNum, char* tcmName);
 
 
-//this is shared by both server and client/transport threads
-static tpTcm_t sipTCM[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
-static uint8_t sipTcmMaxNum = 0;
+//this is shared by both server and client/transport threads, created by lister thread (COM thread)
+static tpTcm_t gSharedTCM[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
+static __thread uint8_t gSharedTcmMaxNum = 0;
+
+//this is per thread
+static __thread tpTcm_t gAppTCM[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
+static __thread uint8_t gAppTcmMaxNum = 0;
 
 //in TpServer.c, pTcm->msgConnInfo.is modified and is not Rwlock protected, it is assumed nobody messes with this field except TpServer.c, the same for TpClient.c
 static pthread_rwlock_t tcmRwlock;
@@ -69,42 +79,77 @@ void tcmInit(notifyTcpConnUser_h notifier[], int notifyNum)
 }
 
 
+//this function is called when there is request from app to send a message
+//first check if the shared TCM list has matching TCM, if not, check per thread TCM
 //isReserveOne=true will reserve a tcm if a matching is not found
-tpTcm_t* tpGetTcm(struct sockaddr_in peer, transportAppType_e appType, bool isReseveOne)
+tpTcm_t* tpGetTcm4SendMsg(struct sockaddr_in peer, transportAppType_e appType, bool isReseveOne, bool* isTcpConnOngoing)
 {
 	tpTcm_t* pTcm = NULL;
+	bool isMatch = false;
+	*isTcpConnOngoing = false;
 
-	if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
+	//first check the shared TCM, i.e., TCM created by listening COM
+    if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
+    {
+        logError("fails to acquire rdlock for tcmRwlock.");
+        return NULL;
+    }
+
+	for(int i=0; i<gSharedTcmMaxNum; i++)
+    {
+        if(!gSharedTCM[i].isUsing)
+        {
+            continue;
+        }
+
+        //needs to have pTcm->sockfd check since there may have multiple TCM per dest per app.  it is possible simultaneously multiple requests to create TCM.
+        if((gSharedTCM[i].peer.sin_port == peer.sin_port) && (gSharedTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr) && (gSharedTCM[i].appType == appType) && pTcm->sockfd != -1)
+        {
+            pTcm = &gSharedTCM[i];
+			isMatch = true;
+			break;
+        }
+    }
+
+    pthread_rwlock_unlock(&tcmRwlock);
+
+	if(isMatch)
 	{
-		logError("fails to acquire rdlock for tcmRwlock.");
-		return NULL;
+		goto EXIT;
 	}
 
-	bool isMatch = false;
-	for(int i=0; i<sipTcmMaxNum; i++)
+	//if there is no connection in the shared TCM, check per thread TCM
+	for(int i=0; i<gAppTcmMaxNum; i++)
 	{
-		if(!sipTCM[i].isUsing)
+		if(!gAppTCM[i].isUsing)
 		{
 			if(isReseveOne && !pTcm)
 			{
-				pTcm = &sipTCM[i];
+				pTcm = &gAppTCM[i];
 			}
 			continue;
 		}
 
-		if((sipTCM[i].peer.sin_port == peer.sin_port) && (sipTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr) && (sipTCM[i].appType == appType))
+		//needs to have pTcm->sockfd check since there may have multiple TCM per dest per app.  it is possible simultaneously multiple requests to create TCM.
+		if((gAppTCM[i].peer.sin_port == peer.sin_port) && (gAppTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr) && (gAppTCM[i].appType == appType))
 		{
-			pTcm = &sipTCM[i];
+			pTcm = &gSharedTCM[i];
 			isMatch = true;
+
+			if(pTcm->sockfd != -1)
+			{
+				*isTcpConnOngoing = true;
+			}
+
 			goto EXIT;
 		}
 	}
 
 	if(!pTcm && isReseveOne)
 	{
-		if(sipTcmMaxNum < SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM)
+		if(gAppTcmMaxNum < SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM)
 		{
-			pTcm = &sipTCM[sipTcmMaxNum++];
+			pTcm = &gAppTCM[gAppTcmMaxNum++];
 		}
 	}
 
@@ -118,8 +163,6 @@ tpTcm_t* tpGetTcm(struct sockaddr_in peer, transportAppType_e appType, bool isRe
 	}
 
 EXIT:
-	pthread_rwlock_unlock(&tcmRwlock);
-
 	if(!isMatch && pTcm != NULL)
 	{
 		pTcm->appType = appType;
@@ -129,26 +172,29 @@ EXIT:
 }
 
 
-void tpReleaseTcm(tpTcm_t* pTcm)
+void tpReleaseAppTcm(tpTcm_t* pTcm)
 {
 	if(!pTcm)
 	{
 		return;
 	}
 
+#if 0
     if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
     {
         logError("fails to acquire rdlock for tcmRwlock.");
         return;
     }
-
+#endif
 	pTcm->isUsing = false;
     mdebug(LM_TRANSPORT, "pTcm(%p).isUsing=false, fd=%d.", pTcm, pTcm->sockfd);
 
 	pTcm->sockfd = -1;
     memset(pTcm, 0, sizeof(tpTcm_t));
 
+#if 0
     pthread_rwlock_unlock(&tcmRwlock);
+#endif
 }
 
 
@@ -157,119 +203,179 @@ tpTcm_t* tpGetTcmByFd(int tcpFd, struct sockaddr_in peer)
 {
     tpTcm_t* pTcm = NULL;
 
+	//first check the shared TCM list
     if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
     {
         logError("fails to acquire rdlock for tcmRwlock.");
         return NULL;
     }
 
-    for(int i=0; i<sipTcmMaxNum; i++)
+    for(int i=0; i<gSharedTcmMaxNum; i++)
     {
-        if(sipTCM[i].isUsing)
+        if(gSharedTCM[i].isUsing)
         {
-			if(sipTCM[i].sockfd == tcpFd)
+			if(gSharedTCM[i].sockfd == tcpFd)
 			{ 
-        		if((sipTCM[i].peer.sin_port == peer.sin_port) && (sipTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr))
+        		if((gSharedTCM[i].peer.sin_port == peer.sin_port) && (gSharedTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr))
         		{
-            		pTcm = &sipTCM[i];
-            		goto EXIT;
+            		pTcm = &gSharedTCM[i];
+            		break;
         		}
     		}
 		}
 	}
 
-EXIT:
     pthread_rwlock_unlock(&tcmRwlock);
+
+	//if there is no matching fd in the shared TCM list, check the per thread TCM list
+	if(!pTcm)
+	{
+	    for(int i=0; i<gAppTcmMaxNum; i++)
+    	{
+        	if(gAppTCM[i].isUsing)
+        	{
+            	if(gAppTCM[i].sockfd == tcpFd)
+            	{
+                	if((gAppTCM[i].peer.sin_port == peer.sin_port) && (gAppTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr))
+                	{
+                    	pTcm = &gAppTCM[i];
+                    	break;
+                	}
+				}
+            }
+        }
+    }
+
+EXIT:
 	return pTcm;
 }
 
 
-
-tpTcm_t* tpGetConnectedTcm(int tcpFd)
+//if isCom = true, check in shared TCM list, otherwise, in per thread TCM list
+tpTcm_t* tpGetConnectedTcm(int tcpFd, bool isCom)
 {
     tpTcm_t* pTcm = NULL;
-
-    if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
-    {
-        logError("fails to acquire wrlock for tcmRwlock.");
-        return NULL;
-    }
-
     bool isMatch = false;
-    for(int i=0; i<sipTcmMaxNum; i++)
-    {
-        if(!sipTCM[i].isUsing)
-        {
-			continue;
-		}
 
-        if(sipTCM[i].sockfd == tcpFd)
-        {
-            pTcm = &sipTCM[i];
-			if(!pTcm->msgConnInfo.pMsgBuf)
-			{
-				pTcm->msgConnInfo.pMsgBuf = osMBuf_alloc(tpGetBufSize(pTcm->appType));
-				if(!pTcm->msgConnInfo.pMsgBuf)
-				{
-					logError("fails to allocate memory for pTcm->msgConnInfo.sipBuf->pMsgBuf.");
-					pTcm = NULL;
-				}
-			}
-            goto EXIT;
-        }
-    }
+	if(isCom)
+	{
+    	if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
+    	{
+        	logError("fails to acquire wrlock for tcmRwlock.");
+        	return NULL;
+    	}
+
+		pTcm = tpGetConnectedTcmInternal(tcpFd, gSharedTCM, gSharedTcmMaxNum);
+	
+    	pthread_rwlock_unlock(&tcmRwlock);
+	}
+	else
+	{
+		pTcm = tpGetConnectedTcmInternal(tcpFd, gAppTCM, gAppTcmMaxNum);
+	}
 
 EXIT:
-    pthread_rwlock_unlock(&tcmRwlock);
 	return pTcm;
 }	
 
 
-osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp)
+static tpTcm_t* tpGetConnectedTcmInternal(int tcpFd, tpTcm_t* tcmList, uint8_t maxTcmMaxNum)
 {
-    osStatus_e status = OS_STATUS_OK;
+	tpTcm_t* pTcm = NULL;
 
-    if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
+    for(int i=0; i<maxTcmMaxNum; i++)
     {
-        logError("fails to acquire wrlock for tcmRwlock.");
-        return OS_ERROR_SYSTEM_FAILURE;
-    }
-
-    for(int i=0; i<sipTcmMaxNum; i++)
-    {
-        if(!sipTCM[i].isUsing)
+        if(!tcmList[i].isUsing)
         {
             continue;
         }
 
-        if(sipTCM[i].sockfd == tcpfd)
+        if(tcmList[i].sockfd == tcpFd)
         {
-			sipTCM[i].isUsing = false;
-			mdebug(LM_TRANSPORT, "pTcm(%p, sipTCM[%d]).isUsing=false, tcpfd=%d", &sipTCM[i], i, tcpfd);
-			if(sipTCM[i].isTcpConnDone)
+            pTcm = &tcmList[i];
+            if(!pTcm->msgConnInfo.pMsgBuf)
+            {
+                pTcm->msgConnInfo.pMsgBuf = osMBuf_alloc(tpGetBufSize(pTcm->appType));
+                if(!pTcm->msgConnInfo.pMsgBuf)
+                {
+                    logError("fails to allocate memory for pTcm->msgConnInfo.sipBuf->pMsgBuf.");
+
+                    pTcm = NULL;
+                    goto EXIT;
+                }
+            }
+        }
+    }
+
+EXIT:
+    return pTcm;
+}
+
+	
+static osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp, bool isCom)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+    if(isCom)
+    {
+        if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
+        {
+            logError("fails to acquire wrlock for tcmRwlock.");
+            status = OS_ERROR_SYSTEM_FAILURE;
+        }
+
+        status = tpDeleteTcmInternal(tcpfd, isNotifyApp, gSharedTCM, gSharedTcmMaxNum);
+
+        pthread_rwlock_unlock(&tcmRwlock);
+    }
+    else
+    {
+        status = tpDeleteTcmInternal(tcpfd, isNotifyApp, gAppTCM, gAppTcmMaxNum);
+    }
+
+	return status;
+}
+
+
+static osStatus_e tpDeleteTcmInternal(int tcpfd, bool isNotifyApp, tpTcm_t* tcmList, uint8_t maxTcmMaxNum)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+    for(int i=0; i< maxTcmMaxNum; i++)
+    {
+        if(!tcmList[i].isUsing)
+        {
+            continue;
+        }
+
+        if(tcmList[i].sockfd == tcpfd)
+        {
+			tcmList[i].isUsing = false;
+			mdebug(LM_TRANSPORT, "pTcm(%p, tcmList[%d]).isUsing=false, tcpfd=%d", &tcmList[i], i, tcpfd);
+			if(tcmList[i].isTcpConnDone)
 			{
-				osStopTimer(sipTCM[i].msgConnInfo.keepAliveTimerId);
-				sipTCM[i].msgConnInfo.keepAliveTimerId = 0;
-				if(sipTCM[i].msgConnInfo.pMsgBuf)
+				osStopTimer(tcmList[i].msgConnInfo.keepAliveTimerId);
+				tcmList[i].msgConnInfo.keepAliveTimerId = 0;
+				if(tcmList[i].msgConnInfo.pMsgBuf)
 				{
-					osMBuf_dealloc(sipTCM[i].msgConnInfo.pMsgBuf);
-					sipTCM[i].msgConnInfo.pMsgBuf = NULL;
+					osMBuf_dealloc(tcmList[i].msgConnInfo.pMsgBuf);
+					tcmList[i].msgConnInfo.pMsgBuf = NULL;
 				}
 
-				sipTCM[i].isTcpConnDone = false;
+				tcmList[i].isTcpConnDone = false;
 			}
 			else
 			{
-				mdebug(LM_TRANSPORT, "sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i);
+				mdebug(LM_TRANSPORT, "tcmList[i].appType=%d, notifyTcpConnUser[tcmList[i].appType]=%p, i=%d.", tcmList[i].appType, notifyTcpConnUser[tcmList[i].appType], i);
 
-    			if(isNotifyApp && notifyTcpConnUser[sipTCM[i].appType])
+    			if(isNotifyApp && notifyTcpConnUser[tcmList[i].appType])
     			{
-        			notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, tcpfd, NULL);
+        			notifyTcpConnUser[tcmList[i].appType](&tcmList[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, tcpfd, NULL);
     			}
 			}
 
-			memset(&sipTCM[i], 0, sizeof(tpTcm_t));
-			sipTCM[i].sockfd = -1;
+			memset(&tcmList[i], 0, sizeof(tpTcm_t));
+			tcmList[i].sockfd = -1;
 
             goto EXIT;
         }
@@ -279,7 +385,6 @@ osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp)
     status = OS_ERROR_INVALID_VALUE;
 
 EXIT:
-    pthread_rwlock_unlock(&tcmRwlock);
     return status;
 }
 
@@ -292,57 +397,60 @@ void tpDeleteAllTcm()
         return;
     }
 
-    for(int i=0; i<sipTcmMaxNum; i++)
+	tpDeleteAllTcmInternal(gSharedTCM, gSharedTcmMaxNum);
+
+    pthread_rwlock_unlock(&tcmRwlock);
+
+    tpDeleteAllTcmInternal(gAppTCM, gAppTcmMaxNum);
+}
+
+
+static void tpDeleteAllTcmInternal(tpTcm_t* tcmList, uint8_t maxTcmMaxNum)
+{
+    for(int i=0; i<maxTcmMaxNum; i++)
     {
-        if(!sipTCM[i].isUsing)
+        if(!tcmList[i].isUsing)
         {
             continue;
         }
 
-        sipTCM[i].isUsing = false;
-        mdebug(LM_TRANSPORT, "pTcm(%p, sipTCM[%d]).isUsing=false, fd=%d", &sipTCM[i], i, sipTCM[i].sockfd);
+        tcmList[i].isUsing = false;
+        mdebug(LM_TRANSPORT, "pTcm(%p, tcmList[%d]).isUsing=false, fd=%d", &tcmList[i], i, tcmList[i].sockfd);
 
-        if(sipTCM[i].isTcpConnDone)
+        if(tcmList[i].isTcpConnDone)
         {
-            osStopTimer(sipTCM[i].msgConnInfo.keepAliveTimerId);
-            sipTCM[i].msgConnInfo.keepAliveTimerId = 0;
-            if(sipTCM[i].msgConnInfo.pMsgBuf)
+            osStopTimer(tcmList[i].msgConnInfo.keepAliveTimerId);
+            tcmList[i].msgConnInfo.keepAliveTimerId = 0;
+            if(tcmList[i].msgConnInfo.pMsgBuf)
             {
-                osMBuf_dealloc(sipTCM[i].msgConnInfo.pMsgBuf);
-                sipTCM[i].msgConnInfo.pMsgBuf = NULL;
+                osMBuf_dealloc(tcmList[i].msgConnInfo.pMsgBuf);
+                tcmList[i].msgConnInfo.pMsgBuf = NULL;
         	}  
 
-            sipTCM[i].isTcpConnDone = false;
+            tcmList[i].isTcpConnDone = false;
 		}
         else
         {
-			mdebug(LM_TRANSPORT, "sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i);
+			mdebug(LM_TRANSPORT, "tcmList[i].appType=%d, notifyTcpConnUser[tcmList[i].appType]=%p, i=%d.", tcmList[i].appType, notifyTcpConnUser[tcmList[i].appType], i);
 
-	        if(notifyTcpConnUser[sipTCM[i].appType])
+	        if(notifyTcpConnUser[tcmList[i].appType])
             {
-                notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, -1, NULL);
+                notifyTcpConnUser[tcmList[i].appType](&tcmList[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, -1, NULL);
             }
         }
 
-		close(sipTCM[i].sockfd);
+		close(tcmList[i].sockfd);
 
-        memset(&sipTCM[i], 0, sizeof(tpTcm_t));
-        sipTCM[i].sockfd = -1;
+        memset(&tcmList[i], 0, sizeof(tpTcm_t));
+        tcmList[i].sockfd = -1;
     }
-
-    pthread_rwlock_unlock(&tcmRwlock);
 }
 
 
-osStatus_e tpTcmAddUser(tpTcm_t* pTcm, void* pTrId)
+//no need to use tcmRwlock in this function since the TCM in this function shall be per thread
+osStatus_e tpAppTcmAddUser(tpTcm_t* pTcm, void* pTrId)
 {
     osStatus_e status = OS_STATUS_OK;
-
-    if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
-    {
-        logError("fails to acquire wrlock for tcmRwlock.");
-        return OS_ERROR_SYSTEM_FAILURE;
-    }
 
 	if(!pTcm->isUsing)
 	{
@@ -361,12 +469,11 @@ osStatus_e tpTcmAddUser(tpTcm_t* pTcm, void* pTrId)
 	osListPlus_append(&pTcm->tcpConn.appIdList, pTrId);
 
 EXIT:
-    pthread_rwlock_unlock(&tcmRwlock);
 	return status;
 }
 
 
-osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, struct sockaddr_in* local, transportAppType_e appType)
+osStatus_e tpComTcmAddFd(int tcpfd, struct sockaddr_in* peer, struct sockaddr_in* local, transportAppType_e appType)
 {
     osStatus_e status = OS_STATUS_OK;
 	tpTcm_t* pTcm = NULL;
@@ -383,20 +490,20 @@ osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, struct sockaddr_in* l
         return OS_ERROR_SYSTEM_FAILURE;
     }
 
-    for(int i=0; i<sipTcmMaxNum; i++)
+    for(int i=0; i<gSharedTcmMaxNum; i++)
     {
-        if(!sipTCM[i].isUsing)
+        if(!gSharedTCM[i].isUsing)
         {
-			pTcm = &sipTCM[i];
+			pTcm = &gSharedTCM[i];
 			break;
 		}
 	}
 
     if(!pTcm)
     {
-        if(sipTcmMaxNum < SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM)
+        if(gSharedTcmMaxNum < SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM)
         {
-            pTcm = &sipTCM[sipTcmMaxNum++];
+            pTcm = &gSharedTCM[gSharedTcmMaxNum++];
         }
     }
 
@@ -439,71 +546,91 @@ osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, struct sockaddr_in* l
 
 EXIT:
     pthread_rwlock_unlock(&tcmRwlock);
-	tpListUsedTcm();
+	tpListUsedTcm(true);
 
 	return status;
 }
 
 
 //update TCM conn status for a waiting for conn TCM
-osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished)
+//this shall only be called by per thread TCP connection creation, as COM is purely TCP connection listener.  Nevertheless, this function supports COM TCP connection creation
+osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished, bool isCom)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+	if(isCom)
+	{
+    	if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
+    	{
+        	logError("fails to acquire wrlock for tcmRwlock.");
+        	return OS_ERROR_SYSTEM_FAILURE;
+    	}
+
+		status = tpTcmUpdateConnInternal(tcpfd, isConnEstablished, gSharedTCM, gSharedTcmMaxNum);
+
+		pthread_rwlock_unlock(&tcmRwlock);
+	}
+	else
+	{
+		status = tpTcmUpdateConnInternal(tcpfd, isConnEstablished, gAppTCM, gAppTcmMaxNum);
+	}
+
+	return status;
+}
+
+
+static osStatus_e tpTcmUpdateConnInternal(int tcpfd, bool isConnEstablished, tpTcm_t* tcmList, uint8_t tcmMaxNum)
 {
 	osStatus_e status = OS_STATUS_OK;
 
-    if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
+    for(int i=0; i<tcmMaxNum; i++)
     {
-        logError("fails to acquire wrlock for tcmRwlock.");
-        return OS_ERROR_SYSTEM_FAILURE;
-    }
-
-    for(int i=0; i<sipTcmMaxNum; i++)
-    {
-        if(!sipTCM[i].isUsing)
+        if(!tcmList[i].isUsing)
         {
 			continue;
         }
 
-        if(sipTCM[i].sockfd == tcpfd)
+        if(tcmList[i].sockfd == tcpfd)
         {
-			if(sipTCM[i].isTcpConnDone && isConnEstablished)
+			if(tcmList[i].isTcpConnDone && isConnEstablished)
 			{
-				logError("try to update a TCP connection status for fd (%d), but tcm(%p) shows isTcpConnDone = true.", tcpfd, &sipTCM[i]);
+				logError("try to update a TCP connection status for fd (%d), but tcm(%p) shows isTcpConnDone = true.", tcpfd, &tcmList[i]);
 				status = OS_ERROR_INVALID_VALUE;
 				goto EXIT;
 			}
 
 			if(isConnEstablished)
 			{
-				sipTCM[i].isTcpConnDone = true;
+				tcmList[i].isTcpConnDone = true;
 
-				mdebug(LM_TRANSPORT, "sipTCM[i].appType=%d, notifyTcpConnUser[sipTCM[i].appType]=%p, i=%d.", sipTCM[i].appType, notifyTcpConnUser[sipTCM[i].appType], i); 
-				if(notifyTcpConnUser[sipTCM[i].appType])
+				mdebug(LM_TRANSPORT, "tcmList[i].appType=%d, notifyTcpConnUser[tcmList[i].appType]=%p, i=%d.", tcmList[i].appType, notifyTcpConnUser[tcmList[i].appType], i); 
+				if(notifyTcpConnUser[tcmList[i].appType])
 				{
-					notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_OK, tcpfd, &sipTCM[i].peer);
+					notifyTcpConnUser[tcmList[i].appType](&tcmList[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_OK, tcpfd, &tcmList[i].peer);
 				}
-				sipTCM[i].msgConnInfo.pMsgBuf = osMBuf_alloc(tpGetBufSize(sipTCM[i].appType));
-				if(sipTCM[i].appType == TRANSPORT_APP_TYPE_SIP)
+				tcmList[i].msgConnInfo.pMsgBuf = osMBuf_alloc(tpGetBufSize(tcmList[i].appType));
+				if(tcmList[i].appType == TRANSPORT_APP_TYPE_SIP)
 				{
-                	sipTCM[i].msgConnInfo.isPersistent = false;
-					sipTCM[i].msgConnInfo.keepAliveTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE, sipTpOnKATimeout, &sipTCM[i]);
+                	tcmList[i].msgConnInfo.isPersistent = false;
+					tcmList[i].msgConnInfo.keepAliveTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_MAX_TCP_CONN_ALIVE, sipTpOnKATimeout, &tcmList[i]);
 				}
 				else
 				{
-					sipTCM[i].msgConnInfo.isPersistent = true;
+					tcmList[i].msgConnInfo.isPersistent = true;
 				}
 			}
 			else
 			{
-				if(notifyTcpConnUser[sipTCM[i].appType])
+				if(notifyTcpConnUser[tcmList[i].appType])
 				{
-                	notifyTcpConnUser[sipTCM[i].appType](&sipTCM[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, -1, &sipTCM[i].peer);
+                	notifyTcpConnUser[tcmList[i].appType](&tcmList[i].tcpConn.appIdList, TRANSPORT_STATUS_TCP_FAIL, -1, &tcmList[i].peer);
 				}
 
-            	sipTCM[i].isUsing = false;
-				mdebug(LM_TRANSPORT, "pTcm(%p, sipTCM[%d]).isUsing=false, fd=%d.", &sipTCM[i], i, tcpfd);
+            	tcmList[i].isUsing = false;
+				mdebug(LM_TRANSPORT, "pTcm(%p, tcmList[%d]).isUsing=false, fd=%d.", &tcmList[i], i, tcpfd);
 
-            	memset(&sipTCM[i], 0, sizeof(tpTcm_t));
-            	sipTCM[i].sockfd = -1;
+            	memset(&tcmList[i], 0, sizeof(tpTcm_t));
+            	tcmList[i].sockfd = -1;
 
 				//update quarantine list
 				int i=0;
@@ -514,7 +641,7 @@ osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished)
 						sipTpQList[i].isUsing = true;
 						mdebug(LM_TRANSPORT, "pTpQ(%p, sipTpQList[%d]).isUsing=true.", &sipTpQList[i], i);
 
-						sipTpQList[i].peer = sipTCM[i].peer;
+						sipTpQList[i].peer = tcmList[i].peer;
 						sipTpQList[i].qTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_TCP_CONN_QUARANTINE_TIME, sipTpOnQTimeout, &sipTpQList[i]);
 						break;
 					}
@@ -527,7 +654,7 @@ osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished)
                         sipTpQList[i].isUsing = true;
                         mdebug(LM_TRANSPORT, "pTpQ(%p, sipTpQList[%d]).isUsing=true.", &sipTpQList[i], i);
 
-                        sipTpQList[i].peer = sipTCM[i].peer;
+                        sipTpQList[i].peer = tcmList[i].peer;
                         sipTpQList[i].qTimerId = osStartTimer(SIP_CONFIG_TRANSPORT_TCP_CONN_QUARANTINE_TIME, sipTpOnQTimeout, &sipTpQList[i]);
 						sipTpMaxQNum++;
 					}
@@ -546,7 +673,6 @@ osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished)
 	status = OS_ERROR_INVALID_VALUE;
 
 EXIT:
-    pthread_rwlock_unlock(&tcmRwlock);
 	return status;
 }
 
@@ -705,14 +831,13 @@ EXIT:
 
 
 //only list if the LM_TRANSPORT is configured on DEBUG level
-void tpListUsedTcm()
+//always display shared TCM, app TCM display depends on isCom parameter
+void tpListUsedTcm(bool isCom)
 {
     if(osDbg_isBypass(DBG_DEBUG, LM_TRANSPORT))
     {
         return;
     }
-
-    tpTcm_t* pTcm = NULL;
 
     if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
     {
@@ -720,15 +845,28 @@ void tpListUsedTcm()
         return;
     }
 
+    pthread_rwlock_unlock(&tcmRwlock);
+
+    if(!isCom)
+    {
+    	tpListUsedTcmInternal(gSharedTCM, gSharedTcmMaxNum, "app");
+	}
+}
+
+
+static void tpListUsedTcmInternal(tpTcm_t* tcmList, uint8_t tcmMaxNum, char* tcmName)
+{
+    tpTcm_t* pTcm = NULL;
+
 	//size of 600 is based on 10 * each_tcm_print_size (assume <60).  If each_tcm_print_size becomes bigger, the allocated buffer size shall also change
 	char prtBuffer[600];
     int i=0, count=0, n=0;
 
-    for(i=0; i<sipTcmMaxNum; i++)
+    for(i=0; i<tcmMaxNum; i++)
     {
-        if(sipTCM[i].isUsing)
+        if(tcmList[i].isUsing)
         {
-			n += sprintf(&prtBuffer[n], "i=%d, pTcm=%p, sockfd=%d, peer IP:port=%s:%d\n", i, &sipTCM[i], sipTCM[i].sockfd, inet_ntoa(sipTCM[i].peer.sin_addr), ntohs(sipTCM[i].peer.sin_port));
+			n += sprintf(&prtBuffer[n], "i=%d, pTcm=%p, sockfd=%d, peer IP:port=%s:%d\n", i, &tcmList[i], tcmList[i].sockfd, inet_ntoa(tcmList[i].peer.sin_addr), ntohs(tcmList[i].peer.sin_port));
 			if(++count == 10)
         	{
             	prtBuffer[n] = 0;
@@ -742,22 +880,20 @@ void tpListUsedTcm()
 	if(count >0)
 	{
 		prtBuffer[n] = 0;
-		mdebug(LM_TRANSPORT, "used TCM list:\n%s", prtBuffer);
+		mdebug(LM_TRANSPORT, "%s used TCM list:\n%s", tcmName, prtBuffer);
 	}
 	else if(i == 0)
 	{
-		mdebug(LM_TRANSPORT, "used TCM list:\nNo used TCM.");
+		mdebug(LM_TRANSPORT, "%s used TCM list:\nNo used TCM.", tcmName);
 	}
-
-    pthread_rwlock_unlock(&tcmRwlock);
 }
 
 
-osStatus_e tpTcmCloseTcpConn(int tpEpFd, int tcpFd, bool isNotifyApp)
+osStatus_e tpTcmCloseTcpConn(int tpEpFd, int tcpFd, bool isNotifyApp, bool isCom)
 {
     DEBUG_BEGIN
 
-    osStatus_e status = tpDeleteTcm(tcpFd, isNotifyApp);
+    osStatus_e status = tpDeleteTcm(tcpFd, isNotifyApp, isCom);
     if(status  == OS_STATUS_OK)
     {
         debug("tcpFd=%d is closed.", tcpFd);

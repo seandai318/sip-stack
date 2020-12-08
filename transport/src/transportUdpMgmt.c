@@ -45,7 +45,8 @@ int tpUdpMgmtGetFd(transportAppType_e appType, struct sockaddr_in localAddr)
 	osListElement_t* pLE = tpUdpInfoList.head;
 	while(pLE)
 	{
-		if(((tpUdpInfo_t*)pLE->data)->appType == appType && osIsSameSA(&((tpUdpInfo_t*)pLE->data)->local, &localAddr)) 
+		//if localAddr.sin_addr.s_addr == 0, only check if appType matches, otherwise, also check if local address matches
+		if(((tpUdpInfo_t*)pLE->data)->appType == appType && (localAddr.sin_addr.s_addr == 0 || osIsSameSA(&((tpUdpInfo_t*)pLE->data)->local, &localAddr))) 
 		{
 			((tpUdpInfo_t*)pLE->data)->accessCount++;
 			return ((tpUdpInfo_t*)pLE->data)->fd;

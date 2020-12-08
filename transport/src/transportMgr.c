@@ -93,7 +93,7 @@ logError("to-remove, isUDP=%d", isUDP);
 		pTpInfo->tpType = TRANSPORT_TYPE_UDP;
 		pTpInfo->tcpFd = -1;
 
-		//ims client has a defect that when sending response, it does not honer sent-by in the top via, always send via the real request sending ip:port
+		//ims client has a defect that when it sends back response, it does not honor sent-by in the top via, always send via the real request sending ip:port
 		if(SIP_CONFIG_USE_IMS_CLIENT)
 		{
 			return com_send(TRANSPORT_APP_TYPE_SIP, pTrId, pTpInfo, pSipBuf, NULL);
@@ -137,7 +137,7 @@ osStatus_e transport_closeTcpConn(int tcpFd, bool isCom)
 		epFd = appMain_getTpFd();
 	}
 
-	status = tpTcmCloseTcpConn(epFd, tcpFd, false);
+	status = tpTcmCloseTcpConn(epFd, tcpFd, false, isCom);
 
 EXIT:
 	return status;

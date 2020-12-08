@@ -72,19 +72,19 @@ typedef void (*notifyTcpConnUser_h)(osListPlus_t* pList, transportStatus_e connS
 
 
 void tcmInit(notifyTcpConnUser_h notifier[], int notifyNum);
-tpTcm_t* tpGetTcm(struct sockaddr_in peer, transportAppType_e appType, bool isReseveOne);
+tpTcm_t* tpGetTcm4SendMsg(struct sockaddr_in peer, transportAppType_e appType, bool isReseveOne, bool* isTcpConnOngoing);
 tpTcm_t* tpGetTcmByFd(int tcpFd, struct sockaddr_in peer);
-osStatus_e tpTcmAddFd(int tcpfd, struct sockaddr_in* peer, struct sockaddr_in* local, transportAppType_e appType);
-tpTcm_t* tpGetConnectedTcm(int tcpFd);
-osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp);
+osStatus_e tpComTcmAddFd(int tcpfd, struct sockaddr_in* peer, struct sockaddr_in* local, transportAppType_e appType);
+tpTcm_t* tpGetConnectedTcm(int tcpFd, bool isCom);
+//osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp);
 void tpDeleteAllTcm();
-osStatus_e tpTcmAddUser(tpTcm_t* pTcm, void* pTrId);
-osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished);
+osStatus_e tpAppTcmAddUser(tpTcm_t* pTcm, void* pTrId);
+osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished, bool isCom);
 bool tpIsInQList(struct sockaddr_in peer);
 osMBuf_t* tpTcmBufInit(tpTcm_t* pTcm, bool isAllocSipBuf);
 //only usable when LM_TRANSPORT module is set to DEBUG level
-void tpListUsedTcm();
-void tpReleaseTcm(tpTcm_t* pTcm);
-osStatus_e tpTcmCloseTcpConn(int tpEpFd, int tcpFd, bool isNotifyApp);
+void tpListUsedTcm(bool isCom);
+void tpReleaseAppTcm(tpTcm_t* pTcm);
+osStatus_e tpTcmCloseTcpConn(int tpEpFd, int tcpFd, bool isNotifyApp, bool isCom);
 
 #endif
