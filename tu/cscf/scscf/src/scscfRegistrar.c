@@ -229,7 +229,7 @@ static void scscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 EXIT:
 	if(rspCode != SIP_RESPONSE_INVALID)
 	{
-		cscf_sendRegResponse(pReqDecodedRaw, NULL, 0, pSipTUMsg->pPeer, pSipTUMsg->pLocal, rspCode);
+		cscf_sendRegResponse(pSipTUMsg, pReqDecodedRaw, NULL, 0, pSipTUMsg->pPeer, pSipTUMsg->pLocal, rspCode);
 	}
 
 	return;
@@ -320,7 +320,7 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
 	}
 
 	//send back 200 OK
-	cscf_sendRegResponse(pReqDecodedRaw, pRegInfo, regExpire, pSipTUMsg->pPeer, pSipTUMsg->pLocal, SIP_RESPONSE_200);
+	cscf_sendRegResponse(pSipTUMsg, pReqDecodedRaw, pRegInfo, regExpire, pSipTUMsg->pPeer, pSipTUMsg->pLocal, SIP_RESPONSE_200);
 	if(pRegInfo->tempWorkInfo.sarRegType == SCSCF_REG_SAR_RE_REGISTER)
 	{
 		pRegInfo->expiryTimerId = osRestartTimer(pRegInfo->expiryTimerId);
@@ -361,7 +361,7 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
 EXIT:
     if(rspCode != SIP_RESPONSE_INVALID)
     {
-        cscf_sendRegResponse(pReqDecodedRaw, pRegInfo, 0, pSipTUMsg->pPeer, pSipTUMsg->pLocal, rspCode);
+        cscf_sendRegResponse(pSipTUMsg, pReqDecodedRaw, pRegInfo, 0, pSipTUMsg->pPeer, pSipTUMsg->pLocal, rspCode);
 		if(pRegInfo->regState == SCSCF_REG_STATE_NOT_REGISTERED)
 		{
             scscfReg_deleteSubHash(pRegInfo);

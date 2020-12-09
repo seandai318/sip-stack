@@ -5,6 +5,8 @@
 #include "osPL.h"
 #include "osSockAddr.h"
 
+#include "diaMsg.h"
+
 #include "sipTUIntf.h"
 #include "sipMsgRequest.h"
 

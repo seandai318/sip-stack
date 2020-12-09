@@ -8,6 +8,7 @@
 
 #include "osHash.h"
 #include "osTimer.h"
+#include "osSockAddr.h"
 
 #include "diaMsg.h"
 #include "diaIntf.h"
@@ -73,8 +74,23 @@ static osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pIm
 
     diaCxSarInfo_t sarInfo = {saType, usrDataAvailable, DIA_3GPP_CX_MULTI_REG_IND_NOT_MULTI_REG, NULL};
 	osPointerLen_t serverName = {SCSCF_URI_WITH_PORT, strlen(SCSCF_URI_WITH_PORT)};
-	osPointerLen_t destHost = {CSCF_HSS_URI, strlen(CSCF_HSS_URI)};
-    diaCxSarAppInput_t sarInput = {pImpi, pImpu, &serverName, &destHost, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
+	//calculate HSSDest
+    struct sockaddr_in* pDest = diaConnGetActiveDest(DIA_INTF_TYPE_CX);
+    if(!pDest)
+    {
+        logInfo("the connection towards HSS is not available for impu(%r).", pImpu);
+        status = OS_ERROR_NETWORK_FAILURE;
+        goto EXIT;
+    }
+    osIpPort_t ipPort = osIpPort_STATIC_INIT(ipPort);
+    status = osConvertntoPL(pDest, &ipPort);
+    if(status != OS_STATUS_OK)
+    {
+        logError("fails to osConvertntoPL for dia dest(%A).", pDest);
+        goto EXIT;
+    }
+	osPointerLen_t* pDestHost = &ipPort.ip.pl;
+    diaCxSarAppInput_t sarInput = {pImpi, pImpu, &serverName, pDestHost, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
     status = diaCx_sendSAR(&sarInput, scscfReg_onDiaMsg, pRegInfo);
     if(status != OS_STATUS_OK)
     {
@@ -128,7 +144,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
 
             if(rspCode < 200 || rspCode >= 300)
             {
@@ -156,7 +172,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_RE_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
 
             if(rspCode > 199 && rspCode < 299)
             {
@@ -176,7 +192,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_DE_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
 
             //continue 3rd party registration
             pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE;

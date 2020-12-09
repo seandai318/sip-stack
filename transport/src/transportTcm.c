@@ -45,11 +45,12 @@ static osStatus_e  tpDeleteTcm(int tcpFd, bool isNotifyApp, bool isCom);
 static void tpDeleteAllTcmInternal(tpTcm_t* tcmList, uint8_t maxTcmMaxNum);
 static osStatus_e tpTcmUpdateConnInternal(int tcpfd, bool isConnEstablished, tpTcm_t* tcmList, uint8_t tcmMaxNum);
 static void tpListUsedTcmInternal(tpTcm_t* tcmList, uint8_t tcmMaxNum, char* tcmName);
+static osStatus_e tpTcmAddUserInternal(tpTcm_t* pTcm, void* pTrId);
 
 
 //this is shared by both server and client/transport threads, created by lister thread (COM thread)
 static tpTcm_t gSharedTCM[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
-static __thread uint8_t gSharedTcmMaxNum = 0;
+static uint8_t gSharedTcmMaxNum = 0;
 
 //this is per thread
 static __thread tpTcm_t gAppTCM[SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM] = {};
@@ -82,61 +83,31 @@ void tcmInit(notifyTcpConnUser_h notifier[], int notifyNum)
 //this function is called when there is request from app to send a message
 //first check if the shared TCM list has matching TCM, if not, check per thread TCM
 //isReserveOne=true will reserve a tcm if a matching is not found
-tpTcm_t* tpGetTcm4SendMsg(struct sockaddr_in peer, transportAppType_e appType, bool isReseveOne, bool* isTcpConnOngoing)
+//isComReserve = true, reserve shared TCM, otherwise, per thread TCM
+tpTcm_t* tpGetTcm4SendMsg(struct sockaddr_in peer, transportAppType_e appType, bool isReseveOne, bool isComReserve, bool* isTcpConnOngoing)
 {
 	tpTcm_t* pTcm = NULL;
 	bool isMatch = false;
 	*isTcpConnOngoing = false;
 
-	//first check the shared TCM, i.e., TCM created by listening COM
-    if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
-    {
-        logError("fails to acquire rdlock for tcmRwlock.");
-        return NULL;
-    }
-
-	for(int i=0; i<gSharedTcmMaxNum; i++)
-    {
-        if(!gSharedTCM[i].isUsing)
-        {
-            continue;
-        }
-
-        //needs to have pTcm->sockfd check since there may have multiple TCM per dest per app.  it is possible simultaneously multiple requests to create TCM.
-        if((gSharedTCM[i].peer.sin_port == peer.sin_port) && (gSharedTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr) && (gSharedTCM[i].appType == appType) && pTcm->sockfd != -1)
-        {
-            pTcm = &gSharedTCM[i];
-			isMatch = true;
-			break;
-        }
-    }
-
-    pthread_rwlock_unlock(&tcmRwlock);
-
-	if(isMatch)
-	{
-		goto EXIT;
-	}
-
-	//if there is no connection in the shared TCM, check per thread TCM
+	//first check per thread TCM
 	for(int i=0; i<gAppTcmMaxNum; i++)
 	{
 		if(!gAppTCM[i].isUsing)
 		{
-			if(isReseveOne && !pTcm)
+			if(isReseveOne && !isComReserve && !pTcm)
 			{
 				pTcm = &gAppTCM[i];
 			}
 			continue;
 		}
 
-		//needs to have pTcm->sockfd check since there may have multiple TCM per dest per app.  it is possible simultaneously multiple requests to create TCM.
 		if((gAppTCM[i].peer.sin_port == peer.sin_port) && (gAppTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr) && (gAppTCM[i].appType == appType))
 		{
-			pTcm = &gSharedTCM[i];
+			pTcm = &gAppTCM[i];
 			isMatch = true;
 
-			if(pTcm->sockfd != -1)
+			if(pTcm->sockfd == -1)
 			{
 				*isTcpConnOngoing = true;
 			}
@@ -145,7 +116,7 @@ tpTcm_t* tpGetTcm4SendMsg(struct sockaddr_in peer, transportAppType_e appType, b
 		}
 	}
 
-	if(!pTcm && isReseveOne)
+	if(!pTcm && !isComReserve && isReseveOne)
 	{
 		if(gAppTcmMaxNum < SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM)
 		{
@@ -153,7 +124,61 @@ tpTcm_t* tpGetTcm4SendMsg(struct sockaddr_in peer, transportAppType_e appType, b
 		}
 	}
 
-	//new reserved TCP set to isUsing = true
+    //if there is no matching per thread TCM, check the shared TCM, i.e., TCM created by listening COM
+    if(pthread_rwlock_rdlock(&tcmRwlock) != 0)
+    {
+        logError("fails to acquire rdlock for tcmRwlock.");
+        return NULL;
+    }
+
+    for(int i=0; i<gSharedTcmMaxNum; i++)
+    {
+        if(!gSharedTCM[i].isUsing)
+        {
+            if(isReseveOne && !pTcm && isComReserve)
+            {
+                pTcm = &gSharedTCM[i];
+				//need to set isUsing so that other thread would not take this TCM.  If the end of day this pTcm is not used, need to set back isUsing
+				pTcm->isUsing = true;
+            }
+            continue;
+        }
+
+        if((gSharedTCM[i].peer.sin_port == peer.sin_port) && (gSharedTCM[i].peer.sin_addr.s_addr == peer.sin_addr.s_addr) && (gSharedTCM[i].appType == appType))
+        {
+			//needs to set back pTcm->isUsing that was set when a free TCM was reserved
+			if(pTcm)
+			{
+				pTcm->isUsing = false;
+			}
+            pTcm = &gSharedTCM[i];
+            isMatch = true;
+
+            if(pTcm->sockfd == -1)
+            {
+                *isTcpConnOngoing = true;
+            }
+
+            break;
+        }
+    }
+
+    if(!pTcm && isComReserve && isReseveOne)
+    {
+        if(gSharedTcmMaxNum < SIP_CONFIG_TRANSPORT_MAX_TCP_PEER_NUM)
+        {
+            pTcm = &gSharedTCM[gSharedTcmMaxNum++];
+        }
+    }
+
+    pthread_rwlock_unlock(&tcmRwlock);
+
+    if(isMatch)
+    {
+        goto EXIT;
+    }
+
+	//new reserved TCM set to isUsing = true
 	if(pTcm)
 	{
 		pTcm->peer = peer;
@@ -168,6 +193,7 @@ EXIT:
 		pTcm->appType = appType;
 	}
 
+debug("to-remove, gSharedTcmMaxNum=%d, gAppTcmMaxNum=%d", gSharedTcmMaxNum, gAppTcmMaxNum);
 	return pTcm;
 }
 
@@ -343,6 +369,7 @@ static osStatus_e tpDeleteTcmInternal(int tcpfd, bool isNotifyApp, tpTcm_t* tcmL
 
     for(int i=0; i< maxTcmMaxNum; i++)
     {
+debug("to-remove, tcmList[%d]=%p, isUsing=%d, sockfd=%d.", i, &tcmList[i], tcmList[i].isUsing, tcmList[i].sockfd);
         if(!tcmList[i].isUsing)
         {
             continue;
@@ -447,8 +474,32 @@ static void tpDeleteAllTcmInternal(tpTcm_t* tcmList, uint8_t maxTcmMaxNum)
 }
 
 
-//no need to use tcmRwlock in this function since the TCM in this function shall be per thread
-osStatus_e tpAppTcmAddUser(tpTcm_t* pTcm, void* pTrId)
+osStatus_e tpTcmAddUser(tpTcm_t* pTcm, void* pTrId, bool isCom)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+	if(isCom)
+	{
+	    if(pthread_rwlock_wrlock(&tcmRwlock) != 0)
+    	{
+        	logError("fails to acquire wrlock for tcmRwlock.");
+        	return OS_ERROR_SYSTEM_FAILURE;;
+    	}
+
+		status = tpTcmAddUserInternal(pTcm, pTrId);
+		
+	    pthread_rwlock_unlock(&tcmRwlock);
+	}
+	else
+	{
+		status = tpTcmAddUserInternal(pTcm, pTrId);
+	}
+
+	return status;
+}
+
+
+static osStatus_e tpTcmAddUserInternal(tpTcm_t* pTcm, void* pTrId)
 {
     osStatus_e status = OS_STATUS_OK;
 

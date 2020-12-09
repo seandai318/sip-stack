@@ -1,4 +1,4 @@
-/********************************************************************************************
+/***************************cscf_sendRegResponsecscf_sendRegResponsecscf_sendRegResponse*****************************************************************
  * Copyright (C) 2019,2020, Sean Dai
  *
  * @file cscfHelper.c
@@ -7,14 +7,18 @@
 
 #include "osTypes.h"
 #include "osPL.h"
+#include "osPrintf.h"
+
+#include "diaMsg.h"
 
 #include "sipHeader.h"
 #include "sipHdrNameValue.h"
+#include "sipHdrVia.h"
 
-#include "scscfRegister.h"
+#include "scscfRegistrar.h"
 
 
-osStatus_e cscf_sendRegResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfRegInfo_t* pRegData, uint32_t regExpire, struct sockaddr_in* pPeer, struct sockaddr_in* pLocal, sipResponse_e rspCode)
+osStatus_e cscf_sendRegResponse(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, void* pRegData, uint32_t regExpire, struct sockaddr_in* pPeer, struct sockaddr_in* pLocal, sipResponse_e rspCode)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -24,6 +28,9 @@ osStatus_e cscf_sendRegResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfRegI
 		status = OS_ERROR_NULL_POINTER;
 		goto EXIT;
 	}	
+
+    sipHdrDecoded_t viaHdr={};
+    status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr, &viaHdr, false);
 
     osIpPort_t osPeer;
     osConvertntoPL(pPeer, &osPeer);
@@ -45,7 +52,7 @@ osStatus_e cscf_sendRegResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfRegI
             status = sipTU_copySipMsgHdr(pSipResp, pReqDecodedRaw, NULL, 0, true);
             //add Service-Route
             sipPointerLen_t sr = SIPPL_INIT(sr);
-            int len = osPrintf_buffer(sr.pl.p, SIP_HDR_MAX_SIZE, "Service-Route: <sip: %r:%d; orig; lr>\r\n", SCSCF_URI, SCSCF_LISTENING_PORT);
+            int len = osPrintf_buffer((char*)sr.pl.p, SIP_HDR_MAX_SIZE, "Service-Route: <sip: %r:%d; orig; lr>\r\n", SCSCF_URI, SCSCF_LISTEN_PORT);
             if(len < 0)
             {
                 logError("fails to osPrintf_buffer for service-route.");
@@ -70,7 +77,7 @@ osStatus_e cscf_sendRegResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfRegI
                     {
                         if(!pId->impuInfo.isBarred)
                         {
-                            int len = osPrintf_buffer(pau.pl.p, SIP_HDR_MAX_SIZE, "P-Associated-URI: <%r>\r\n", &pId->impuInfo.impu);
+                            int len = osPrintf_buffer((char*)pau.pl.p, SIP_HDR_MAX_SIZE, "P-Associated-URI: <%r>\r\n", &pId->impuInfo.impu);
                             if(len < 0)
                             {
                                 logError("fails to osPrintf_buffer for service-route.");
@@ -90,7 +97,7 @@ osStatus_e cscf_sendRegResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfRegI
                 sipPointerLen_t chgInfo = SIPPL_INIT(chgInfo);
                 if(pRegInfo->hssChgInfo.chgAddrType != CHG_ADDR_TYPE_INVALID)
                 {
-                    len = osPrintf_buffer(chgInfo.pl.p, SIP_HDR_MAX_SIZE, "P-Charging-Function-Addresses: %s=\"%r\"\r\n", pRegInfo->hssChgInfo.chgAddrType == CHG_ADDR_TYPE_CCF ? "ccf" : "ecf", &pRegInfo->hssChgInfo.chgAddr.pl);
+                    len = osPrintf_buffer((char*)chgInfo.pl.p, SIP_HDR_MAX_SIZE, "P-Charging-Function-Addresses: %s=\"%r\"\r\n", pRegInfo->hssChgInfo.chgAddrType == CHG_ADDR_TYPE_CCF ? "ccf" : "ecf", &pRegInfo->hssChgInfo.chgAddr.pl);
                     if(len <0)
                     {
                         logError("fails to osPrintf_buffer for P-Charging-Function-Addresses.");
@@ -142,16 +149,16 @@ osStatus_e cscf_sendRegResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfRegI
     sipTransMsg.pTransId = pSipTUMsg->pTransId;
     sipTransMsg.appType = SIPTU_APP_TYPE_CSCF;
     sipTransMsg.response.rspCode = rspCode;
-    sipTransMsg.pSenderId = pRegInfo;
+    sipTransMsg.pSenderId = pRegData;
     status = sipTrans_onMsg(SIP_TRANS_MSG_TYPE_TU, &sipTransMsg, 0);
 
     //scscfRegistrar does not need to keep pSipResp, if other layers need it, it is expected they will ref it
     osfree(pSipResp);
 
 EXIT:
-logError("to-remove, viaHdr.decodedHdr=%p, pContactHdr=%p", viaHdr.decodedHdr, pContactHdr);
+logError("to-remove, viaHdr.decodedHdr=%p", viaHdr.decodedHdr);
     osfree(viaHdr.decodedHdr);
-    osfree(pContactHdr);
+//    osfree(pContactHdr);
 
 	return status;
 }
@@ -179,19 +186,19 @@ osStatus_e cscf_getImpiFromSipMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPoint
             goto EXIT;
         }
 
-        osPointerLen_t username = {"username", sizeof(userName)-1};
-        osPointerLen_t* pImsiFromMsg = sipHdrNameValueList_getValue(&((sipHdrMethodParam_t*)authHdrDecoded.decodedHdr)->nvParamList, &username);
-		if(!pImsiFromMsg)
+        osPointerLen_t username = {"username", sizeof("userName")-1};
+        osPointerLen_t* pImpiFromMsg = sipHdrNameValueList_getValue(&((sipHdrMethodParam_t*)authHdrDecoded.decodedHdr)->nvParamList, &username);
+		if(!pImpiFromMsg)
 		{
 			logError("fails to get username from the authorization header.");
 			status = OS_ERROR_INVALID_VALUE;
 			goto EXIT;
 		}
-		*pImsi = *pImsiFromMsg;
+		*pImpi = *pImpiFromMsg;
     }
 
     //if not pImsi, convert impu to impi
-    if(!pImsi->l)
+    if(!pImpi->l)
     {
         osPL_shiftcpy(pImpi, pImpu, sizeof("sip:")-1);
     }
@@ -202,18 +209,19 @@ EXIT:
 
 
 //to make the mapping configurable, to-do
-sipResponse_e cscf_cx2SipRspCodeMap(diaResultCode_t resultCode)
+sipResponse_e cscf_cx2SipRspCodeMap(diaResultCode_t diaResultCode)
 {
 	sipResponse_e sipRspCode = SIP_RESPONSE_200;
+	int resultCode = diaResultCode.isResultCode ? diaResultCode.resultCode : diaResultCode.expCode;
 
 	if(resultCode >= 2000 && resultCode < 3000)
-	{
-		sipRspCode = SIP_RESPONSE_200;
-	}
-	else
-	{
-		sipRspCode = SIP_RESPONSE_500;
-	}
-
+		{
+			sipRspCode = SIP_RESPONSE_200;
+		}
+		else
+		{
+			sipRspCode = SIP_RESPONSE_500;
+		}
+	
 	return sipRspCode;
 }

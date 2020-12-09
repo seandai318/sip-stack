@@ -595,7 +595,7 @@ static osStatus_e sipTpClientSendTcp(void* pTrId, transportInfo_t* pTpInfo, osMB
 
     //first check if there is already a TCP connection exists
 	bool isTcpConnOngoing = false;
-    tpTcm_t* pTcm = tpGetTcm4SendMsg(pTpInfo->peer, TRANSPORT_APP_TYPE_SIP, true, &isTcpConnOngoing);
+    tpTcm_t* pTcm = tpGetTcm4SendMsg(pTpInfo->peer, TRANSPORT_APP_TYPE_SIP, true, false, &isTcpConnOngoing);
 	if(!pTcm)
 	{
 		logError("fails to tpGetTcm for peer(%A).", &pTpInfo->peer);
@@ -615,7 +615,7 @@ static osStatus_e sipTpClientSendTcp(void* pTrId, transportInfo_t* pTpInfo, osMB
         //if other appId has already started TCP connection process
         if(isTcpConnOngoing)
         {
-            tpAppTcmAddUser(pTcm, pTrId);
+            tpTcmAddUser(pTcm, pTrId, false);
             //tpStatus = TRANSPORT_STATUS_TCP_CONN;
 
             goto EXIT;
@@ -638,7 +638,7 @@ static osStatus_e sipTpClientSendTcp(void* pTrId, transportInfo_t* pTpInfo, osMB
     	else
     	{
         	pTcm->isTcpConnDone = false;
-            tpAppTcmAddUser(pTcm, pTrId);
+            tpTcmAddUser(pTcm, pTrId, false);
 
 			*pTransport = TRANSPORT_STATUS_TCP_CONN; 
 			goto EXIT;

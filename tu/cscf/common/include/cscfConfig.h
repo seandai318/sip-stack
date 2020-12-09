@@ -14,7 +14,7 @@
 
 
 #define SCSCF_MAX_ALLOWED_SIFC_ID_NUM	20	
-#define SCSCF_MAX_ALLOWED_IMPU_ID_NUM   10
+#define SCSCF_MAX_ALLOWED_IMPU_NUM   	10
 
 
 #define SCSCF_REG_DEFAULT_EXPIRE		7200		//sec
@@ -39,6 +39,8 @@
 #define CSCF_CONFIG_FOLDER              "/project/app/mas/config"
 #define CSCF_HSS_URI				"hss.ims.com"
 
+#define SCSCF_HASH_SIZE				1024
+#define ICSCF_HASH_SIZE				1024
 
 typedef enum {
 	CSCF_TYPE_INVALID,
@@ -68,14 +70,21 @@ osXmlData_t scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM] =
 
 
 typedef struct {
+    osPointerLen_t impu;
+    bool isBarred;
+} scscfImpuInfo_t;
+
+
+typedef struct {
     uint32_t sIfcId[SCSCF_MAX_ALLOWED_SIFC_ID_NUM];
     uint32_t sIfcIdNum;
 } sIfcIdList_t;
 
 
-typedef struct {
+typedef struct scscfUserProfile {
     osPointerLen_t impi;
-    osList_t impuList;          //each entry contains impuInfo_t
+	scscfImpuInfo_t impuInfo[SCSCF_MAX_ALLOWED_IMPU_NUM];
+	uint8_t impuNum;
     sIfcIdList_t sIfcIdList;
 //  osList_t sIfcId;            //each entry contains a int, sorted from small to bigger
 } scscfUserProfile_t;

@@ -1,22 +1,26 @@
 #include "sipTUIntf.h"
 
 #include "cscfConfig.h"
+#include "scscfIntf.h"
 
 
-void cscf_init(char* cscfConfigFolder)
+static osStatus_e cscf_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
+
+
+void cscf_init(char* cscfConfigFolder, char* cxXsdFileName)
 {
-    cscfConfig_init(cscfConfigFolder);
+    cscfConfig_init(cscfConfigFolder, cxXsdFileName);
 
-	icscf_init(ICSCF_HASH_SIZE);
-    scscf_init(SCSCF_HASH_SIZE);
+//	icscf_init(ICSCF_HASH_SIZE);
+    scscfReg_init(SCSCF_HASH_SIZE);
 
     sipTU_attach(SIPTU_APP_TYPE_CSCF, cscf_onTUMsg);
 }
 
 
-osStatus_e cscf_onTUReqMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
+static osStatus_e cscf_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 {
-	if(pMsg->sipMsgType != SIP_MSG_REQUEST)
+	if(pSipTUMsg->sipMsgType != SIP_MSG_REQUEST)
 	{
 		logError("received no request message.");
 		return OS_ERROR_INVALID_VALUE;
@@ -26,18 +30,20 @@ osStatus_e cscf_onTUReqMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 
 	if(cscf_isS(pSipTUMsg->pLocal))
 	{
-		if(pMsg->sipMsgBuf.reqCode == SIP_METHOD_REGISTER)
+		if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_REGISTER)
 		{
 			appOnSipMsg = scscfReg_onTUMsg;
 		}
 		else
 		{
-			appOnSipMsg = scscfSess_onMsg;
+		//	appOnSipMsg = scscfSess_onMsg;
+			logError("to-remove, to be done.");
 		}
 	}
 	else
 	{
-		appOnSipMsg = icscf_onTUMsg;
+		//appOnSipMsg = icscf_onTUMsg;
+		logError("to-remove, to be done.");
 	}
 
 	return appOnSipMsg(msgType, pSipTUMsg);

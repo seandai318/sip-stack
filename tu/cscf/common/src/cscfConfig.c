@@ -4,11 +4,15 @@
  * @file cscfConfig.c
  ********************************************************/
 
+#include <string.h>
+
 #include "osPL.h"
 #include "osMBuf.h"
 #include "osSockAddr.h"
+#include "osMemory.h"
 
 #include "cscfConfig.h"
+#include "scscfRegistrar.h"
 
 
 
@@ -39,12 +43,25 @@ void cscfConfig_init(char* cxFolder, char* cxXsdFileName)
 }
 
 
-osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfReg_userProfile_t* pDecodedUserProfile)
+osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUserProfile_t* pDecodedUserProfile)
 {
-	osMBuf_t* pXmlBuf = osMBuf_setPL(pRawUserProfile);
+	osStatus_e status = OS_STATUS_OK;
+
+	if(!pRawUserProfile || !pDecodedUserProfile)
+	{
+		logError("null pointer, pRawUserProfile=%p, pDecodedUserProfile=%p.", pRawUserProfile, pDecodedUserProfile);
+		status = OS_ERROR_NULL_POINTER;
+		goto EXIT;
+	}
+	
+	osMBuf_t xmlMBuf = {(uint8_t*)pRawUserProfile->p, pRawUserProfile->l, 0, pRawUserProfile->l};
+	pDecodedUserProfile->impuNum = 0;
+	pDecodedUserProfile->sIfcIdList.sIfcIdNum = 0;
     osXmlDataCallbackInfo_t cbInfo={true, false, false, scscfConfig_userProfileCB, pDecodedUserProfile, scscfConfig_xmlUsrProfileData, SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM};
-	osXml_getElemValue(&cxXsdName, NULL, xmlMBuf, true, &cbInfo);
-	osMBuf_freeHdr(pXmlBuf);
+	osXml_getElemValue(&cxXsdName, NULL, &xmlMBuf, true, &cbInfo);
+
+EXIT:
+	return status;
 }	
 
 
@@ -57,7 +74,7 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
         return;
     }
 
-	scscfReg_userProfile_t* pDecodedUserProfile = appData;
+	scscfUserProfile_t* pDecodedUserProfile = appData;
 
 	static __thread scscfImpuInfo_t* pImpuInfo = NULL;
     switch(pXmlValue->eDataName)
@@ -72,7 +89,7 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
 			pImpuInfo->impu = pXmlValue->xmlStr;
 			break;
 		case SCSCF_USR_PROFILE_PRIVATEID:
-			pDecodedUserProfile.impi = pXmlValue->xmlStr;
+			pDecodedUserProfile->impi = pXmlValue->xmlStr;
 			break;
 		case SCSCF_USR_PROFILE_PUBLICIDENTITY:
 			if(pXmlValue->isEOT)
@@ -81,7 +98,7 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
 			}
 			else
 			{
-				if(pDecodedUserProfile->impuNum >= SCSCF_MAX_ALLOWED_IMPU_ID_NUM)
+				if(pDecodedUserProfile->impuNum >= SCSCF_MAX_ALLOWED_IMPU_NUM)
 				{
     	            logError("the provisioned number of impu exceeds maximum allowed(%d).", SCSCF_MAX_ALLOWED_IMPU_NUM);
         	        return;
@@ -91,12 +108,12 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
 			}
             break;
 		case SCSCF_USR_PROFILE_SHAREDIFCSETID:
-			if(pDecodedUserProfile->sIfcIdNum >= SCSCF_MAX_ALLOWED_SIFC_ID_NUM)
+			if(pDecodedUserProfile->sIfcIdList.sIfcIdNum >= SCSCF_MAX_ALLOWED_SIFC_ID_NUM)
 			{
 				logError("the provisioned number of sIfcId exceeds maximum allowed(%d).", SCSCF_MAX_ALLOWED_SIFC_ID_NUM);
 				return;
 			}
-			pDecodedUserProfile->sIfcId[pDecodedUserProfile->sIfcIdNum++] = pXmlValue->xmlInt;
+			pDecodedUserProfile->sIfcIdList.sIfcId[pDecodedUserProfile->sIfcIdList.sIfcIdNum++] = pXmlValue->xmlInt;
 			break;
 		case SCSCF_USR_PROFILE_BARRINGINDICATION:
 			if(!pImpuInfo)
@@ -135,9 +152,9 @@ bool cscf_isS(struct sockaddr_in* rcvLocal)
 
 static void cscfConfig_setGlobalSockAddr()
 {
-	osIpPort_t ipPort = {{{ICSCF_IP_ADDR, strlen(ICSCF_IP_ADDR)}}, ICSCF_LISTEN_PORT};
-	osConvertPLton(&ipPort, true, &gIcscfSockAddr);
+	osIpPort_t icscfIpPort = {{{ICSCF_IP_ADDR, strlen(ICSCF_IP_ADDR)}}, ICSCF_LISTEN_PORT};
+	osConvertPLton(&icscfIpPort, true, &gIcscfSockAddr);
 
-    osIpPort_t ipPort = {{{SCSCF_IP_ADDR, strlen(SCSCF_IP_ADDR)}}, SCSCF_LISTEN_PORT};
-    osConvertPLton(&ipPort, true, &gScscfSockAddr);
+    osIpPort_t scscfIpPort = {{{SCSCF_IP_ADDR, strlen(SCSCF_IP_ADDR)}}, SCSCF_LISTEN_PORT};
+    osConvertPLton(&scscfIpPort, true, &gScscfSockAddr);
 }

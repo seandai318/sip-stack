@@ -1,13 +1,11 @@
 PROJECT_DIR ?= ${HOME}/project
-PROJECT_APP_DIR = $(PROJECT_DIR)/sip-stack/tu/registrar
-IDIR = $(PROJECT_APP_DIR)/include $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/tu/tuMgr/include $(PROJECT_DIR)/sip-stack/transport/include
+PROJECT_APP_DIR = $(PROJECT_DIR)/sip-stack/tu/cscf
+#IDIR = ../include $(PROJECT_DIR)/os/include $(PROJECT_APP_DIR)/common/include $(PROJECT_APP_DIR)/diaBase/include $(PROJECT_APP_DIR)/diaCx/include
 #INC=$(foreach d, $(IDIR), -I$d)
-INC=$(IDIR:%=-I%)
+#INC=$(IDIR:%=-I%)
 
-SRC_DIR = $(PROJECT_APP_DIR)/src
-OBJ_DIR = $(PROJECT_APP_DIR)/debug
-src = $(wildcard $(SRC_DIR)/*.c)
-obj = $(src:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+src = $(wildcard *.c)
+obj = $(src:.c=.o)
 dep = $(obj:.o=.d)  # one dependency file for each source
 
 ifdef $(APP_BASE)
@@ -22,27 +20,46 @@ else
     endif
 endif
 
-LDFLAGS = -lpthread
-
-libreg.a: $(obj)
-	cd $(OBJ_DIR);  $(AR) -cr $@ $^
-
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	cd $(SRC_DIR); $(CC) $(CFLAGS) -c $(notdir $<) -o $@
+libcscf.a: libcscfcommon.a libscscf.a
+	@mkdir -p $(PROJECT_APP_DIR)/bin-debug
+	$(AR) -cr $@ $(PROJECT_APP_DIR)/bin-debug/*.o
+#	$(AR) -cr $@ $^
+#	rm -rf $^
+#	@rm -rf $(PROJECT_APP_DIR)/bin-debug
 
 -include $(dep)   # include all dep files in the makefile
 
 # rule to generate a dep file by using the C preprocessor
 # (see man cpp for details on the -MM and -MT options)
-$(OBJ_DIR)/%.d: $(SRC_DIR)/%.c
+%.d: %.c
 	@mkdir -p $(dir $@)
 	$(CPP) $(CFLAGS) $< -MM -MT $(@:.d=.o) >$@
 
+.PHONY: libcscfcommon.a
+libcscfcommon.a:
+	@mkdir -p $(PROJECT_APP_DIR)/bin-debug
+	cd $(PROJECT_APP_DIR)/common; $(MAKE); cd debug; cp $@ $(PROJECT_APP_DIR)/bin-debug; cd $(PROJECT_APP_DIR)/bin-debug; $(AR) -x $@
+
+.PHONY: libscscf.a
+libscscf.a:
+	@mkdir -p $(PROJECT_APP_DIR)/bin-debug
+	cd $(PROJECT_APP_DIR)/scscf; $(MAKE); cd debug; cp $@ $(PROJECT_APP_DIR)/bin-debug; cd $(PROJECT_APP_DIR)/bin-debug; $(AR) -x $@
+
 
 .PHONY: clean
-clean:
-	rm -f $(obj) $(OBJ_DIR)/*.a
+clean: cscfcommonclean scscfclean
 	rm -f $(dep)
+	rm -rf $(PROJECT_APP_DIR)/bin-debug
+	rm -rf *.a
+
+.PHONY: cscfcommonclean
+cscfcommonclean:
+	cd $(PROJECT_APP_DIR)/common/debug; rm -f *.o *.a *.d; cd -
+
+.PHONY: scscfclean
+scscfclean:
+	cd $(PROJECT_APP_DIR)/scscf/debug; rm -f *.o *.a *.d; cd -
+
 
 .PHONY: cleandep
 cleandep:

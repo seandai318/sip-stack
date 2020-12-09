@@ -38,11 +38,12 @@ typedef struct {
 } scscfChgInfo_t;
 
 
+#if 0
 typedef struct {
 	osPointerLen_t impu;
 	bool isBarred;
 } scscfImpuInfo_t;
-
+#endif
 
 typedef struct {
 	bool isImpi;
@@ -123,6 +124,7 @@ typedef struct {
 	osListElement_t* pLastIfc;		//points to the last ifc that was used to find the AS
 	struct sockaddr_in sipLocalHost;	//if reg was recived via icscf, this stores icscf address, otherwise, scscf address
 } scscfRegTempWorkInfo_t;
+
 
 
 typedef struct {

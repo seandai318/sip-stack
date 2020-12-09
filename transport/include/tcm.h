@@ -72,13 +72,13 @@ typedef void (*notifyTcpConnUser_h)(osListPlus_t* pList, transportStatus_e connS
 
 
 void tcmInit(notifyTcpConnUser_h notifier[], int notifyNum);
-tpTcm_t* tpGetTcm4SendMsg(struct sockaddr_in peer, transportAppType_e appType, bool isReseveOne, bool* isTcpConnOngoing);
+tpTcm_t* tpGetTcm4SendMsg(struct sockaddr_in peer, transportAppType_e appType, bool isReseveOne, bool isComReserve, bool* isTcpConnOngoing);
 tpTcm_t* tpGetTcmByFd(int tcpFd, struct sockaddr_in peer);
 osStatus_e tpComTcmAddFd(int tcpfd, struct sockaddr_in* peer, struct sockaddr_in* local, transportAppType_e appType);
 tpTcm_t* tpGetConnectedTcm(int tcpFd, bool isCom);
 //osStatus_e tpDeleteTcm(int tcpfd, bool isNotifyApp);
 void tpDeleteAllTcm();
-osStatus_e tpAppTcmAddUser(tpTcm_t* pTcm, void* pTrId);
+osStatus_e tpTcmAddUser(tpTcm_t* pTcm, void* pTrId, bool isCom);
 osStatus_e tpTcmUpdateConn(int tcpfd, bool isConnEstablished, bool isCom);
 bool tpIsInQList(struct sockaddr_in peer);
 osMBuf_t* tpTcmBufInit(tpTcm_t* pTcm, bool isAllocSipBuf);

@@ -886,7 +886,7 @@ static transportStatus_e tpCreateAndSendTcp(transportAppType_e appType, void* ap
 
     //first check if there is already a TCP connection exists
 	bool isTcpConnOngoing = false;
-    tpTcm_t* pTcm = tpGetTcm4SendMsg(pTpInfo->peer, appType, true, &isTcpConnOngoing);
+    tpTcm_t* pTcm = tpGetTcm4SendMsg(pTpInfo->peer, appType, true, true, &isTcpConnOngoing);
 
     if(!pTcm)
     {
@@ -905,7 +905,7 @@ static transportStatus_e tpCreateAndSendTcp(transportAppType_e appType, void* ap
 	    //if other appId has already started TCP connection process
     	if(isTcpConnOngoing)
     	{
-        	tpAppTcmAddUser(pTcm, appId);
+        	tpTcmAddUser(pTcm, appId, true);
         	tpStatus = TRANSPORT_STATUS_TCP_CONN;
 
         	goto EXIT;
@@ -934,7 +934,7 @@ static transportStatus_e tpCreateAndSendTcp(transportAppType_e appType, void* ap
         else
         {
             pTcm->isTcpConnDone = false;
-			tpAppTcmAddUser(pTcm, appId);
+			tpTcmAddUser(pTcm, appId, true);
 
             tpStatus = TRANSPORT_STATUS_TCP_CONN;
             goto EXIT;
