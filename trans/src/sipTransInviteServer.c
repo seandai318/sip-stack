@@ -194,7 +194,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
                 sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
                 pSipTUMsg->pTransId = pTrans;
 	            pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-                pSipTUMsg->pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+                pSipTUMsg->pTUId = pTrans->pTUId;
                 pSipTUMsg->sipTuMsgType = tpStatus == TRANSPORT_STATUS_FAIL ? SIP_TU_MSG_TYPE_TRANSPORT_ERROR : SIP_TU_MSG_TYPE_RMT_NOT_ACCESSIBLE;
                 pSipTUMsg->errorInfo.isServerTransaction = true;
 
@@ -248,7 +248,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
                 sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
                 pSipTUMsg->pTransId = pTrans;
                 pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-                pSipTUMsg->pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+                pSipTUMsg->pTUId = pTrans->pTUId;
 
                 pSipTUMsg->sipTuMsgType = tpStatus == TRANSPORT_STATUS_FAIL ? SIP_TU_MSG_TYPE_TRANSPORT_ERROR : SIP_TU_MSG_TYPE_RMT_NOT_ACCESSIBLE;
                 pSipTUMsg->errorInfo.isServerTransaction = true;
@@ -300,7 +300,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
                 sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
     	        pSipTUMsg->pTransId = pMsg;
                 pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-        	    pSipTUMsg->pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+        	    pSipTUMsg->pTUId = pTrans->pTUId;
 
                 pSipTUMsg->sipTuMsgType = tpStatus == TRANSPORT_STATUS_FAIL ? SIP_TU_MSG_TYPE_TRANSPORT_ERROR : SIP_TU_MSG_TYPE_RMT_NOT_ACCESSIBLE;
                 pSipTUMsg->errorInfo.isServerTransaction = true;
@@ -336,7 +336,7 @@ osStatus_e sipTransISStateProceeding_onMsg(sipTransMsgType_e msgType, void* pMsg
             sipTUMsg_t* pSipTUMsg = osmalloc(sizeof(sipTUMsg_t), sipTUMsg_cleanup);
             pSipTUMsg->pTransId = pTrans;
             pSipTUMsg->appType = pTrans ? pTrans->appType : SIPTU_APP_TYPE_NONE;
-            pSipTUMsg->pTUId = ((sipTransaction_t*)pMsg)->pTUId;
+            pSipTUMsg->pTUId = pTrans->pTUId;
 
             pSipTUMsg->sipTuMsgType = SIP_TU_MSG_TYPE_TRANSACTION_ERROR;
             pSipTUMsg->errorInfo.isServerTransaction = true;

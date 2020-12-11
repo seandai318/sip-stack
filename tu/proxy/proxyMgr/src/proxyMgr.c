@@ -89,7 +89,13 @@ osStatus_e proxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 		}
         case SIP_TU_MSG_TYPE_TRANSACTION_ERROR:
         default:
-            status = ((proxyInfo_t*)pSipTUMsg->pTUId)->proxyOnMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, pSipTUMsg, NULL, NULL);
+			if(!pSipTUMsg->pTUId)
+			{
+				logInfo("null TUId, ignore the message.");
+				break;
+			}
+
+           	status = ((proxyInfo_t*)pSipTUMsg->pTUId)->proxyOnMsg(SIP_TU_MSG_TYPE_TRANSACTION_ERROR, pSipTUMsg, NULL, NULL);
             break;
     }
 

@@ -584,7 +584,7 @@ debug("to-remove, I am here.");
 				}
 
 debug("to-remove, before sipProxy_forwardResp.");
-				status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo);
+				status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo->pProxyInfo);
 				if(newState != pCallInfo->state)
 				{
 					callProxyEnterState(newState, pCallInfo);
@@ -605,7 +605,7 @@ debug("to-remove, before sipProxy_forwardResp.");
 				void* pTransId = sipProxy_getPairUasTrId(&pCallInfo->proxyTransInfo, pSipTUMsg->pTransId, false, isRemove);
 				if(pTransId)
 				{
-					status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo);
+					status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo->pProxyInfo);
 				}
 			}
 	
@@ -768,7 +768,7 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
             void* pTransId = sipProxy_getPairUasTrId(&pCallInfo->proxyTransInfo, pSipTUMsg->pTransId, isPrimary, isRemove);
             if(pTransId)
             {
-                status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo);
+                status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo->pProxyInfo);
             }
 			break;
 		}
@@ -823,7 +823,7 @@ osStatus_e callProxyStateInitAck_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHd
             void* pTransId = sipProxy_getPairUasTrId(&pCallInfo->proxyTransInfo, pSipTUMsg->pTransId, false, isRemove);
             if(pTransId)
             {
-                status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo);
+                status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo->pProxyInfo);
             }
             break;
         }
@@ -871,7 +871,7 @@ osStatus_e callProxyStateBye_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t*
             void* pTransId = sipProxy_getPairUasTrId(&pCallInfo->proxyTransInfo, pSipTUMsg->pTransId, false, false);
             if(pTransId)
             {
-                status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo);
+                status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo->pProxyInfo);
             }
 
 			if(osPL_strcmp(&method, "BYE") == 0 && (pSipTUMsg->sipMsgBuf.rspCode >= SIP_RESPONSE_200 && pSipTUMsg->sipMsgBuf.rspCode < SIP_RESPONSE_300))

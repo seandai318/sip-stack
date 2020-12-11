@@ -55,7 +55,7 @@ static sipTransportStatus_e tpUdpSend(transportAppType_e appType, transportInfo_
 static int tpGetFdFromListener(struct sockaddr_in* pLocal, bool isCheckPort, bool isTcp);
 
 static __thread osList_t tpTcpListenerList;		//each element contains a tpLocalAddrInfo_t for TCP
-//can not be __thread since it may be used by transaction layer directly for sending message via UDP. to-do, check for sycnronization
+//can not be __thread since it may be used by tpp threads for sending message via UDP. to-do, check for sycnronization
 static  osList_t tpUdpListenerList;     //each element contains a tpLocalAddrInfo_t for UDP
 static int tpEpFd=-1;
 static __thread osHash_t* lbHash;
