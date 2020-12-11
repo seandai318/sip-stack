@@ -295,7 +295,7 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
     pCallInfo->pCallHashLE = osHash_add(callHash, pHashData);
     logInfo("callId(%r) is added into callProxyHash, key=0x%x, pCallHashLE=%p, pCallInfo=%p.", &callId, pHashData->hashKeyInt, pCallInfo->pCallHashLE, pCallInfo);
 
-    callProxy_addTrInfo(&pCallInfo->proxyTransInfo, SIP_METHOD_INVITE, pCallInfo->seqNum, pSipTUMsg->pTransId, NULL, true);
+    callProxy_addTrInfo(&pCallInfo->proxyTransInfo, SIP_METHOD_INVITE, pCallInfo->seqNum, pSipTUMsg->pTransId, NULL, pCallInfo->pProxyInfo, true);
 
 	//starts to process routing
     sipUri_t* pTargetUri = NULL;
@@ -545,7 +545,7 @@ osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRa
 				
             }
 
-            callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
+            callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, pCallInfo->pProxyInfo, false);
 
 		 	break;
 		}
@@ -739,7 +739,7 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 			}
 			else
 			{
-				callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
+				callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, pCallInfo->pProxyInfo, false);
 			}		
 	
 			break;
@@ -805,7 +805,7 @@ osStatus_e callProxyStateInitAck_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHd
 			void* pUacTransId;
 		    sipProxy_msgModInfo_t msgModInfo = {true, true};
             status = sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, NULL, false, pCallInfo->pProxyInfo, &pUacTransId);
-            callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, false);
+            callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, pCallInfo->pProxyInfo, false);
 
             if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_BYE)
             {

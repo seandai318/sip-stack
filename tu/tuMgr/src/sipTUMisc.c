@@ -327,3 +327,9 @@ void sipTUMsg_cleanup(void* data)
 		osfree(pTuMsg->sipMsgBuf.pSipMsg);
 	}
 }
+
+
+void sipTU_mapTrTuId(void* pTrId, void* pTuId)
+{
+	sipTr_setTuId(pTrId, pTuId);
+}

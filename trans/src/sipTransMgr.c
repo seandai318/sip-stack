@@ -459,6 +459,16 @@ EXIT:
 }
 
 
+void sipTr_setTuId(void* pTrId, void* pTuId)
+{
+	if(!pTrId)
+	{
+		return;
+	}
+
+	((sipTransaction_t*)pTrId)->pTUId = pTuId;
+}
+
 /* decode only necessary headers to extract transId */
 static osStatus_e sipDecodeTransInfo(sipMsgBuf_t* pSipMsgBuf, sipTransInfo_t* pTransInfo)
 {

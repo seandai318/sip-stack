@@ -76,6 +76,8 @@ void sipTU_attach(sipTuAppType_e appType, sipTUAppOnSipMsg_h appOnSipMsg);
  * pParamList: a list of header parameters other than branchId.
  */
 osStatus_e sipTU_addOwnVia(osMBuf_t* pMsgBuf, char* branchExtraStr, osList_t* pParamList, osPointerLen_t* pBranchId, osPointerLen_t* pHost, uint32_t* pPort, size_t* pProtocolViaPos);
+//this function shall be called by app functions as sip server to set tuId for a sip transaction, so that in case the server transaction needs to notify app before app ever returns a response, it knows which one to notify
+void sipTU_mapTrTuId(void* pTrId, void* pTuId);
 void sipTUMsg_cleanup(void* data);
 
 

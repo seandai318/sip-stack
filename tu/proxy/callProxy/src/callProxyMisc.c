@@ -8,7 +8,7 @@
 #include "callProxyMisc.h"
 
 
-osStatus_e callProxy_addTrInfo(osListPlus_t* pList, sipRequest_e reqCode, uint32_t seqNum, void* uasId, void* uacId, bool isPrimary)
+osStatus_e callProxy_addTrInfo(osListPlus_t* pList, sipRequest_e reqCode, uint32_t seqNum, void* uasId, void* uacId, void* pProxyInfo, bool isPrimary)
 {
 	osStatus_e status = OS_STATUS_OK;
 
@@ -39,6 +39,9 @@ osStatus_e callProxy_addTrInfo(osListPlus_t* pList, sipRequest_e reqCode, uint32
 		osfree(pProxyTrInfo);
 		goto EXIT;
 	}
+
+	//set proxyId to tr in case tr wants to notify proxy when something is wrong before proxy returns any message back to it
+    sipTU_mapTrTuId(uasId, pProxyInfo);
 
 EXIT:
 	return status;

@@ -12,7 +12,7 @@
 #include "sipMsgFirstLine.h"
 
 
-osStatus_e callProxy_addTrInfo(osListPlus_t* pList, sipRequest_e reqCode, uint32_t seqNum, void* uasId, void* uacId, bool isPrimary);
+osStatus_e callProxy_addTrInfo(osListPlus_t* pList, sipRequest_e reqCode, uint32_t seqNum, void* uasId, void* uacId, void* pProxyInfo, bool isPrimary);
 
 
 #endif

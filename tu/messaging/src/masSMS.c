@@ -183,6 +183,9 @@ static osStatus_e masSMS_onSipRequest(sipTUMsg_t* pSipTUMsg)
         goto BUILD_RESPONSE;
     }
 
+	//notify tr the appId in case tr wants to close the transaction before sms app sends back response
+	sipTU_mapTrTuId(pSipTUMsg->pTransId, pMasInfo);
+
     logInfo("SIP Request Message=\n%M", pReq);
 
 	sipTransMsg_t sipTransMsg;

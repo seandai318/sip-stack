@@ -125,6 +125,7 @@ typedef struct sipTransportMsgBuf {
 
 osStatus_e sipTransInit(uint32_t bucketSize);
 osStatus_e sipTrans_onMsg(sipTransMsgType_e msgType, void* pData, uint64_t timerId);
-	
+//used for server app to set TuId when receiving a request from tr so that tr can notify it when there is something wrong before the server ever returns any message back to tr
+void sipTr_setTuId(void* pTrId, void* pTuId);	
 
 #endif
