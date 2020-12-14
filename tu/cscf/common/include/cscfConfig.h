@@ -7,11 +7,13 @@
 #ifndef _CSCF_CONFIG_H
 #define _CSCF_CONFIG_H
 
-#include "osPL.h"
+
 #include <netinet/in.h>
 
+#include "osPL.h"
 #include "osXmlParserIntf.h"
 
+#include "sipTU.h"
 
 #define SCSCF_MAX_ALLOWED_SIFC_ID_NUM	20	
 #define SCSCF_MAX_ALLOWED_IMPU_NUM   	10
@@ -33,14 +35,17 @@
 #define SCSCF_SIFC_XML_FILE_NAME			"sifc.xml"
 #define SCSCF_SIFC_XSD_FILE_NAME            "sifc.xsd"
 
-#define ICSCF_IP_ADDR					"2.3.4.5"
-#define ICSCF_LISTEN_PORT				5060
-
 #define CSCF_CONFIG_FOLDER              "/project/app/mas/config"
 #define CSCF_HSS_URI				"hss.ims.com"
 
 #define SCSCF_HASH_SIZE				1024
+
+
+#define ICSCF_IP_ADDR                   "2.3.4.5"
+#define ICSCF_LISTEN_PORT               5060
 #define ICSCF_HASH_SIZE				1024
+#define ICSCF_CONFIG_MAX_SCSCF_NUM	6
+#define ICSCF_UAR_AUTHTYPE_CAPABILITY	true
 
 typedef enum {
 	CSCF_TYPE_INVALID,
@@ -95,6 +100,8 @@ osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUs
 struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseListenPort);
 bool cscf_isS(struct sockaddr_in* rcvLocal);
 
+bool icscfConfig_getScscfInfoByCap(uint32_t capValue, sipTuAddr_t* pScscfAddr, bool* isLocal);
+bool icscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pScscfAddr, bool* isLocal);
 
 
 #endif

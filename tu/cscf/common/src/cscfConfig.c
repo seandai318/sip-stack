@@ -16,13 +16,23 @@
 
 
 
+typedef struct {
+	uint32_t capValue;
+	transportType_e tpType;
+	bool isLocal;
+    struct sockaddr_in sockAddr;
+	osPointerLen_t scscfName;
+} scscfAddrInfo_t;
+
+	
 static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void* appData);
 static void cscfConfig_setGlobalSockAddr();
 
 
 static osPointerLen_t cxXsdName;
 static struct sockaddr_in gScscfSockAddr, gIcscfSockAddr;
-
+static scscfAddrInfo_t gScscfAddrInfo[ICSCF_CONFIG_MAX_SCSCF_NUM];
+static uint8_t gScscfAddrNum;
 
 void cscfConfig_init(char* cxFolder, char* cxXsdFileName)
 {
@@ -147,6 +157,46 @@ struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseLi
 bool cscf_isS(struct sockaddr_in* rcvLocal)
 {
 	return osIsSameSA(rcvLocal, &gScscfSockAddr) ? true : false;
+}
+
+
+bool icscfConfig_getScscfInfoByCap(uint32_t capValue, sipTuAddr_t* pScscfAddr, bool* isLocal)
+{
+	for(int i=0; i<gScscfAddrNum; i++)
+	{
+		if(gScscfAddrInfo[i].capValue == capValue)
+		{
+			pScscfAddr->isSockAddr = true;
+			pScscfAddr->sockAddr = gScscfAddrInfo[i].sockAddr;
+			pScscfAddr->tpType = gScscfAddrInfo[i].tpType;
+			*isLocal = gScscfAddrInfo[i].isLocal;
+			
+			return true;
+			break;
+		}
+	}
+
+	return false;
+}
+
+
+bool icscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pScscfAddr, bool* isLocal)
+{
+	for(int i=0; i<gScscfAddrNum; i++)
+    {
+		if(osPL_casecmp(pScscfName, &gScscfAddrInfo[i].scscfName) == 0)
+        {
+            pScscfAddr->isSockAddr = true;
+            pScscfAddr->sockAddr = gScscfAddrInfo[i].sockAddr;
+            pScscfAddr->tpType = gScscfAddrInfo[i].tpType;
+            *isLocal = gScscfAddrInfo[i].isLocal;
+
+            return true;
+            break;
+        }
+    }
+
+    return false;
 }
 
 

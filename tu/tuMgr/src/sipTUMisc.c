@@ -99,15 +99,17 @@ EXIT:
 }
 
 
-void sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pRegExpire, sipTuRegTimeConfig_t regTimeConfig, sipResponse_e* pRspCode)
+//if pRegTimeConfig == NULL, do not check max/min expire time and no need to fill default time
+//return value: isExpireFound
+bool sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pRegExpire, sipTuRegTimeConfig_t* pRegTimeConfig, sipResponse_e* pRspCode)
 {
 	osStatus_e status = OS_STATUS_OK;
+	bool isExpireFound = false;
 
 	sipHdrDecoded_t* pContactHdr = NULL;
     *pRspCode = SIP_RESPONSE_INVALID;
 
     //check the expire header
-    bool isExpiresFound = false;
 	osPointerLen_t* pContactExpire = NULL;
     if(pReqDecodedRaw->msgHdrList[SIP_HDR_EXPIRES] != NULL)
     {
@@ -122,7 +124,7 @@ void sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* 
 
         *pRegExpire = *(uint32_t*)expiryHdr.decodedHdr;
         osfree(expiryHdr.decodedHdr);
-        isExpiresFound = true;
+        isExpireFound = true;
     }
     else
     {
@@ -140,25 +142,30 @@ void sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* 
         pContactExpire = sipHdrGenericNameParam_getGPValue(&((sipHdrMultiContact_t*)pContactHdr->decodedHdr)->contactList.pGNP->hdrValue, &expireName);
         if(pContactExpire != NULL)
         {
-            isExpiresFound = true;
+            isExpireFound = true;
             *pRegExpire = osPL_str2u32(pContactExpire);
         }
     }
 
-    if(!isExpiresFound)
+	if(!pRegTimeConfig)
+	{
+		goto EXIT;
+	}
+
+    if(!isExpireFound)
     {
-        *pRegExpire = regTimeConfig.defaultRegTime;
+        *pRegExpire = pRegTimeConfig->defaultRegTime;
     }
 
-    if(*pRegExpire != 0 && *pRegExpire < regTimeConfig.minRegTime)
+    if(*pRegExpire != 0 && *pRegExpire < pRegTimeConfig->minRegTime)
     {
-        *pRegExpire = regTimeConfig.minRegTime;
+        *pRegExpire = pRegTimeConfig->minRegTime;
         *pRspCode = SIP_RESPONSE_423;
         goto EXIT;
     }
-    else if (*pRegExpire > regTimeConfig.maxRegTime)
+    else if (*pRegExpire > pRegTimeConfig->maxRegTime)
     {
-        *pRegExpire = regTimeConfig.maxRegTime;
+        *pRegExpire = pRegTimeConfig->maxRegTime;
         if(pContactExpire)
         {
             osPL_modifyu32(pContactExpire, *pRegExpire);
@@ -167,7 +174,8 @@ void sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* 
 
 EXIT:
 	osfree(pContactHdr);
-    return;
+
+    return isExpireFound;
 }
 
 

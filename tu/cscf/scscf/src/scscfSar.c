@@ -225,7 +225,7 @@ static osStatus_e scscfReg_decodeHssMsg(diaMsgDecoded_t* pDiaDecoded, scscfRegIn
     switch(pDiaDecoded->cmdCode)
     {
         case DIA_CMD_CODE_SAR:
-            if(pDiaDecoded->cmdFlag & DIA_CMD_FLAG_REQUEST)
+            if(!(pDiaDecoded->cmdFlag & DIA_CMD_FLAG_REQUEST))
             {
                 logError("received SAR request, ignore.");
                 status = OS_ERROR_INVALID_VALUE;

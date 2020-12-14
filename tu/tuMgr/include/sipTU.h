@@ -69,7 +69,7 @@ bool sipTu_getBestNextHopByName(osPointerLen_t* pQName, sipTuAddr_t* pNextHop);
 bool sipTu_setDestFailure(osPointerLen_t* dest, struct sockaddr_in* destAddr);
 bool sipTu_replaceDest(osPointerLen_t* dest, sipTuAddr_t* pNextHop);
 
-void sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pRegExpire, sipTuRegTimeConfig_t regTimeConfig, sipResponse_e* pRspCode);
+bool sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pRegExpire, sipTuRegTimeConfig_t* pRegTimeConfig, sipResponse_e* pRspCode);
 
 //create a UAC request with req line, via, from, to, callId and max forward.  Other headers needs to be added by user as needed
 //be noted this function does not include the extra "\r\n" at the last of header, user needs to add it when completing the creation of a SIP message

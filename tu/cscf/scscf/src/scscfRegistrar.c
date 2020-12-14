@@ -219,7 +219,7 @@ static void scscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 	osPointerLen_t impi;
 	if(cscf_getImpiFromSipMsg(pReqDecodedRaw, &impu, &impi) != OS_STATUS_OK)
 	{
-		logError("fails to cscf_getImpiFromSipMsg.")
+		logError("fails to cscf_getImpiFromSipMsg.");
 		rspCode = SIP_RESPONSE_400;
 		goto EXIT;
 	}
@@ -241,8 +241,6 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
 {
     osStatus_e status = OS_STATUS_OK;
 
-    sipHdrDecoded_t viaHdr={};
-	
     sipResponse_e rspCode = SIP_RESPONSE_INVALID;
     osPointerLen_t* pContactExpire = NULL;
     scscfRegInfo_t* pRegInfo = NULL;
@@ -250,7 +248,7 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
     //check the expire header
     uint32_t regExpire = 0;
 	sipTuRegTimeConfig_t regTimeConfig = {SCSCF_REG_MIN_EXPIRE, SCSCF_REG_MAX_EXPIRE, SCSCF_REG_DEFAULT_EXPIRE};
-	sipTu_getRegExpireFromMsg(pReqDecodedRaw, &regExpire, regTimeConfig, &rspCode);
+	sipTu_getRegExpireFromMsg(pReqDecodedRaw, &regExpire, &regTimeConfig, &rspCode);
 	if(rspCode != SIP_RESPONSE_INVALID)
 	{
 		goto EXIT;
