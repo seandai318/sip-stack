@@ -23,7 +23,7 @@
 
 
 //proxy forwards the request
-osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipTuUri_t* pTargetUri,  sipProxy_msgModInfo_t* pHdrModInfo, sipTuAddr_t* pNextHop, bool isTpDirect, proxyInfo_t* proxyInfo, void** ppTransId)
+osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipTuUri_t* pTargetUri,  sipProxy_msgModInfo_t* pHdrModInfo, sipTuAddr_t* pNextHop, bool isTpDirect, void* proxyInfo, void** ppTransId)
 
 {
 	osStatus_e status = OS_STATUS_OK;
@@ -150,7 +150,7 @@ EXIT:
 
 
 //proxy forwards the request
-osStatus_e sipProxy_forwardResp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, void* pTransId, proxyInfo_t* proxyInfo)
+osStatus_e sipProxy_forwardResp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, void* pTransId, void* proxyInfo)
 {
     osStatus_e status = OS_STATUS_OK;
     transportIpPort_t nextHop;

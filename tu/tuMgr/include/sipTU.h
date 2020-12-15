@@ -68,6 +68,8 @@ bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_
 bool sipTu_getBestNextHopByName(osPointerLen_t* pQName, sipTuAddr_t* pNextHop);
 bool sipTu_setDestFailure(osPointerLen_t* dest, struct sockaddr_in* destAddr);
 bool sipTu_replaceDest(osPointerLen_t* dest, sipTuAddr_t* pNextHop);
+void sipTuDest_localSet(osPointerLen_t* pDestName, struct sockaddr_in destAddr, transportType_e tpType);
+bool sipTuDest_isQuarantined(osPointerLen_t* pDestName, struct sockaddr_in destAddr);
 
 bool sipTu_getRegExpireFromMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, uint32_t* pRegExpire, sipTuRegTimeConfig_t* pRegTimeConfig, sipResponse_e* pRspCode);
 

@@ -16,15 +16,6 @@
 
 
 
-typedef struct {
-	uint32_t capValue;
-	transportType_e tpType;
-	bool isLocal;
-    struct sockaddr_in sockAddr;
-	osPointerLen_t scscfName;
-} scscfAddrInfo_t;
-
-	
 static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void* appData);
 static void cscfConfig_setGlobalSockAddr();
 
@@ -33,6 +24,8 @@ static osPointerLen_t cxXsdName;
 static struct sockaddr_in gScscfSockAddr, gIcscfSockAddr;
 static scscfAddrInfo_t gScscfAddrInfo[ICSCF_CONFIG_MAX_SCSCF_NUM];
 static uint8_t gScscfAddrNum;
+
+
 
 void cscfConfig_init(char* cxFolder, char* cxXsdFileName)
 {
@@ -177,6 +170,17 @@ bool icscfConfig_getScscfInfoByCap(uint32_t capValue, sipTuAddr_t* pScscfAddr, b
 	}
 
 	return false;
+}
+
+
+scscfAddrInfo_t* icscfConfig_getScscfInfo(uint8_t* pScscfNum)
+{
+	if(!pScscfNum)
+	{
+		return NULL;
+	}
+
+	return gScscfAddrInfo;
 }
 
 

@@ -16,6 +16,7 @@ typedef struct {
 } sipTuDestInfo_t;
 
 
+//The meaning of kaTimerId is overloaded.  for dest gotten fron dns query, this parameter will have a value.  for dest that is locally set, this value is 0.  so we can use this value to decide if who set the dest.
 typedef struct {
     osVPointerLen_t destName;   //dns qName.  Will show the qNme of the highest used qType
     osList_t destList;          //each entry contains sipTuDestInfo_t

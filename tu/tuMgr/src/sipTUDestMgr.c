@@ -247,6 +247,75 @@ EXIT:
 }
 
 
+//for local set destination (not from dns query), the kaTimerId would not be set, i.e., never expires
+void sipTuDest_localSet(osPointerLen_t* dest, struct sockaddr_in destAddr, transportType_e tpType)
+{
+	if(!dest)
+	{
+		logError("null pointer, pDestName=%p.", dest);
+		return;
+	}
+
+	sipTuDestRecord_t* pDestRec = NULL;
+    osListElement_t* pLE = destRecordList.head;
+    while(pLE)
+    {
+        pDestRec = pLE->data;
+        if(osPL_cmp(&pDestRec->destName.pl, dest) == 0)
+        {
+			break;
+		}
+
+		pLE = pLE->next;
+	}
+
+	sipTuDestInfo_t* pDestInfo = osmalloc(sizeof(sipTuDestInfo_t), NULL);
+	pDestInfo->tpType = tpType;
+	pDestInfo->destAddr = destAddr;
+	pDestInfo->isQuarantined = false;
+	pDestInfo->qTimerId = 0;
+
+    if(!pDestRec)
+	{
+		pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
+		osVPL_copyPL(&pDestRec->destName, dest); 
+		osList_append(&destRecordList, pDestRec);
+	}
+
+    osList_append(&pDestRec->destList, pDestInfo);
+}
+
+
+bool sipTuDest_isQuarantined(osPointerLen_t* dest, struct sockaddr_in destAddr)
+{
+	osListElement_t* pLE = destRecordList.head;
+	while(pLE)
+	{
+		sipTuDestRecord_t* pDestRec = pLE->data;
+        if(osPL_cmp(&pDestRec->destName.pl, dest) == 0)
+		{
+            osListElement_t* pAddrLE = pDestRec->destList.head;
+            while(pAddrLE)
+            {
+                sipTuDestInfo_t* pDestInfo = pAddrLE->data;
+                if(osIsSameSA(&pDestInfo->destAddr, &destAddr))
+                {
+                    return pDestInfo->isQuarantined;
+				}
+
+				pAddrLE = pAddrLE->next;
+			}
+		}
+
+		pLE = pLE->next;
+	}
+
+	//if do not find a match, assume is quarantined
+	logError("destRecordList does not contain local address(%A).", &destAddr);
+	return true;
+}
+	
+
 static void sipTuDest_onQTimeout(uint64_t timerId, void* data)
 {
 	if(!data)

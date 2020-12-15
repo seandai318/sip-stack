@@ -673,13 +673,15 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_PATH, true);
 	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_CONTACT, true);
 
+#if 0
     proxyInfo_t* pProxyInfo = oszalloc(sizeof(proxyInfo_t), NULL);
     pProxyInfo->proxyOnMsg = NULL;		//for cscf proxyOnMsg is not used since cscf does not distribute message further after receiving from TU
-    pProxyInfo->pCallInfo = pRegInfo;
-    
+    pProxyInfo->pCallInfo = pRegInfo;    
+#endif
+
 	sipTuUri_t targetUri = {*pRegInfo->tempWorkInfo.pAs, true};
 	void* pTransId = NULL;
-	status = sipProxy_forwardReq(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, &targetUri, &msgModInfo, pNextHop, false, pProxyInfo, &pTransId);
+	status = sipProxy_forwardReq(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, &targetUri, &msgModInfo, pNextHop, false, pRegInfo, &pTransId);
     if(status != OS_STATUS_OK || !pTransId)
     {
         logError("fails to forward sip request, status=%d, pTransId=%p.", status, pTransId);
