@@ -3,9 +3,7 @@ SIPTU_DIR = $(PROJECT_DIR)/sip-stack/tu
 DIA_DIR = $(PROJECT_DIR)/diameter
 DNS_DIR = $(PROJECT_DIR)/dnsResolver
 CSCF_DIR = $(PROJECT_DIR)/sip-stack/tu/cscf
-ICSCF_DIR = $(PROJECT_DIR)/sip-stack/tu/cscf/icscf
-#ICSCF_DIR = $(PROJECT_DIR)/sip-stack/tu/cscf/icscf
-IDIR = ../include $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/tu/tuMgr/include $(PROJECT_DIR)/sip-stack/transport/include $(SIPTU_DIR)/proxy/proxyMgr/include $(DIA_DIR)/common/include $(DIA_DIR)/diaCx/include $(DNS_DIR)/include $(CSCF_DIR)/common/include $(CSCF_DIR)/scscf/include  $(ICSCF_DIR)/include
+IDIR = ../include $(PROJECT_DIR)/os/include $(PROJECT_DIR)/sip-stack/codec/include $(PROJECT_DIR)/sip-stack/trans/include $(PROJECT_DIR)/sip-stack/tu/tuMgr/include $(PROJECT_DIR)/sip-stack/transport/include $(SIPTU_DIR)/proxy/proxyMgr/include $(DIA_DIR)/common/include $(DIA_DIR)/diaCx/include $(DNS_DIR)/include $(CSCF_DIR)/common/include $(CSCF_DIR)/scscf/include  $(CSCF_DIR)/icscf/include
 #INC=$(foreach d, $(IDIR), -I$d)
 INC=$(IDIR:%=-I%)
 
