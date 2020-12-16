@@ -40,7 +40,7 @@ EXIT:
 }
 
 
-osStatus_e icscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, icscfUaaInfo_t* pUaaInfo)
+osStatus_e icscfReg_decodeUaa(diaMsgDecoded_t* pDiaDecoded, icscfUaaInfo_t* pUaaInfo)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -52,11 +52,13 @@ osStatus_e icscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, icscfUaaInfo_t* pUaa
         switch(pAvp->avpCode)
         {
             case DIA_AVP_CODE_RESULT_CODE:
-                pResultCode->resultCode = pAvp->avpData.data32;
+				pUaaInfo->rspCode.isResultCode = true;
+                pUaaInfo->rspCode.resultCode = pAvp->avpData.data32;
                 goto EXIT;
                 break;
             case DIA_AVP_CODE_EXPERIMENTAL_RESULT_CODE:
-                pResultCode->expCode = pAvp->avpData.data32;
+				pUaaInfo->rspCode.isResultCode = false;
+				pUaaInfo->rspCode.expCode = pAvp->avpData.data32;
                 goto EXIT;
                 break;
             case DIA_AVP_CODE_CX_SERVER_NAME:

@@ -20,7 +20,7 @@ else
     endif
 endif
 
-libcscf.a: libcscfcommon.a libscscf.a
+libcscf.a: libcscfcommon.a libscscf.a libicscf.a
 	@mkdir -p $(PROJECT_APP_DIR)/bin-debug
 	$(AR) -cr $@ $(PROJECT_APP_DIR)/bin-debug/*.o
 #	$(AR) -cr $@ $^
@@ -45,9 +45,13 @@ libscscf.a:
 	@mkdir -p $(PROJECT_APP_DIR)/bin-debug
 	cd $(PROJECT_APP_DIR)/scscf; $(MAKE); cd debug; cp $@ $(PROJECT_APP_DIR)/bin-debug; cd $(PROJECT_APP_DIR)/bin-debug; $(AR) -x $@
 
+.PHONY: libicscf.a
+libicscf.a:
+	@mkdir -p $(PROJECT_APP_DIR)/bin-debug
+	cd $(PROJECT_APP_DIR)/icscf; $(MAKE); cd debug; cp $@ $(PROJECT_APP_DIR)/bin-debug; cd $(PROJECT_APP_DIR)/bin-debug; $(AR) -x $@
 
 .PHONY: clean
-clean: cscfcommonclean scscfclean
+clean: cscfcommonclean scscfclean icscfclean
 	rm -f $(dep)
 	rm -rf $(PROJECT_APP_DIR)/bin-debug
 	rm -rf *.a
@@ -60,6 +64,9 @@ cscfcommonclean:
 scscfclean:
 	cd $(PROJECT_APP_DIR)/scscf/debug; rm -f *.o *.a *.d; cd -
 
+.PHONY: icscfclean
+icscfclean:
+	cd $(PROJECT_APP_DIR)/scscf/debug; rm -f *.o *.a *.d; cd -
 
 .PHONY: cleandep
 cleandep:

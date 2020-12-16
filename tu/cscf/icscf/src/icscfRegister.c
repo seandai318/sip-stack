@@ -33,16 +33,22 @@
 
 #include "icscfRegister.h"
 #include "cscfConfig.h"
-#include "icscfCx.h"
+#include "cscfHelper.h"
+#include "scscfIntf.h"
+
 
 
 #define ICSCF_DEST_NAME_GENERAL		"ICSCF_DEST_NAME_GENERAL"
 
 
+static osStatus_e icscfReg_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
 static osStatus_e icscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
-static osStatus_e icscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isViaIcscf);
-static osStatus_e icscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAddr_t* pNextHop);
-static bool icscfReg_getNextScscfByCap(diaCxServerCap_t* pServerCap, osListPlusElement_t* pCurPlusLE, sipTuAddr_t* pScscfAddr, osPointerLen_t* pScscfName, bool* isLocal);
+static osStatus_e icscfReg_onTrFailure(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
+static osStatus_e icscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw);
+static osStatus_e icscfReg_forwardSipRegister(icscfRegInfo_t* pRegInfo, sipTuAddr_t* pNextHop);
+static bool icscfReg_getNextScscfByCap(diaCxServerCap_t* pServerCap, osListPlusElement_t* pCurPlusLE, sipTuAddr_t* pScscfAddr, bool* isLocal);
+static void icscfReg_onUaa(icscfRegInfo_t* pRegInfo);
+static bool icscfReg_isScscfQuarantined(struct sockaddr_in scscfSockAddr);
 static void icscfUaaInfo_cleanup(void* data);
 static void icscfRegInfo_cleanup(void* data);
 
@@ -62,9 +68,10 @@ osStatus_e icscfReg_init()
 		if(!pScscfInfo[i].isLocal)
 		{
 			sipTuDest_localSet(&destName, pScscfInfo[i].sockAddr, pScscfInfo[i].tpType);
+		}
 	}
 
-    sipTU_attach(SIPTU_APP_TYPE_ICSCF_REG, icscfReg_onTUMsg);
+    sipTU_attach(SIPTU_APP_TYPE_ICSCF, icscfReg_onTUMsg);
 
 EXIT:
     return status;
@@ -72,7 +79,7 @@ EXIT:
 
 
 //the entering point for icscfReg to receive SIP messages from the transaction layer
-osStatus_e icscfReg_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
+static osStatus_e icscfReg_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 {
 	switch(msgType)
 	{
@@ -109,7 +116,7 @@ static osStatus_e icscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSip
     if(!pSipTUMsg)
     {
         logError("null pointer, pSipTUMsg.");
-        return;
+        return OS_ERROR_NULL_POINTER;
     }
 
 	sipMsgDecodedRawHdr_t* pReqDecodedRaw = sipDecodeMsgRawHdr(&pSipTUMsg->sipMsgBuf, NULL, 0);
@@ -163,7 +170,6 @@ static osStatus_e icscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* 
 
     sipResponse_e rspCode = SIP_RESPONSE_INVALID;
     osPointerLen_t* pContactExpire = NULL;
-    scscfRegInfo_t* pRegInfo = NULL;
 
     //check the expire header
     uint32_t regExpire = 0;
@@ -257,10 +263,10 @@ void icscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData)
     switch(pDiaDecoded->cmdCode)
     {
         case DIA_CMD_CODE_UAR:
-            icscfReg_onUaa(pRegInfo, resultCode);
+            icscfReg_onUaa(pRegInfo);
             break;
         case DIA_CMD_CODE_LIR:
-            icscfReg_onLia(pRegInfo);
+            //icscfReg_onLia(pRegInfo);
             break;
         default:
             logError("scscf receives dia cmdCode(%d) that is not supported, ignore.", pDiaDecoded->cmdCode);
@@ -280,20 +286,20 @@ EXIT:
 
 static void icscfReg_onUaa(icscfRegInfo_t* pRegInfo)
 {
-	osPointerPen_t* pScscf = NULL;
+	osPointerLen_t* pScscf = NULL;
 	bool isFreeRegInfo = true;
     sipResponse_e rspCode = SIP_RESPONSE_INVALID;
 
 	if(pRegInfo->uaaInfo.isCap && !pRegInfo->uaaInfo.isCapExist)
 	{
-		if(pRegInfo->uaaInfo.resultCode == DIA_CX_EXP_RESULT_FIRST_REGISTRATION)
+		if(!pRegInfo->uaaInfo.rspCode.isResultCode && pRegInfo->uaaInfo.rspCode.expCode == DIA_CX_EXP_RESULT_FIRST_REGISTRATION)
 		{
 			scscfReg_onIcscfMsg(SIP_MSG_REQUEST, pRegInfo->pSipTUMsg, pRegInfo->pReqDecodedRaw, &pRegInfo->impi, &pRegInfo->impu);
 
 			goto EXIT;
 		}
 
-		logError("the UAA for impi(%r) does not contain server name and capability, and the result code is not DIA_CX_EXP_RESULT_FIRST_REGISTRATION.", &pRegInfo->impi);
+		logError("the UAA for impi(%r) does not contain server name and capability, and the result code(%d:%d) is not DIA_CX_EXP_RESULT_FIRST_REGISTRATION.", pRegInfo->uaaInfo.rspCode.isResultCode, pRegInfo->uaaInfo.rspCode.expCode, &pRegInfo->impi);
 		rspCode = SIP_RESPONSE_500;
 		goto EXIT;
 	}
@@ -302,7 +308,7 @@ static void icscfReg_onUaa(icscfRegInfo_t* pRegInfo)
 	sipTuAddr_t nextScscf;
 	if(pRegInfo->uaaInfo.isCap)
 	{
-		if(!icscfReg_getNextScscfByCap(&pRegInfo->uaaInfo.serverCap, &pRegInfo->uaaInfo.curLE, &nextScscf, &pRegInfo->uaaInfo.serverName, &isLocal))
+		if(!icscfReg_getNextScscfByCap(&pRegInfo->uaaInfo.serverCap, &pRegInfo->uaaInfo.curLE, &nextScscf, &isServerLocal))
 		{
 			logInfo("no SCSCF available for impi(%r).", &pRegInfo->impi);
 			rspCode = SIP_RESPONSE_500;
@@ -311,7 +317,7 @@ static void icscfReg_onUaa(icscfRegInfo_t* pRegInfo)
 	}
 	else
 	{
-		if(!icscfConfig_getScscfInfoByName(&pRegInfo->uaaInfo.serverName, &nextScscf, &isLocal))
+		if(!icscfConfig_getScscfInfoByName(&pRegInfo->uaaInfo.serverName, &nextScscf, &isServerLocal))
         {
             logInfo("no SCSCF available scscf name(%r).", &pRegInfo->uaaInfo.serverName);
             rspCode = SIP_RESPONSE_500;
@@ -319,7 +325,7 @@ static void icscfReg_onUaa(icscfRegInfo_t* pRegInfo)
         }
 
 		//if the specified server name is quarantined, and the previous UAR query was not for capabilities, try one more query for capabilities
-		if(sipTuDest_localIsQuarantined(nextScscf.sockAddr))
+		if(icscfReg_isScscfQuarantined(nextScscf.sockAddr))
 		{
 			logInfo("scscf name(%r) is quarantined.", &pRegInfo->uaaInfo.serverName);
 			if(pRegInfo->uaaInfo.authType == DIA_CX_AUTH_TYPE_REGISTRATION)
@@ -328,7 +334,7 @@ static void icscfReg_onUaa(icscfRegInfo_t* pRegInfo)
 
 				pRegInfo->uaaInfo.authType = DIA_CX_AUTH_TYPE_REGISTRATION_AND_CAPABILITIES;
 
-				if(icscfCx_performUar(pImpi, pImpu, pRegInfo->uaaInfo.authType, pRegInfo) != OS_STATUS_OK)
+				if(icscfCx_performUar(&pRegInfo->impi, &pRegInfo->impu, pRegInfo->uaaInfo.authType, pRegInfo) != OS_STATUS_OK)
 				{
 		            rspCode = SIP_RESPONSE_500;
 				}
@@ -377,7 +383,7 @@ EXIT:
 
 
 //this is when remote SCSCF returns register response.  For register sent to the local scscf, there will be no response back
-static osStatus_e scscfReg_onSipResponse(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
+static osStatus_e icscfReg_onSipResponse(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -390,7 +396,7 @@ static osStatus_e scscfReg_onSipResponse(sipTUMsgType_e msgType, sipTUMsg_t* pSi
 
     logInfo("received a sip response, rspCode=%d.", pSipTUMsg->sipMsgBuf.rspCode);
 
-    scscfRegInfo_t* pRegInfo = ((proxyInfo_t*)pSipTUMsg->pTUId)->pCallInfo;
+    icscfRegInfo_t* pRegInfo = pSipTUMsg->pTUId;
     if(!pRegInfo)
     {
         logError("null pointer, pRegInfo is null.");
@@ -435,7 +441,7 @@ static osStatus_e icscfReg_onTrFailure(sipTUMsgType_e msgType, sipTUMsg_t* pSipT
 		goto EXIT;
 	}
 
-    scscfRegInfo_t* pRegInfo = pSipTUMsg->pTUId;
+    icscfRegInfo_t* pRegInfo = pSipTUMsg->pTUId;
     if(!pRegInfo)
     {
         logError("pRegInfo is NULL.");
@@ -459,7 +465,7 @@ EXIT:
 }
 
 
-static osStatus_e icscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAddr_t* pNextHop)
+static osStatus_e icscfReg_forwardSipRegister(icscfRegInfo_t* pRegInfo, sipTuAddr_t* pNextHop)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -473,9 +479,8 @@ static osStatus_e icscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
     pProxyInfo->pCallInfo = pRegInfo;
 #endif
 
-    sipTuUri_t targetUri = {*pRegInfo->tempWorkInfo.pAs, true};
     void* pTransId = NULL;
-    status = sipProxy_forwardReq(pRegInfo->uaaInfo.pTUMsg, pRegInfo->uaaInfo.pReqDecodedRaw, NULL, &msgModInfo, pNextHop, false, pRegInfo, &pTransId);
+    status = sipProxy_forwardReq(pRegInfo->pSipTUMsg, pRegInfo->pReqDecodedRaw, NULL, &msgModInfo, pNextHop, false, pRegInfo, &pTransId);
     if(status != OS_STATUS_OK || !pTransId)
     {
         logError("fails to forward sip request, status=%d, pTransId=%p.", status, pTransId);
@@ -490,15 +495,15 @@ EXIT:
 
 //only check mandatory capability
 //return value: if the next scscf is found, true, else, false
-static bool icscfReg_getNextScscfByCap(diaCxServerCap_t* pServerCap, osListPlusElement_t* pCurPlusLE, sipTuAddr_t* pScscfAddr, osPointerLen_t* pScscfName, bool* isLocal)
+static bool icscfReg_getNextScscfByCap(diaCxServerCap_t* pServerCap, osListPlusElement_t* pCurPlusLE, sipTuAddr_t* pScscfAddr, bool* isLocal)
 {
-	if(!pServerCap || !pCurPlusLE || !pScscfAddr || !pScscfName || !isLocal)
+	if(!pServerCap || !pCurPlusLE || !pScscfAddr || !isLocal)
 	{
-		logError("null pointer, pServerCap=%p, pCurPlusLE=%p, pScscfAddr=%p, pScscfName=%p, isLocal=%p.", pServerCap, pCurPlusLE, pScscfAddr, pScscfName, isLocal);
+		logError("null pointer, pServerCap=%p, pCurPlusLE=%p, pScscfAddr=%p, isLocal=%p.", pServerCap, pCurPlusLE, pScscfAddr, isLocal);
 		return false;
 	}
 	
-	uint32_t* pCapValue = osListPlus_getNextData(&pCurPlusLE->manCap, pCurPlusLE);
+	uint32_t* pCapValue = osListPlus_getNextData(&pServerCap->manCap, pCurPlusLE);
 	if(!pCapValue)
 	{
 		logInfo("no more next SCSCF address.");
@@ -507,13 +512,13 @@ static bool icscfReg_getNextScscfByCap(diaCxServerCap_t* pServerCap, osListPlusE
 
 	while (1)
 	{
-		if(!icscfConfig_getScscfInfoByCap(*pCapValue, pScscfAddr, pScscfName, isLocal))
+		if(!icscfConfig_getScscfInfoByCap(*pCapValue, pScscfAddr, isLocal))
 		{
 			logError("there is no configured scscf for capability(%d).", *pCapValue);
 			return false;
 		}
 
-		if(!*isLocal && sipTuDest_localIsQuarantined(pScscfAddr->sockAddr))
+		if(!*isLocal && icscfReg_isScscfQuarantined(pScscfAddr->sockAddr))
 		{
 			continue;
 		}
@@ -524,6 +529,12 @@ static bool icscfReg_getNextScscfByCap(diaCxServerCap_t* pServerCap, osListPlusE
 	return true;
 }
 
+
+static bool icscfReg_isScscfQuarantined(struct sockaddr_in scscfSockAddr)
+{
+	osPointerLen_t destName = {ICSCF_DEST_NAME_GENERAL, sizeof(ICSCF_DEST_NAME_GENERAL)-1};
+    return sipTuDest_isQuarantined(&destName, scscfSockAddr);
+}
 
 
 static void icscfUaaInfo_cleanup(void* data)
