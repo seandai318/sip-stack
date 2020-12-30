@@ -27,8 +27,8 @@
 #define SCSCF_IS_AUTH_ENABLED			false
 #define SCSCF_IS_REREG_PERFORM_AUTH		false
 
-#define SCSCF_URI						"scscf01.ims.com"
-#define SCSCF_URI_WITH_PORT				"scscf01.ims.com:5060"
+#define SCSCF_URI						"sip:scscf01-mlplab.ims.com"
+#define SCSCF_URI_WITH_PORT				"sip:scscf01-mlplab.ims.com:5060"
 #define SCSCF_IP_ADDR					"1.2.3.4"
 #define SCSCF_LISTEN_PORT				5060
 
@@ -62,16 +62,6 @@ typedef enum {
     SCSCF_USR_PROFILE_BARRINGINDICATION,    //BarringIndication
     SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM,
 } scscfUserProfileParam_e;
-
-
-
-osXmlData_t scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM] = {
-    {SCSCF_USR_PROFILE_IDENTITY,                     {"Identity", sizeof("Identity")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    {SCSCF_USR_PROFILE_PRIVATEID,                    {"PrivateID", sizeof("PrivateID")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    {SCSCF_USR_PROFILE_PUBLICIDENTITY,               {"PublicIdentity", sizeof("PublicIdentity")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
-    {SCSCF_USR_PROFILE_SHAREDIFCSETID,               {"SharedIFCSetID", sizeof("SharedIFCSetID")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    {SCSCF_USR_PROFILE_BARRINGINDICATION,            {"SubscriptionId", sizeof("SubscriptionId")-1}, OS_XML_DATA_TYPE_ANY, false},
-};
 
 
 typedef struct {

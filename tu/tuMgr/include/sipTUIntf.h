@@ -13,10 +13,10 @@
 #include "osList.h"
 #include "osPL.h"
 #include "osMBuf.h"
+
 #include "sipMsgRequest.h"
 #include "sipMsgFirstLine.h"
 #include "transportIntf.h"
-
 
 
 typedef enum {
@@ -70,6 +70,8 @@ typedef osStatus_e (*sipTUAppOnSipMsg_h)(sipTUMsgType_e msgType, sipTUMsg_t* pSi
 //if sipTrans calls this function and get error response, it shall remove the transaction.  TU shall return OS_STATUS_OK even if it returns error response.  TU shall only return !OS_STATUS_OK if it can not habdle the SIP MESSAGE properly, like could not decode, memory error, etc. 
 osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg);
 void sipTU_attach(sipTuAppType_e appType, sipTUAppOnSipMsg_h appOnSipMsg);
+void sipTU_init(char* configDir);
+
 /*
  * branchExtraStr: a string that caller wants to be inserted into branch ID.
  * pParamList: list of sipHdrParamNameValue_t, like: sipHdrParamNameValue_t param1={{"comp", 4}, {"sigcomp", 7}};

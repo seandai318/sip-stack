@@ -42,7 +42,7 @@ osStatus_e cscf_sendRegResponse(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
     sipHdrName_e sipHdrArray[] = {SIP_HDR_FROM, SIP_HDR_TO, SIP_HDR_CALL_ID, SIP_HDR_CSEQ};
     int arraySize = sizeof(sipHdrArray) / sizeof(sipHdrArray[0]);
 
-    logInfo("rspCode=%d.", rspCode);
+    logInfo("rspCode=%d, local=%A.", rspCode, pLocal);
     switch(rspCode)
     {
         case SIP_RESPONSE_200:
@@ -50,66 +50,73 @@ osStatus_e cscf_sendRegResponse(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
             status = sipHdrVia_rspEncode(pSipResp, viaHdr.decodedHdr,  pReqDecodedRaw, &peer);
             status = sipTU_addContactHdr(pSipResp, pReqDecodedRaw, regExpire);
             status = sipTU_copySipMsgHdr(pSipResp, pReqDecodedRaw, NULL, 0, true);
-            //add Service-Route
-            sipPointerLen_t sr = SIPPL_INIT(sr);
-            int len = osPrintf_buffer((char*)sr.pl.p, SIP_HDR_MAX_SIZE, "Service-Route: <sip: %r:%d; orig; lr>\r\n", SCSCF_URI, SCSCF_LISTEN_PORT);
-            if(len < 0)
-            {
-                logError("fails to osPrintf_buffer for service-route.");
-                status = OS_ERROR_INVALID_VALUE;
-                goto EXIT;
-            }
-            sr.pl.l = len;
 
-            osMBuf_writePL(pSipResp, &sr.pl, true);
+			int len = 0;
+			scscfRegInfo_t* pRegInfo = pRegData;
+			if(regExpire)
+			{
+				//add Service-Route
+            	sipPointerLen_t sr = SIPPL_INIT(sr);
+            	len = osPrintf_buffer((char*)sr.pl.p, SIP_HDR_MAX_SIZE, "Service-Route: <%r:%d; orig; lr>\r\n", SCSCF_URI, SCSCF_LISTEN_PORT);
+            	if(len < 0)
+            	{
+                	logError("fails to osPrintf_buffer for service-route.");
+                	status = OS_ERROR_INVALID_VALUE;
+                	goto EXIT;
+            	}
+            	sr.pl.l = len;
 
-            //add P-Associated-URI and P-Charging-Function-Addresses if exists
-		    scscfRegInfo_t* pRegInfo = pRegData;
-            if(pRegInfo)
-            {
-                //for P-Associated-URI
-                sipPointerLen_t pau = SIPPL_INIT(pau);
-                osListElement_t* pLE = pRegInfo->ueList.head;
-                while(pLE)
-                {
-                    scscfRegIdentity_t* pId = pLE->data;
-                    if(!pId->isImpi)
-                    {
-                        if(!pId->impuInfo.isBarred)
-                        {
-                            int len = osPrintf_buffer((char*)pau.pl.p, SIP_HDR_MAX_SIZE, "P-Associated-URI: <%r>\r\n", &pId->impuInfo.impu);
-                            if(len < 0)
-                            {
-                                logError("fails to osPrintf_buffer for service-route.");
-                                status = OS_ERROR_INVALID_VALUE;
-                                goto EXIT;
-                            }
-                            pau.pl.l = len;
+            	osMBuf_writePL(pSipResp, &sr.pl, true);
+			
+            	//add P-Associated-URI if exists
+            	if(pRegInfo)
+            	{
+                	//for P-Associated-URI
+                	sipPointerLen_t pau = SIPPL_INIT(pau);
+                	osListElement_t* pLE = pRegInfo->ueList.head;
+                	while(pLE)
+                	{
+                    	scscfRegIdentity_t* pId = pLE->data;
+                    	if(!pId->isImpi)
+                    	{
+                        	if(!pId->impuInfo.isBarred)
+                        	{
+                            	int len = osPrintf_buffer((char*)pau.pl.p, SIP_HDR_MAX_SIZE, "P-Associated-URI: <%r>\r\n", &pId->impuInfo.impu);
+                            	if(len < 0)
+                            	{
+                                	logError("fails to osPrintf_buffer for service-route.");
+                                	status = OS_ERROR_INVALID_VALUE;
+                                	goto EXIT;
+                            	}
+                            	pau.pl.l = len;
 
-                            osMBuf_writePL(pSipResp, &pau.pl, true);
-                        }
-                    }
-
-                    pLE = pLE->next;
+                            	osMBuf_writePL(pSipResp, &pau.pl, true);
+                        	}
+                    	}
+                    	pLE = pLE->next;
+					}
                 }
+			}
 
-                //for P-Charging-Function-Addresses
-                sipPointerLen_t chgInfo = SIPPL_INIT(chgInfo);
-                if(pRegInfo->hssChgInfo.chgAddrType != CHG_ADDR_TYPE_INVALID)
-                {
-                    len = osPrintf_buffer((char*)chgInfo.pl.p, SIP_HDR_MAX_SIZE, "P-Charging-Function-Addresses: %s=\"%r\"\r\n", pRegInfo->hssChgInfo.chgAddrType == CHG_ADDR_TYPE_CCF ? "ccf" : "ecf", &pRegInfo->hssChgInfo.chgAddr.pl);
-                    if(len <0)
-                    {
-                        logError("fails to osPrintf_buffer for P-Charging-Function-Addresses.");
-                        status = OS_ERROR_INVALID_VALUE;
-                        goto EXIT;
-                    }
-                    chgInfo.pl.l = len;
-                }
-            }
+            //add P-Charging-Function-Addresses if exists
+			if(pRegInfo)
+			{
+            	sipPointerLen_t chgInfo = SIPPL_INIT(chgInfo);
+            	if(pRegInfo->hssChgInfo.chgAddrType != CHG_ADDR_TYPE_INVALID)
+            	{
+                	len = osPrintf_buffer((char*)chgInfo.pl.p, SIP_HDR_MAX_SIZE, "P-Charging-Function-Addresses: %s=\"%r\"\r\n", pRegInfo->hssChgInfo.chgAddrType == CHG_ADDR_TYPE_CCF ? "ccf" : "ecf", &pRegInfo->hssChgInfo.chgAddr.pl);
+                	if(len <0)
+                	{
+                    	logError("fails to osPrintf_buffer for P-Charging-Function-Addresses.");
+                    	status = OS_ERROR_INVALID_VALUE;
+                    	goto EXIT;
+                	}
+                	chgInfo.pl.l = len;
+            	}
+			}
 
             status = sipTU_msgBuildEnd(pSipResp, false);
-			goto EXIT;
+			break;
         case SIP_RESPONSE_INVALID:
             //do nothing here, since pSipResp=NULL, the implementation will be notified to abort the transaction
             goto EXIT;
@@ -194,7 +201,8 @@ osStatus_e cscf_getImpiFromSipMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPoint
 			status = OS_ERROR_INVALID_VALUE;
 			goto EXIT;
 		}
-		*pImpi = *pImpiFromMsg;
+
+		osPL_removeQuote(pImpi, pImpiFromMsg, '"');
     }
 
     //if not pImsi, convert impu to impi

@@ -6,9 +6,10 @@
 
 #include "sipTUIntf.h"
 #include "sipTUConfig.h"
+#include "cscfIntf.h"
 
 
-static sipTUAppOnSipMsg_h sipTU_appOnMsg[SIPTU_APP_TYPE_COUNT];
+static sipTUAppOnSipMsg_h gSipTU_appOnMsg[SIPTU_APP_TYPE_COUNT];
 
 
 
@@ -29,33 +30,33 @@ osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg)
 	switch(SIP_TU_PRODUCT_TYPE)
 	{
 		case SIPTU_PRODUCT_TYPE_MAS_AND_REG:
-			return sipTU_appOnMsg[SIPTU_APP_TYPE_MAS](msgType, pMsg);
+			return gSipTU_appOnMsg[SIPTU_APP_TYPE_MAS](msgType, pMsg);
 			break;
 		case SIPTU_PRODUCT_TYPE_PROXY_AND_MAS_AND_REG:
 			if(pMsg->sipMsgType == SIP_MSG_REQUEST)
 			{
 				if(pMsg->sipMsgBuf.reqCode == SIP_METHOD_REGISTER || pMsg->sipMsgBuf.reqCode == SIP_METHOD_MESSAGE)
 				{
-					return sipTU_appOnMsg[SIPTU_APP_TYPE_MAS](msgType, pMsg);
+					return gSipTU_appOnMsg[SIPTU_APP_TYPE_MAS](msgType, pMsg);
 				}
 				else
 				{
-					return sipTU_appOnMsg[SIPTU_APP_TYPE_PROXY](msgType, pMsg);
+					return gSipTU_appOnMsg[SIPTU_APP_TYPE_PROXY](msgType, pMsg);
 				}
 			}
 			else
 			{
 				if(pMsg->appType == SIPTU_APP_TYPE_PROXY)
 				{
-					return sipTU_appOnMsg[SIPTU_APP_TYPE_PROXY](msgType, pMsg);
+					return gSipTU_appOnMsg[SIPTU_APP_TYPE_PROXY](msgType, pMsg);
 				}
 				else if(pMsg->appType == SIPTU_APP_TYPE_REG)
 				{
-                    return sipTU_appOnMsg[SIPTU_APP_TYPE_REG](msgType, pMsg);
+                    return gSipTU_appOnMsg[SIPTU_APP_TYPE_REG](msgType, pMsg);
 				}
 				else if(pMsg->appType == SIPTU_APP_TYPE_MAS)
 				{
-					return sipTU_appOnMsg[SIPTU_APP_TYPE_MAS](msgType, pMsg);
+					return gSipTU_appOnMsg[SIPTU_APP_TYPE_MAS](msgType, pMsg);
 				}
 				else
 				{
@@ -64,22 +65,22 @@ osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg)
 			}
 			break;
 		case SIPTU_PRODUCT_TYPE_CSCF:
-			if(pMsg->sipMsgType == SIP_MSG_REQUEST)
+			if(pMsg->sipTuMsgType != SIP_TU_MSG_TYPE_TRANSACTION_ERROR && pMsg->sipMsgType == SIP_MSG_REQUEST)
 			{
-				return sipTU_appOnMsg[SIPTU_PRODUCT_TYPE_CSCF](msgType, pMsg);
+				return gSipTU_appOnMsg[SIPTU_APP_TYPE_CSCF](msgType, pMsg);
 			}
 			else
 			{
 				switch(pMsg->appType)
 				{
 					case SIPTU_APP_TYPE_ICSCF:
-						return sipTU_appOnMsg[SIPTU_APP_TYPE_ICSCF](msgType, pMsg);
+						return gSipTU_appOnMsg[SIPTU_APP_TYPE_ICSCF](msgType, pMsg);
 						break;
 					case SIPTU_APP_TYPE_SCSCF_REG:
-						return sipTU_appOnMsg[SIPTU_APP_TYPE_SCSCF_REG](msgType, pMsg);
+						return gSipTU_appOnMsg[SIPTU_APP_TYPE_SCSCF_REG](msgType, pMsg);
 						break;
 					case SIPTU_APP_TYPE_SCSCF_SESSION:
-						return sipTU_appOnMsg[SIPTU_APP_TYPE_SCSCF_SESSION](msgType, pMsg);
+						return gSipTU_appOnMsg[SIPTU_APP_TYPE_SCSCF_SESSION](msgType, pMsg);
                         break;
 					default:
 						logError("appType(%d) is not supported for SIPTU_PRODUCT_TYPE_CSCF.", pMsg->appType);
@@ -98,5 +99,18 @@ osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg)
 
 void sipTU_attach(sipTuAppType_e appType, sipTUAppOnSipMsg_h sipAppOnMsg)
 {
-	sipTU_appOnMsg[appType] = sipAppOnMsg;
+	gSipTU_appOnMsg[appType] = sipAppOnMsg;
+}
+
+
+void sipTU_init(char* configDir)
+{
+    switch(SIP_TU_PRODUCT_TYPE)
+	{
+		case SIPTU_PRODUCT_TYPE_CSCF:
+			return cscf_init(configDir);
+			break;
+		default:
+			logInfo("product type(%d) does not need init.", SIP_TU_PRODUCT_TYPE);
+	}
 }

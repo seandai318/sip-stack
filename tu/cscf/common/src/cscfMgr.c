@@ -7,14 +7,15 @@
 static osStatus_e cscf_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
 
 
-void cscf_init(char* cscfConfigFolder, char* cxXsdFileName)
+void cscf_init(char* cscfConfigFolder)
 {
-    cscfConfig_init(cscfConfigFolder, cxXsdFileName);
+    cscfConfig_init(cscfConfigFolder, "diaCx.xsd");
 
 //	icscf_init(ICSCF_HASH_SIZE);
     scscfReg_init(SCSCF_HASH_SIZE);
 
     sipTU_attach(SIPTU_APP_TYPE_CSCF, cscf_onTUMsg);
+debug("sipTU_attach, SIPTU_APP_TYPE_CSCF=%d", SIPTU_APP_TYPE_CSCF);
 }
 
 
@@ -25,6 +26,8 @@ static osStatus_e cscf_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 		logError("received no request message.");
 		return OS_ERROR_INVALID_VALUE;
 	}
+
+	mlogInfo(LM_CSCF, "received on %A.", pSipTUMsg->pLocal);
 
 	sipTUAppOnSipMsg_h appOnSipMsg = scscfReg_onTUMsg;
 

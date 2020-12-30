@@ -17,4 +17,5 @@ osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, scs
 osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode);
 osStatus_e scscfReg_onMaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode);
 
+
 #endif

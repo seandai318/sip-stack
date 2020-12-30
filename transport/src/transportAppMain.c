@@ -26,6 +26,7 @@
 #include "osConfig.h"
 #include "osResourceMgmt.h"
 
+#include "sipTUIntf.h"
 #include "sipConfig.h"
 #include "sipMsgFirstLine.h"
 #include "sipUriparam.h"
@@ -102,7 +103,7 @@ static void appMain_timerReady()
     }
 
 	logInfo("read cscf configuration from %s.", configDir);
-//	cscf_init(configDir);
+	sipTU_init(configDir);
 
     logInfo("read diameter configuration from %s.", configDir);
     dia_init(configDir);

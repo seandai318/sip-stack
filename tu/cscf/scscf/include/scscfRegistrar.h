@@ -147,7 +147,9 @@ typedef struct {
 
 void scscfReg_onTimeout(uint64_t timerId, void* data);
 void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo);
+osPointerLen_t* scscfReg_getNoBarImpu(osList_t* pUeList, bool isTelPreferred);
 void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo);
 void scscfRegTempWorkInfo_cleanup(scscfRegTempWorkInfo_t* pTempWorkInfo);
+
 
 #endif

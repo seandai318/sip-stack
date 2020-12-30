@@ -45,7 +45,6 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 static void scscfReg_dnsCallback(dnsResResponse_t* pRR, void* pData);
 static osStatus_e scscfReg_onSipResponse(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
 static osStatus_e scscfReg_onTrFailure(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
-static osPointerLen_t* scscfReg_getNoBarImpu(osList_t* pUeList, bool isTelPreferred);
 
 static bool scscfReg_performNWDeRegister(scscfRegInfo_t* pRegInfo);
 static osStatus_e scscfReg_createAndSendSipDeRegister(scscfRegInfo_t* pRegInfo, scscfAsRegInfo_t* pAsInfo);
@@ -96,6 +95,8 @@ EXIT:
 //the entering point for scscfReg to receive SIP messages from the transaction layer
 osStatus_e scscfReg_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 {
+	mlogInfo(LM_CSCF, "msgType=%d.", msgType);
+
 	switch(msgType)
 	{
 		case SIP_TU_MSG_TYPE_MESSAGE:
@@ -224,6 +225,8 @@ static void scscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 		goto EXIT;
 	}
 
+    mlogInfo(LM_CSCF, "process a SIP request, impi=%r, impu=%r.", &impi, &impu);
+
 	scscfReg_processRegMsg(&impi, &impu, pSipTUMsg, pReqDecodedRaw, false);
 
 EXIT:
@@ -254,7 +257,10 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
 		goto EXIT;
 	}
 
+	mlogInfo(LM_CSCF, "regExpire=%d.", regExpire);
+
 	pRegInfo = osPlHash_getUserData(gScscfRegHash, pImpi, true);
+debug("to-remove, pImpi=%r, pRegInfo=%p.", pImpi, pRegInfo);
     if(!pRegInfo)
     {
 		if(regExpire == 0)
@@ -313,8 +319,9 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
 		{
 			logInfo("fails to scscfReg_performSar for impu(%r).", pImpu);
 			rspCode = SIP_RESPONSE_500;
-			goto EXIT;
 		}
+
+		goto EXIT;
 	}
 
 	//send back 200 OK
@@ -360,7 +367,7 @@ EXIT:
     if(rspCode != SIP_RESPONSE_INVALID)
     {
         cscf_sendRegResponse(pSipTUMsg, pReqDecodedRaw, pRegInfo, 0, pSipTUMsg->pPeer, pSipTUMsg->pLocal, rspCode);
-		if(pRegInfo->regState == SCSCF_REG_STATE_NOT_REGISTERED)
+		if(pRegInfo && pRegInfo->regState == SCSCF_REG_STATE_NOT_REGISTERED)
 		{
             scscfReg_deleteSubHash(pRegInfo);
 		}
@@ -715,8 +722,15 @@ static bool scscfReg_performNWDeRegister(scscfRegInfo_t* pRegInfo)
 	{
 		case SCSCF_REG_WORK_STATE_NONE:
 			pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_NW_DEREG_RESPONSE;
-    		pRegInfo->tempWorkInfo.impu = *scscfReg_getNoBarImpu(&pRegInfo->ueList, true); //true=tel uri is preferred
-
+			
+    		osPointerLen_t* pNoBarImpu = *scscfReg_getNoBarImpu(&pRegInfo->ueList, true); //true=tel uri is preferred
+			if(!pNoBarImpu)
+    		{
+        		logError("no no-barring impu is available, remove the registration locally.");
+				isDone = true;
+        		goto EXIT;
+    		}
+			pRegInfo->tempWorkInfo.impu = *pNoBarImpu;
 		case SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_NW_DEREG_RESPONSE:
 		{
 			osListElement_t* pLE = osList_popHead(&pRegInfo->asRegInfoList);
@@ -861,13 +875,7 @@ void scscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData)
 		goto EXIT;
 	}
 
-	scscfRegInfo_t* pRegInfo = osHash_getUserDataByLE(pAppData);
-	if(!pRegInfo)
-	{
-		logError("pRegInfo is NULL for hashLE(%p), this shall never happen.", pAppData);
-		goto EXIT;
-	}
-
+	scscfRegInfo_t* pRegInfo = pAppData;
 	diaResultCode_t resultCode;
 	if(OS_STATUS_OK != scscfReg_decodeHssMsg(pDiaDecoded, pRegInfo, &resultCode))
 	{
@@ -876,13 +884,15 @@ void scscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData)
 		goto EXIT;
 	}
 
+    mdebug(LM_CSCF, "dia cmdCode=%d, resultCode=%d.", pDiaDecoded->cmdCode, resultCode.resultCode);
+
 	switch(pDiaDecoded->cmdCode)
 	{
 		case DIA_CMD_CODE_SAR:
 			scscfReg_onSaa(pRegInfo, resultCode);
 			break;
         case DIA_CMD_CODE_MAR:
-			scscfReg_onMaa(pRegInfo, resultCode);
+			//scscfReg_onMaa(pRegInfo, resultCode);
 			break;
         case DIA_CMD_CODE_PPR:
             //scscfReg_onPpr(pRegInfo, resultCode);
@@ -900,7 +910,7 @@ EXIT:
 }
 
 
-static osPointerLen_t* scscfReg_getNoBarImpu(osList_t* pUeList, bool isTelPreferred)
+osPointerLen_t* scscfReg_getNoBarImpu(osList_t* pUeList, bool isTelPreferred)
 {
 	osPointerLen_t* pImpu = NULL;
 
@@ -939,6 +949,10 @@ static osPointerLen_t* scscfReg_getNoBarImpu(osList_t* pUeList, bool isTelPrefer
 	}
 
 EXIT:
+	if (!pImpu)
+	{
+		logError("fails to find nobarred impu.");
+	}
 	return pImpu;
 }
 				

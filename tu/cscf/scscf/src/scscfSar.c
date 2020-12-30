@@ -31,23 +31,14 @@ static osStatus_e scscfReg_performMar(osPointerLen_t* pImpi, osPointerLen_t* pIm
 }
 
 
-static osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, scscfRegInfo_t* pRegInfo, int regExpire)
+osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, scscfRegInfo_t* pRegInfo, dia3gppServerAssignmentType_e saType, int regExpire)
 {
     osStatus_e status = OS_STATUS_OK;
 
-    dia3gppServerAssignmentType_e saType;
     diaCxUserDataAvailable_e usrDataAvailable = DIA_3GPP_CX_USER_DATA_NOT_AVAILABLE;
     switch(pRegInfo->regState)
     {
         case SCSCF_REG_STATE_REGISTERED:
-            if(regExpire == 0)
-            {
-                saType = DIA_3GPP_CX_USER_DEREGISTRATION;
-            }
-            else
-            {
-                saType = DIA_3GPP_CX_RE_REGISTRATION;
-            }
             break;
         case SCSCF_REG_STATE_NOT_REGISTERED:
         case SCSCF_REG_STATE_UN_REGISTERED:
@@ -62,7 +53,6 @@ static osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pIm
                 {
                     usrDataAvailable = DIA_3GPP_CX_USER_DATA_ALREADY_AVAILABLE;
                 }
-                saType = DIA_3GPP_CX_REGISTRATION;
             }
             break;
         default:
@@ -72,6 +62,9 @@ static osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pIm
             break;
     }
 
+#if 1	//test only, to-remove
+	saType = DIA_3GPP_CX_USER_DEREGISTRATION;
+#endif
     diaCxSarInfo_t sarInfo = {saType, usrDataAvailable, DIA_3GPP_CX_MULTI_REG_IND_NOT_MULTI_REG, NULL};
 	osPointerLen_t serverName = {SCSCF_URI_WITH_PORT, strlen(SCSCF_URI_WITH_PORT)};
 	//calculate HSSDest
@@ -89,8 +82,14 @@ static osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pIm
         logError("fails to osConvertntoPL for dia dest(%A).", pDest);
         goto EXIT;
     }
+#if 0	//to-remove to change to 1
 	osPointerLen_t* pDestHost = &ipPort.ip.pl;
     diaCxSarAppInput_t sarInput = {pImpi, pImpu, &serverName, pDestHost, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
+#else
+	osPointerLen_t destHost = {"hss01-mlplab.ims.globalstar.com", sizeof("hss01-mlplab.ims.globalstar.com")-1};
+	diaCxSarAppInput_t sarInput = {pImpi, pImpu, &serverName, &destHost, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
+#endif
+debug("to-remove, scscfReg_onDiaMsg=%p.", scscfReg_onDiaMsg);
     status = diaCx_sendSAR(&sarInput, scscfReg_onDiaMsg, pRegInfo);
     if(status != OS_STATUS_OK)
     {
@@ -144,7 +143,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, pRegInfo->tempWorkInfo.pTUMsg->pLocal, rspCode);
 
             if(rspCode < 200 || rspCode >= 300)
             {
@@ -158,10 +157,23 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
                 pRegInfo->regState = SCSCF_REG_STATE_REGISTERED;
                 pRegInfo->expiryTimerId = osStartTimer(pRegInfo->ueContactInfo.regExpire, scscfReg_onTimeout, pRegInfo);
 
+				//update the tempWorkInfo.impu with the nobarring impu
+				osPointerLen_t* pImpu = scscfReg_getNoBarImpu(&pRegInfo->ueList, true); //true=tel uri is preferred
+				if(!pImpu)
+				{
+					logError("no no-barring impu is available.");
+					status = OS_ERROR_INVALID_VALUE;
+					goto EXIT;
+				}
+
+				//replace the originals tored impu with the new one
+				pRegInfo->tempWorkInfo.impu = *pImpu;
+
                 //continue 3rd party registration
                 pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE;
                 scscfIfcEvent_t ifcEvent = {true, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(SCSCF_REG_SAR_REGISTER)};
-                if(scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent))
+                bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+				if(is3rdPartyRegDone)
                 {
                     pRegInfo->tempWorkInfo.regWorkState =  SCSCF_REG_WORK_STATE_NONE;
                     scscfRegTempWorkInfo_cleanup(&pRegInfo->tempWorkInfo);
@@ -218,14 +230,14 @@ EXIT:
 }
 
 
-static osStatus_e scscfReg_decodeHssMsg(diaMsgDecoded_t* pDiaDecoded, scscfRegInfo_t* pRegInfo, diaResultCode_t* pResultCode)
+osStatus_e scscfReg_decodeHssMsg(diaMsgDecoded_t* pDiaDecoded, scscfRegInfo_t* pRegInfo, diaResultCode_t* pResultCode)
 {
     osStatus_e status = OS_STATUS_OK;
 
     switch(pDiaDecoded->cmdCode)
     {
         case DIA_CMD_CODE_SAR:
-            if(!(pDiaDecoded->cmdFlag & DIA_CMD_FLAG_REQUEST))
+            if(pDiaDecoded->cmdFlag & DIA_CMD_FLAG_REQUEST)
             {
                 logError("received SAR request, ignore.");
                 status = OS_ERROR_INVALID_VALUE;
