@@ -72,20 +72,8 @@ osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, scs
         status = OS_ERROR_NETWORK_FAILURE;
         goto EXIT;
     }
-    osIpPort_t ipPort = osIpPort_STATIC_INIT(ipPort);
-    status = osConvertntoPL(pDest, &ipPort);
-    if(status != OS_STATUS_OK)
-    {
-        logError("fails to osConvertntoPL for dia dest(%A).", pDest);
-        goto EXIT;
-    }
-#if 0	//to-remove to change to 1
-	osPointerLen_t* pDestHost = &ipPort.ip.pl;
-    diaCxSarAppInput_t sarInput = {pImpi, pImpu, &serverName, pDestHost, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
-#else
-	osPointerLen_t destHost = {"hss01-mlplab.ims.globalstar.com", sizeof("hss01-mlplab.ims.globalstar.com")-1};
-	diaCxSarAppInput_t sarInput = {pImpi, pImpu, &serverName, &destHost, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
-#endif
+
+	diaCxSarAppInput_t sarInput = {pImpi, pImpu, &serverName, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
 debug("to-remove, scscfReg_onDiaMsg=%p.", scscfReg_onDiaMsg);
     status = diaCx_sendSAR(&sarInput, scscfReg_onDiaMsg, pRegInfo);
     if(status != OS_STATUS_OK)
