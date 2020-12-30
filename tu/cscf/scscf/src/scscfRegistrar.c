@@ -723,7 +723,7 @@ static bool scscfReg_performNWDeRegister(scscfRegInfo_t* pRegInfo)
 		case SCSCF_REG_WORK_STATE_NONE:
 			pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_NW_DEREG_RESPONSE;
 			
-    		osPointerLen_t* pNoBarImpu = *scscfReg_getNoBarImpu(&pRegInfo->ueList, true); //true=tel uri is preferred
+    		osPointerLen_t* pNoBarImpu = scscfReg_getNoBarImpu(&pRegInfo->ueList, true); //true=tel uri is preferred
 			if(!pNoBarImpu)
     		{
         		logError("no no-barring impu is available, remove the registration locally.");

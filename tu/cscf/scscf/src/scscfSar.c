@@ -62,9 +62,6 @@ osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, scs
             break;
     }
 
-#if 1	//test only, to-remove
-	saType = DIA_3GPP_CX_USER_DEREGISTRATION;
-#endif
     diaCxSarInfo_t sarInfo = {saType, usrDataAvailable, DIA_3GPP_CX_MULTI_REG_IND_NOT_MULTI_REG, NULL};
 	osPointerLen_t serverName = {SCSCF_URI_WITH_PORT, strlen(SCSCF_URI_WITH_PORT)};
 	//calculate HSSDest
