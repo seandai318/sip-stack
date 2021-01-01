@@ -79,11 +79,8 @@ typedef struct {
 #endif
 
 typedef struct {
-    osDPointerLen_t user;       //it keeps its own memory, not point to other place like sipMsgBuf
-//    sipMsgBuf_t* sipRegMsg;
-    sipHdrDecoded_t* pContact;    //for now we only allow one contact per user
+	osDPointerLen_t contactUri;
 	uint32_t regExpire;
-	sipTUMsg_t* pSipTUMsg;
 } scscfRegContactInfo_t;
 
 

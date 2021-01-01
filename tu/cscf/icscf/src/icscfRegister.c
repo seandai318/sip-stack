@@ -128,7 +128,7 @@ static osStatus_e icscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSip
 	}
 
 	osPointerLen_t impu;
-    if(sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_TO]->pRawHdr->value, &impu) != OS_STATUS_OK)
+    if(sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_TO]->pRawHdr->value, false, &impu) != OS_STATUS_OK)
     {
         logError("fails to sipParamUri_getUriFromRawHdrValue.");
         rspCode = SIP_RESPONSE_400;

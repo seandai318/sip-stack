@@ -256,10 +256,23 @@ static osStatus_e scscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, scscfUserProf
                 pResultCode->resultCode = pAvp->avpData.data32;
                 goto EXIT;
                 break;
-            case DIA_AVP_CODE_EXPERIMENTAL_RESULT_CODE:
-                pResultCode->expCode = pAvp->avpData.data32;
+            case DIA_AVP_CODE_EXPERIMENTAL_RESULT:
+			{
+				osListElement_t* pAvpLE = pAvp->avpData.dataGrouped.dataList.head;
+				while(pAvpLE)
+				{
+					diaAvp_t* pAvp = pAvpLE->data;
+					if(pAvp->avpCode == DIA_AVP_CODE_EXPERIMENTAL_RESULT_CODE)
+                	{
+						pResultCode->expCode = pAvp->avpData.data32;
+						break;
+					}
+
+					pAvpLE = pAvpLE->next;
+				}
                 goto EXIT;
                 break;
+			}
             case DIA_AVP_CODE_CX_USER_DATA_CX:
 			{
                 osVPointerLen_t* pXmlUserData = &pAvp->avpData.dataStr;

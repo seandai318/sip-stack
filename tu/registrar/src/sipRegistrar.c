@@ -131,7 +131,7 @@ static osStatus_e masReg_onSipMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 	//get the user's sip URI
 	osPointerLen_t sipUri;
 	debug("sean-remove, from-value=%r", &pReqDecodedRaw->msgHdrList[SIP_HDR_FROM]->pRawHdr->value);
-	status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_FROM]->pRawHdr->value, &sipUri);
+	status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_FROM]->pRawHdr->value, false, &sipUri);
 	if(status != OS_STATUS_OK)
 	{
 		logError("fails to sipParamUri_getUriFromRawHdrValue.");

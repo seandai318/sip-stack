@@ -54,6 +54,7 @@ static void scscfRegInfo_cleanup(void* data);
 static inline osPointerLen_t* scscfReg_getUserId(scscfRegIdentity_t* pIdentity);
 static inline bool scscfReg_isPerformMar(scscfRegState_e regState, bool isAuthForReReg);
 static inline bool scscfReg_isPeformSar(scscfRegState_e regState, int regExpire);
+static void scscfReg_updateContactUri(osDPointerLen_t* pOldUri, osPointerLen_t* pNewUri);
 
 static uint64_t scscfReg_startTimer(time_t msec, scscfRegInfo_t* pRegInfo);
 
@@ -210,7 +211,7 @@ static void scscfReg_onSipRequest(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 	}
 
 	osPointerLen_t impu;
-    if(sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_TO]->pRawHdr->value, &impu) != OS_STATUS_OK)
+    if(sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_TO]->pRawHdr->value, false, &impu) != OS_STATUS_OK)
     {
         logError("fails to sipParamUri_getUriFromRawHdrValue.");
         rspCode = SIP_RESPONSE_400;
@@ -294,6 +295,21 @@ debug("to-remove, pImpi=%r, pRegInfo=%p.", pImpi, pRegInfo);
 		{
             pRegInfo->tempWorkInfo.sarRegType = SCSCF_REG_SAR_RE_REGISTER;
         }
+	}
+
+	//update ueContactInfo
+	pRegInfo->ueContactInfo.regExpire = regExpire;
+	if(regExpire)
+	{
+		osPointerLen_t newContactUri={};
+		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT]->pRawHdr->value, true, &newContactUri);
+		if(status != OS_STATUS_OK)
+		{
+			logError("fails to get contact URI for impi(%r).", pImpi);
+			rspCode = SIP_RESPONSE_403;
+			goto EXIT;
+		}
+		scscfReg_updateContactUri(&pRegInfo->ueContactInfo.contactUri, &newContactUri);
 	}
 
     //for icscf and scscf co-existence, each keeps its own copy of pSipTUMsg and pReqDecodedRaw, and free on its own independently
@@ -1014,6 +1030,7 @@ static void scscfRegInfo_cleanup(void* data)
 	pRegInfo->regState = SCSCF_REG_STATE_NOT_REGISTERED;
 	osList_delete(&pRegInfo->ueList);
 	osList_delete(&pRegInfo->asRegInfoList);
+    osDPL_dealloc(&pRegInfo->ueContactInfo.contactUri);
 
 	if(pRegInfo->expiryTimerId)
 	{
@@ -1067,4 +1084,23 @@ static inline bool scscfReg_isPerformMar(scscfRegState_e regState, bool isAuthFo
 static inline bool scscfReg_isPeformSar(scscfRegState_e regState, int regExpire)
 {
 	return (regState != SCSCF_REG_STATE_REGISTERED || (regState == SCSCF_REG_STATE_REGISTERED && !regExpire));
+}
+
+
+static void scscfReg_updateContactUri(osDPointerLen_t* pOldUri, osPointerLen_t* pNewUri)
+{
+	if(!pOldUri || !pNewUri)
+	{
+		logError("null pointer, pOldUri=%p, pNewUri=%p.", pOldUri, pNewUri);
+		return;
+	}
+
+	if(osPL_casecmp((osPointerLen_t*)pOldUri, pNewUri) == 0)
+	{
+		//nothing changed, do nothing
+		return;
+	}
+
+	osDPL_dealloc(pOldUri);
+	osDPL_dup(pOldUri, pNewUri);
 }

@@ -9,7 +9,7 @@ static osStatus_e cscf_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
 
 void cscf_init(char* cscfConfigFolder)
 {
-    cscfConfig_init(cscfConfigFolder, "diaCx.xsd");
+    cscfConfig_init(cscfConfigFolder, "dia3gppCx.xsd");
 
 //	icscf_init(ICSCF_HASH_SIZE);
     scscfReg_init(SCSCF_HASH_SIZE);

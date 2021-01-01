@@ -163,7 +163,6 @@ osStatus_e cscf_sendRegResponse(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
     osfree(pSipResp);
 
 EXIT:
-logError("to-remove, viaHdr.decodedHdr=%p", viaHdr.decodedHdr);
     osfree(viaHdr.decodedHdr);
 //    osfree(pContactHdr);
 

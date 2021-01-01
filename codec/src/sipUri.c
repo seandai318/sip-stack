@@ -518,7 +518,8 @@ EXIT:
 }
 
 
-osStatus_e sipParamUri_getUriFromRawHdrValue(osPointerLen_t* pHdrValue, osPointerLen_t* pSipUri)
+//pSipUri: sip:xys@abc.com:5060, where 5060 is port and is only included if isIncludePort==true
+osStatus_e sipParamUri_getUriFromRawHdrValue(osPointerLen_t* pHdrValue, bool isIncludePort, osPointerLen_t* pSipUri)
 {
 	osStatus_e status = OS_STATUS_OK;
 
@@ -622,7 +623,7 @@ osStatus_e sipParamUri_getUriFromRawHdrValue(osPointerLen_t* pHdrValue, osPointe
 
 		while(pos < pHdrValue->l)
 		{
-			if(pHdrValue->p[pos] == ';' || pHdrValue->p[pos] == '>' || pHdrValue->p[pos] == ':')
+			if(pHdrValue->p[pos] == ';' || pHdrValue->p[pos] == '>' || pHdrValue->p[pos] == (isIncludePort ? '>' : ':'))
 			{
 				break;
 			}
@@ -642,7 +643,7 @@ EXIT:
 
 
 //if the specified hdr has multiple value, get the sip uri from the first value.
-osStatus_e sipParamUri_getUriFromSipMsg(osMBuf_t* pSipBuf, osPointerLen_t* pSipUri, sipHdrName_e hdrCode)
+osStatus_e sipParamUri_getUriFromSipMsg(osMBuf_t* pSipBuf, bool isIncludePort, osPointerLen_t* pSipUri, sipHdrName_e hdrCode)
 {
     osStatus_e status = OS_STATUS_OK;
 
@@ -661,7 +662,7 @@ osStatus_e sipParamUri_getUriFromSipMsg(osMBuf_t* pSipBuf, osPointerLen_t* pSipU
         goto EXIT;
     }
 
-	status = sipParamUri_getUriFromRawHdrValue(&rawHdr.value, pSipUri);
+	status = sipParamUri_getUriFromRawHdrValue(&rawHdr.value, isIncludePort, pSipUri);
     if(status != OS_STATUS_OK)
     {
         logError("fails to sipParamUri_getUriFromRawHdrValue.");

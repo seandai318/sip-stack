@@ -49,8 +49,8 @@ osStatus_e sipParamUri_addDisplayName(sipUriExt_t* pUriExt, osPointerLen_t* disp
 osStatus_e sipParamUri_addParam(sipUri_t* pUri, sipUriParam_e paramType, void* pParam);
 bool sipUri_isTelSub(sipUri_t* pUri);
 osStatus_e sipParamUri_code2name(sipUriType_e uriType, osPointerLen_t* uriStr);
-osStatus_e sipParamUri_getUriFromRawHdrValue(osPointerLen_t* pHdrValue, osPointerLen_t* pSipUri);
-osStatus_e sipParamUri_getUriFromSipMsg(osMBuf_t* pSipBuf, osPointerLen_t* pSipUri, sipHdrName_e hdrCode);
+osStatus_e sipParamUri_getUriFromRawHdrValue(osPointerLen_t* pHdrValue, bool isIncludePort, osPointerLen_t* pSipUri);
+osStatus_e sipParamUri_getUriFromSipMsg(osMBuf_t* pSipBuf, bool isIncludePort, osPointerLen_t* pSipUri, sipHdrName_e hdrCode);
 osPointerLen_t* sipUri_getUser(sipUri_t* pUri);
 osPointerLen_t* sipUri_getPassword(sipUri_t* pUri);
 osPointerLen_t* sipUri_getHost(sipUri_t* pUri);

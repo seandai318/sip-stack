@@ -816,7 +816,7 @@ osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t
 		//for original AS, the PAI is caller, for terminating AS, the PAI is called
 		if(isOrigUser == isOrigAS)
 		{
-			status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY]->pRawHdr->value, sipUser);
+			status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY]->pRawHdr->value, false, sipUser);
         	if(status != OS_STATUS_OK)
         	{
             	logError("fails to sipParamUri_getUriFromRawHdrValue for SIP_HDR_P_ASSERTED_ID.");
@@ -827,7 +827,7 @@ osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t
 
 	if(isOrigUser)
 	{
-		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_FROM]->pRawHdr->value, sipUser);
+		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_FROM]->pRawHdr->value, false, sipUser);
         if(status != OS_STATUS_OK)
         {
             logError("fails to sipParamUri_getUriFromRawHdrValue for SIP_HDR_FROM.");
@@ -837,7 +837,7 @@ osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t
 	}
 	else
 	{
-		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_TO]->pRawHdr->value, sipUser);
+		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_TO]->pRawHdr->value, false, sipUser);
         if(status != OS_STATUS_OK)
         {
             logError("fails to sipParamUri_getUriFromRawHdrValue for SIP_HDR_TO.");
