@@ -73,6 +73,8 @@ osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUs
     osXmlDataCallbackInfo_t cbInfo={true, false, false, scscfConfig_userProfileCB, pDecodedUserProfile, scscfConfig_xmlUsrProfileData, SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM};
 	osXml_getElemValue(&gCxXsdName, NULL, &xmlMBuf, true, &cbInfo);
 
+	scscf_dbgListUsrProfile(pDecodedUserProfile);
+
 EXIT:
 	return status;
 }	
@@ -221,6 +223,28 @@ bool icscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pSc
     }
 
     return false;
+}
+
+
+void scscf_dbgListUsrProfile(scscfUserProfile_t* pUsrProfile)
+{
+	if(!pUsrProfile)
+	{
+		return;
+	}
+
+	
+	mdebug(LM_CSCF, "HSS provided user profile:\nimpi=%r", &pUsrProfile->impi);
+	for(int i=0; i<pUsrProfile->impuNum; i++)
+	{
+		mdebug1(LM_CSCF, "impu[%d]=%r, isbarred=%d\n", i, &pUsrProfile->impuInfo[i].impu, pUsrProfile->impuInfo[i].isBarred);
+	}
+	mdebug1(LM_CSCF, "sIfcId=");
+	for(int i=0; i<pUsrProfile->sIfcIdList.sIfcIdNum; i++)
+	{
+		mdebug1(LM_CSCF, "%d,  ", pUsrProfile->sIfcIdList.sIfcId[i]);
+	}
+	mdebug1(LM_CSCF, "\n");
 }
 
 

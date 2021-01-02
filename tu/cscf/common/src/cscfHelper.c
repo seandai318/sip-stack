@@ -57,7 +57,7 @@ osStatus_e cscf_sendRegResponse(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
 			{
 				//add Service-Route
             	sipPointerLen_t sr = SIPPL_INIT(sr);
-            	len = osPrintf_buffer((char*)sr.pl.p, SIP_HDR_MAX_SIZE, "Service-Route: <%r:%d; orig; lr>\r\n", SCSCF_URI, SCSCF_LISTEN_PORT);
+            	len = osPrintf_buffer((char*)sr.pl.p, SIP_HDR_MAX_SIZE, "Service-Route: <%s;orig;lr>\r\n", SCSCF_URI_WITH_PORT);
             	if(len < 0)
             	{
                 	logError("fails to osPrintf_buffer for service-route.");
@@ -73,15 +73,13 @@ osStatus_e cscf_sendRegResponse(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
             	{
                 	//for P-Associated-URI
                 	sipPointerLen_t pau = SIPPL_INIT(pau);
-                	osListElement_t* pLE = pRegInfo->ueList.head;
-                	while(pLE)
-                	{
-                    	scscfRegIdentity_t* pId = pLE->data;
-                    	if(!pId->isImpi)
+					for(int i=0; i<pRegInfo->regInfoUENum; i++)
+					{
+                    	if(!pRegInfo->ueList[i].isImpi)
                     	{
-                        	if(!pId->impuInfo.isBarred)
+                        	if(!pRegInfo->ueList[i].impuInfo.isBarred)
                         	{
-                            	int len = osPrintf_buffer((char*)pau.pl.p, SIP_HDR_MAX_SIZE, "P-Associated-URI: <%r>\r\n", &pId->impuInfo.impu);
+                            	int len = osPrintf_buffer((char*)pau.pl.p, SIP_HDR_MAX_SIZE, "P-Associated-URI: <%r>\r\n", &pRegInfo->ueList[i].impuInfo.impu);
                             	if(len < 0)
                             	{
                                 	logError("fails to osPrintf_buffer for service-route.");
@@ -93,7 +91,6 @@ osStatus_e cscf_sendRegResponse(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pR
                             	osMBuf_writePL(pSipResp, &pau.pl, true);
                         	}
                     	}
-                    	pLE = pLE->next;
 					}
                 }
 			}

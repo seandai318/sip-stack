@@ -352,7 +352,7 @@ debug("to-remove, pImpi=%r, pRegInfo=%p.", pImpi, pRegInfo);
 	}
 		
 	//start to perform 3rd party registration, not necessarily use the one received in the sip REGISTER
-    pImpu = scscfReg_getNoBarImpu(&pRegInfo->ueList, true); //true=tel uri is preferred
+    pImpu = scscfReg_getNoBarImpu(pRegInfo->ueList, pRegInfo->regInfoUENum, true); //true=tel uri is preferred
     if(!pImpu)
     {
         logError("no no-barring impu is available.");
@@ -400,7 +400,7 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfc
 	bool isDone = false;
     dnsResResponse_t* pDnsResponse = NULL;
 
-	if(!pRegInfo || osList_isEmpty(&pRegInfo->ueList))
+	if(!pRegInfo || pRegInfo->regInfoUENum == 0)
 	{
 		logError("pRegInfo(%p) is null or ueList is empty.", pRegInfo);
 		isDone = true;
@@ -739,7 +739,7 @@ static bool scscfReg_performNWDeRegister(scscfRegInfo_t* pRegInfo)
 		case SCSCF_REG_WORK_STATE_NONE:
 			pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_NW_DEREG_RESPONSE;
 			
-    		osPointerLen_t* pNoBarImpu = scscfReg_getNoBarImpu(&pRegInfo->ueList, true); //true=tel uri is preferred
+    		osPointerLen_t* pNoBarImpu = scscfReg_getNoBarImpu(pRegInfo->ueList, pRegInfo->regInfoUENum, true); //true=tel uri is preferred
 			if(!pNoBarImpu)
     		{
         		logError("no no-barring impu is available, remove the registration locally.");
@@ -926,42 +926,32 @@ EXIT:
 }
 
 
-osPointerLen_t* scscfReg_getNoBarImpu(osList_t* pUeList, bool isTelPreferred)
+osPointerLen_t* scscfReg_getNoBarImpu(scscfRegIdentity_t ueList[], uint8_t ueNum, bool isTelPreferred)
 {
 	osPointerLen_t* pImpu = NULL;
 
-	if(!pUeList)
+	for(int i=0; i<ueNum; i++)
 	{
-		goto EXIT;
-	}
-
-	osListElement_t* pLE = pUeList->head;
-	while(pLE)
-	{
-		scscfRegIdentity_t* pId = pLE->data;
-		if(!pId->isImpi && !pId->impuInfo.isBarred)
+		if(!ueList[i].isImpi && !ueList[i].impuInfo.isBarred)
 		{
-			
 			if(isTelPreferred)
 			{
-				if(pId->impuInfo.impu.p[0] == 't' || pId->impuInfo.impu.p[0] == 'T')
+				if(ueList[i].impuInfo.impu.p[0] == 't' || ueList[i].impuInfo.impu.p[0] == 'T')
 				{
-					pImpu = &pId->impuInfo.impu;
+					pImpu = &ueList[i].impuInfo.impu;
 					goto EXIT;
 				}
 				else if(!pImpu)
 				{
-					pImpu = &pId->impuInfo.impu;
+					pImpu = &ueList[i].impuInfo.impu;
 				}
 			}
 			else
 			{
-				pImpu = &pId->impuInfo.impu;
+				pImpu = &ueList[i].impuInfo.impu;
 				goto EXIT;
 			}
 		}
-
-		pLE = pLE->next;
 	}
 
 EXIT:
@@ -975,12 +965,9 @@ EXIT:
 
 void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo)
 {
-    //go through all ID list, and add one at a time.
-    osListElement_t* pLE = pRegInfo->ueList.head;
-    while(pLE)
-    {
-        scscfRegIdentity_t* pRegIdentity = pLE->data;
-        osPointerLen_t* pId = pRegIdentity->isImpi ? &pRegIdentity->impi : &pRegIdentity->impuInfo.impu;
+	for(int i=0; i<pRegInfo->regInfoUENum; i++)
+	{
+		osPointerLen_t* pId = pRegInfo->ueList[i].isImpi ? &pRegInfo->ueList[i].impi : &pRegInfo->ueList[i].impuInfo.impu;
         osListElement_t* pHashLE = osPlHash_getElement(gScscfRegHash, pId, true);
         if(pHashLE)
         {
@@ -991,10 +978,9 @@ void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo)
         {
             pHashLE = osPlHash_addUserData(gScscfRegHash, pId, true, osmemref(pRegInfo));
         }
-        pRegIdentity->pRegHashLE = pHashLE;
 
-        pLE = pLE->next;
-    }
+		pRegInfo->ueList[i].pRegHashLE = pHashLE;
+	}
 }
 
 	
@@ -1002,17 +988,18 @@ void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo)
 void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo)
 {
 	//go through all ID list, and delete them.
-	osListElement_t* pLE = pRegInfo->ueList.head;
-	if(!pLE)
+	if(pRegInfo->regInfoUENum == 0)
 	{
-		osHash_deleteNode(pRegInfo->tempWorkInfo.pRegHashLE, OS_HASH_DEL_NODE_TYPE_ALL);
+		if(pRegInfo->tempWorkInfo.pRegHashLE)
+		{
+        	osHash_deleteNode(pRegInfo->tempWorkInfo.pRegHashLE, OS_HASH_DEL_NODE_TYPE_ALL);
+		}
 	}
 	else
 	{
-		while(pLE)
-		{	
-    		osHash_deleteNode(((scscfRegIdentity_t*)pLE->data)->pRegHashLE, OS_HASH_DEL_NODE_TYPE_ALL);
-			pLE = pLE->next;
+		for(int i=0; i<pRegInfo->regInfoUENum; i++)
+		{
+    		osHash_deleteNode(pRegInfo->ueList[i].pRegHashLE, OS_HASH_DEL_NODE_TYPE_ALL);
 		}
 	}
 }
@@ -1028,7 +1015,6 @@ static void scscfRegInfo_cleanup(void* data)
 	scscfRegInfo_t* pRegInfo = data;
 
 	pRegInfo->regState = SCSCF_REG_STATE_NOT_REGISTERED;
-	osList_delete(&pRegInfo->ueList);
 	osList_delete(&pRegInfo->asRegInfoList);
     osDPL_dealloc(&pRegInfo->ueContactInfo.contactUri);
 

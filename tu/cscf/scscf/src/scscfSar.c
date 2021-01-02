@@ -15,6 +15,7 @@
 #include "diaCxSar.h"
 #include "diaCxAvp.h"
 
+#include "sipCodecUtil.h"
 #include "cscfConfig.h"
 #include "cscfHelper.h"
 #include "scscfRegistrar.h"
@@ -128,9 +129,9 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, pRegInfo->tempWorkInfo.pTUMsg->pLocal, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, sip_isRspCode2xx(rspCode) ? pRegInfo->ueContactInfo.regExpire : 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, pRegInfo->tempWorkInfo.pTUMsg->pLocal, rspCode);
 
-            if(rspCode < 200 || rspCode >= 300)
+            if(!sip_isRspCode2xx(rspCode))
             {
                 osHash_deleteNode(pRegInfo->tempWorkInfo.pRegHashLE, OS_HASH_DEL_NODE_TYPE_ALL);
             }
@@ -143,7 +144,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
                 pRegInfo->expiryTimerId = osStartTimer(pRegInfo->ueContactInfo.regExpire, scscfReg_onTimeout, pRegInfo);
 
 				//update the tempWorkInfo.impu with the nobarring impu
-				osPointerLen_t* pImpu = scscfReg_getNoBarImpu(&pRegInfo->ueList, true); //true=tel uri is preferred
+				osPointerLen_t* pImpu = scscfReg_getNoBarImpu(pRegInfo->ueList, pRegInfo->regInfoUENum, true); //true=tel uri is preferred
 				if(!pImpu)
 				{
 					logError("no no-barring impu is available.");
@@ -169,9 +170,9 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_RE_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, sip_isRspCode2xx(rspCode) ? pRegInfo->ueContactInfo.regExpire : 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
 
-            if(rspCode > 199 && rspCode < 299)
+            if(sip_isRspCode2xx(rspCode))
             {
                 pRegInfo->expiryTimerId = osRestartTimer(pRegInfo->expiryTimerId);
 
@@ -189,7 +190,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
         case SCSCF_REG_SAR_DE_REGISTER:
         {
             sipResponse_e rspCode = cscf_cx2SipRspCodeMap(resultCode);
-            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
+            cscf_sendRegResponse(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, pRegInfo, sip_isRspCode2xx(rspCode) ? pRegInfo->ueContactInfo.regExpire : 0, pRegInfo->tempWorkInfo.pTUMsg->pPeer, &pRegInfo->tempWorkInfo.sipLocalHost, rspCode);
 
             //continue 3rd party registration
             pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE;
@@ -230,6 +231,17 @@ osStatus_e scscfReg_decodeHssMsg(diaMsgDecoded_t* pDiaDecoded, scscfRegInfo_t* p
             }
 
             status = scscfReg_decodeSaa(pDiaDecoded, &pRegInfo->userProfile, pResultCode, &pRegInfo->hssChgInfo);
+			if(status == OS_STATUS_OK)
+			{
+				pRegInfo->ueList[0].isImpi = true;
+				pRegInfo->ueList[0].impi = pRegInfo->userProfile.impi;	
+				for(int i=0; i<pRegInfo->userProfile.impuNum; i++)
+				{
+					pRegInfo->ueList[i+1].isImpi = false;
+					pRegInfo->ueList[i+1].impuInfo = pRegInfo->userProfile.impuInfo[i];
+				}
+				pRegInfo->regInfoUENum = pRegInfo->userProfile.impuNum + 1;
+			}	
             break;
         default:
             logError("unexpected dia command(%d) received, ignore.", pDiaDecoded->cmdCode);

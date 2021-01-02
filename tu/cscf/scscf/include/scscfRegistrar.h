@@ -38,13 +38,6 @@ typedef struct {
 } scscfChgInfo_t;
 
 
-#if 0
-typedef struct {
-	osPointerLen_t impu;
-	bool isBarred;
-} scscfImpuInfo_t;
-#endif
-
 typedef struct {
 	bool isImpi;
 	union {
@@ -54,29 +47,6 @@ typedef struct {
 	osListElement_t*	pRegHashLE;	//points to hash listElement that contains this identity
 } scscfRegIdentity_t;
 
-#if 0
-typedef struct {
-	osPointerLen_t impi;
-	osList_t impuList;			//each entry contains impuInfo_t
-	sIfcIdList_t sIfcIdList;	
-//	osList_t sIfcId;			//each entry contains a int, sorted from small to bigger
-} scscfUserProfile_t;
-
-
-typedef struct {
-    uint32_t sIfcId[SCSCF_MAX_ALLOWED_SIFC_ID_NUM];
-    uint32_t sIfcIdNum;
-} sIfcIdList_t;
-#endif
-
-#if 0
-typedef struct {
-    osPointerLen_t impi;
-    scscfImpuInfo_t impuInfo;
-	sIfcIdList_t sIfcIdList;
-    uint32_t impuNum;
-} scscfRegUserProfile_t;
-#endif
 
 typedef struct {
 	osDPointerLen_t contactUri;
@@ -127,15 +97,14 @@ typedef struct {
 typedef struct {
 	scscfRegState_e regState;
 	bool isLR;					//loose-route indication.. For now, always do loose-route
-//	scscfRegIdentity_t	identity;
-	osList_t ueList;			//a list of UE identities for a UE, including impu and impi, each element is a scscfRegIdentity_t
+	uint8_t regInfoUENum;
+	scscfRegIdentity_t ueList[SCSCF_MAX_ALLOWED_IMPU_NUM+1];			//a list of UE identities for a UE, including impu and impi
 	osList_t sessDatalist;		//a list of sessions waiting for user profile.  only relevent when waiting for SAA and state = SCSCF_REG_STATE_UN_REGISTERED
 	scscfRegTempWorkInfo_t tempWorkInfo;    //store info to assist registration procedure
 		//scscfRegMsgInfo_t regMsgInfo;	//when received a sip REGISTER message from UE
 	scscfUserProfile_t userProfile;
 	scscfChgInfo_t hssChgInfo;
 	scscfRegContactInfo_t ueContactInfo;	//contact info, expiry, etc.
-//	scscfRegTempWorkInfo_t tempWorkInfo;	//store info to assist registration procedure
     osList_t asRegInfoList; //stores the asReg proxyInfo, each entry contains a scscfAsRegInfo_t block.  Used to send deregister for network initiated 3rd party deregistration
 	uint64_t expiryTimerId;
 	uint64_t purgeTimerId;
@@ -144,7 +113,7 @@ typedef struct {
 
 void scscfReg_onTimeout(uint64_t timerId, void* data);
 void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo);
-osPointerLen_t* scscfReg_getNoBarImpu(osList_t* pUeList, bool isTelPreferred);
+osPointerLen_t* scscfReg_getNoBarImpu(scscfRegIdentity_t ueList[], uint8_t ueNum, bool isTelPreferred);
 void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo);
 void scscfRegTempWorkInfo_cleanup(scscfRegTempWorkInfo_t* pTempWorkInfo);
 

@@ -14,4 +14,10 @@
 void sipMsgBuf_copy(sipMsgBuf_t* dest, sipMsgBuf_t* src);
 
 
+static inline bool sip_isRspCode2xx(uint32_t rspCode)
+{
+	return rspCode > 199 && rspCode < 300;
+}
+
+
 #endif
