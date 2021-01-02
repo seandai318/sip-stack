@@ -20,7 +20,7 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
 static void cscfConfig_setGlobalSockAddr();
 
 
-static osPointerLen_t cxXsdName;
+static osPointerLen_t gCxXsdName;
 static struct sockaddr_in gScscfSockAddr, gIcscfSockAddr;
 static scscfAddrInfo_t gScscfAddrInfo[ICSCF_CONFIG_MAX_SCSCF_NUM];
 static uint8_t gScscfAddrNum;
@@ -31,7 +31,7 @@ osXmlData_t scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM] =
     {SCSCF_USR_PROFILE_PRIVATEID,                    {"PrivateID", sizeof("PrivateID")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
     {SCSCF_USR_PROFILE_PUBLICIDENTITY,               {"PublicIdentity", sizeof("PublicIdentity")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
     {SCSCF_USR_PROFILE_SHAREDIFCSETID,               {"SharedIFCSetID", sizeof("SharedIFCSetID")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
-    {SCSCF_USR_PROFILE_BARRINGINDICATION,            {"SubscriptionId", sizeof("SubscriptionId")-1}, OS_XML_DATA_TYPE_ANY, false},
+    {SCSCF_USR_PROFILE_BARRINGINDICATION,            {"BarringIndication", sizeof("BarringIndication")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
 };
 
 
@@ -45,9 +45,9 @@ void cscfConfig_init(char* cxFolder, char* cxXsdFileName)
         return;
     }
 
-	char* cxXsdNamePtr = osmalloc(strlen(cxXsdFileName), NULL);
-	osPL_setStr(&cxXsdName, cxXsdNamePtr, strlen(cxXsdFileName));
+	osPL_str2PLdup(&gCxXsdName, cxXsdFileName, strlen(cxXsdFileName));
 
+debug("to-remove, gCxXsdName=%r.", &gCxXsdName);
 	//perform cscf config xml parsing
 
 	//set gScscfSockAddr and gIcscfSockAddr
@@ -65,12 +65,13 @@ osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUs
 		status = OS_ERROR_NULL_POINTER;
 		goto EXIT;
 	}
-	
+
+	mdebug(LM_CSCF, "Cx xsdName=%r, parse user profile:\n%r", &gCxXsdName, pRawUserProfile);	
 	osMBuf_t xmlMBuf = {(uint8_t*)pRawUserProfile->p, pRawUserProfile->l, 0, pRawUserProfile->l};
 	pDecodedUserProfile->impuNum = 0;
 	pDecodedUserProfile->sIfcIdList.sIfcIdNum = 0;
     osXmlDataCallbackInfo_t cbInfo={true, false, false, scscfConfig_userProfileCB, pDecodedUserProfile, scscfConfig_xmlUsrProfileData, SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM};
-	osXml_getElemValue(&cxXsdName, NULL, &xmlMBuf, true, &cbInfo);
+	osXml_getElemValue(&gCxXsdName, NULL, &xmlMBuf, true, &cbInfo);
 
 EXIT:
 	return status;
@@ -99,9 +100,13 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
 			}
 
 			pImpuInfo->impu = pXmlValue->xmlStr;
+			mdebug(LM_CSCF, "dataName=%r, IMPU=%r", &scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_IDENTITY].dataName, &pImpuInfo->impu); 
+
 			break;
 		case SCSCF_USR_PROFILE_PRIVATEID:
 			pDecodedUserProfile->impi = pXmlValue->xmlStr;
+            mdebug(LM_CSCF, "dataName=%r, impi=%r", &scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_PRIVATEID].dataName, &pXmlValue->xmlStr);
+
 			break;
 		case SCSCF_USR_PROFILE_PUBLICIDENTITY:
 			if(pXmlValue->isEOT)
@@ -118,6 +123,8 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
 
             	pImpuInfo = &pDecodedUserProfile->impuInfo[pDecodedUserProfile->impuNum++];
 			}
+			mdebug(LM_CSCF, "dataName=%r, isEOT=%d.", &scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_PUBLICIDENTITY].dataName, pXmlValue->isEOT);
+
             break;
 		case SCSCF_USR_PROFILE_SHAREDIFCSETID:
 			if(pDecodedUserProfile->sIfcIdList.sIfcIdNum >= SCSCF_MAX_ALLOWED_SIFC_ID_NUM)
@@ -126,6 +133,8 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
 				return;
 			}
 			pDecodedUserProfile->sIfcIdList.sIfcId[pDecodedUserProfile->sIfcIdList.sIfcIdNum++] = pXmlValue->xmlInt;
+			mdebug(LM_CSCF, "dataName=%r, sIfcId=%d.", &scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_SHAREDIFCSETID].dataName, pXmlValue->xmlInt);
+
 			break;
 		case SCSCF_USR_PROFILE_BARRINGINDICATION:
 			if(!pImpuInfo)
@@ -135,6 +144,8 @@ static void scscfConfig_userProfileCB(osXmlData_t* pXmlValue, void* nsInfo, void
             }
 
             pImpuInfo->isBarred = pXmlValue->xmlIsTrue;
+			mdebug(LM_CSCF, "dataName=%r, isBarred=%d.", &scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_BARRINGINDICATION].dataName, pXmlValue->xmlIsTrue);
+
 			break;
 		default:
 			logError("received unexpected xml eDataName(%d), ignore.", pXmlValue->eDataName);

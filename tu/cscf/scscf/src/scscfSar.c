@@ -254,7 +254,6 @@ static osStatus_e scscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, scscfUserProf
         {
             case DIA_AVP_CODE_RESULT_CODE:
                 pResultCode->resultCode = pAvp->avpData.data32;
-                goto EXIT;
                 break;
             case DIA_AVP_CODE_EXPERIMENTAL_RESULT:
 			{
@@ -270,7 +269,6 @@ static osStatus_e scscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, scscfUserProf
 
 					pAvpLE = pAvpLE->next;
 				}
-                goto EXIT;
                 break;
 			}
             case DIA_AVP_CODE_CX_USER_DATA_CX:
