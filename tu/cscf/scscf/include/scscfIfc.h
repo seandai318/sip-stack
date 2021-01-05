@@ -12,6 +12,13 @@
 #include "scscfRegistrar.h"
 
 
+
+#define SIFC_XSD_PREFIX		"<?xml version=\"1.0\" encoding=\"UTF-8\"?><IMSSubscription xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xsi:noNamespaceSchemaLocation='CxDataType3GPP.xsd' xsi:schemaLocation='http://www.ericsson.com/ProprietaryXMLschemas/whatevervalid CxDataTypeExtensions.xsd '><PrivateID>.*</PrivateID><ServiceProfile><PublicIdentity><Identity>.*</Identity></PublicIdentity>"
+#define SIFC_XSD_MIDFIX		"</ServiceProfile><ServiceProfile><PublicIdentity><Identity>.*</Identity></PublicIdentity>"
+#define SIFC_XSD_SUFFIX		"</ServiceProfile></IMSSubscription>"
+
+
+
 typedef enum {
     SCSCF_IFC_SESS_CASE_INVALID = -1,
     SCSCF_IFC_SESS_CASE_ORIGINATING = 0,        //"Originating", Originating

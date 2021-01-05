@@ -75,7 +75,6 @@ osStatus_e scscfReg_performSar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, scs
     }
 
 	diaCxSarAppInput_t sarInput = {pImpi, pImpu, &serverName, &sarInfo, 1 << DIA_CX_FEATURE_LIST_ID_SIFC, NULL};
-debug("to-remove, scscfReg_onDiaMsg=%p.", scscfReg_onDiaMsg);
     status = diaCx_sendSAR(&sarInput, scscfReg_onDiaMsg, pRegInfo);
     if(status != OS_STATUS_OK)
     {

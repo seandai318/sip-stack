@@ -32,8 +32,8 @@
 #define SCSCF_IP_ADDR					"1.2.3.4"
 #define SCSCF_LISTEN_PORT				5060
 
-#define SCSCF_SIFC_XML_FILE_NAME			"sifc.xml"
-#define SCSCF_SIFC_XSD_FILE_NAME            "sifc.xsd"
+#define SCSCF_SIFC_XML_FILE_NAME			"dia3gppSIfc.xml"
+#define SCSCF_SIFC_XSD_FILE_NAME            "dia3gppCx.xsd"
 
 #define CSCF_CONFIG_FOLDER              "/project/app/mas/config"
 #define CSCF_HSS_URI				"hss.ims.com"
