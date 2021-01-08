@@ -410,6 +410,7 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfc
     pRegInfo->tempWorkInfo.pAs = scscfIfc_getNextAS(&pRegInfo->tempWorkInfo.pLastIfc, &pRegInfo->userProfile.sIfcIdList, pRegInfo->tempWorkInfo.pReqDecodedRaw, pIfcEvent);
     if(!pRegInfo->tempWorkInfo.pAs)
     {
+		mdebug(LM_CSCF, "no more AS, 3rd party registration for IMPI(%r), IMPU(%r) is completed.", &pRegInfo->tempWorkInfo.impi, &pRegInfo->tempWorkInfo.impu);
         isDone = true;
         goto EXIT;
     }

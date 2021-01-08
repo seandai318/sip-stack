@@ -202,11 +202,13 @@ EXIT:
 osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent)
 {
 	osPointerLen_t* pAs = NULL;
-	if(!ppLastSIfc || !pSIfcIdList)
+	if(!ppLastSIfc || !pSIfcIdList || !pIfcEvent)
 	{
-		logError("null pointer, ppLastSIfc=%p, pSIfcIdList=%p.", ppLastSIfc, pSIfcIdList);
+		logError("null pointer, ppLastSIfc=%p, pSIfcIdList=%p, pIfcEvent=%p.", ppLastSIfc, pSIfcIdList, pIfcEvent);
 		goto EXIT;
 	}
+
+	mdebug(LM_CSCF, "ifc event: isLastAsOK=%d, sipMethod=%d, sessCase=%d, regType=%d", pIfcEvent->isLastAsOK, pIfcEvent->sipMethod, pIfcEvent->sessCase, pIfcEvent->regType);
 
 	osListElement_t* pLE = *ppLastSIfc ? (*ppLastSIfc)->next : gSIfcSet.head;
 	while(pLE)
@@ -219,6 +221,8 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 			pLE = pLE->next;
 			continue;
 		}
+
+		mdebug(LM_CSCF, "a matching IFC(%p) is found, sIfcGrpId=%d, isDefaultSessContinued=%d, conditionTypeCNF=%d", pIfc, pIfc->sIfcGrpId, pIfc->isDefaultSessContinued, pIfc->conditionTypeCNF);
 
 		//if last As failed, and the default handling is terminated, stop here.
 		if(!pIfcEvent->isLastAsOK && !pIfc->isDefaultSessContinued)
@@ -233,6 +237,7 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 			{
 				if(!scscfIfcSptGrpIsMatch(pSptGrpLE->data, true, pReqDecodedRaw, pIfcEvent))
 				{
+					mdebug(LM_CSCF, "conditionTypeCNF, SPT no match, fails this IFC(%p).", pIfc); 
 					break;
 				}
 			}
@@ -240,6 +245,7 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 			{
 				if(scscfIfcSptGrpIsMatch(pSptGrpLE->data, false, pReqDecodedRaw, pIfcEvent))
 				{
+					mdebug(LM_CSCF, "not conditionTypeCNF, SPT match, find the IFC(%p), AS=%r.", pIfc, &pIfc->asName);
 					pAs = &pIfc->asName;
 					goto EXIT;
 				}
@@ -248,14 +254,18 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 			pSptGrpLE = pSptGrpLE->next;
 		}
 
-		if(pIfc->conditionTypeCNF && !pSptGrpLE)
+		//if an IFC has empty SPT, directly use AS
+		if(!pSptGrpLE)
 		{
+			mdebug(LM_CSCF, "the IFC(%p) does not have SPT, just use the AS(%r).", pIfc, &pIfc->asName);
 			pAs = &pIfc->asName;
 			goto EXIT;
 		}
 
 		pLE = pLE->next;
 	}
+
+	mdebug(LM_CSCF, "does not find any matching IFC.");
 
 EXIT:
 	return pAs;
@@ -272,6 +282,7 @@ static bool scscfIfcSptGrpIsMatch(scscfIfcSptGrp_t* pSptGrp, bool isOr, sipMsgDe
 		while(pLE)
 		{
 			scscfIfcSptInfo_t* pSpt = pLE->data;
+debug("to-remove, sptType=%d, isConditionNegated=%d, method=%d, sessCase=%d", pSpt->sptType, pSpt->isConditionNegated, pSpt->method, pSpt->sessCase);
 			switch(pSpt->sptType)
 			{
 				case SCSCF_IFC_SPT_TYPE_METHOD:
@@ -463,7 +474,7 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 			fpCurSpt->sptType = SCSCF_IFC_SPT_TYPE_METHOD;
 			fpCurSpt->method =  sipMsg_method2Code(&pXmlValue->xmlStr);
 
-			mdebug(LM_CSCF, "dataName=%r, SPT(%p) sptType=%d, method=%d(%r)", &scscfIfc_xmlData[SCSCF_IFC_Method], fpCurSpt, fpCurSpt->sptType, fpCurSpt->method, &pXmlValue->xmlStr);
+			mdebug(LM_CSCF, "dataName=%r, SPT(%p) sptType=%d, method=%d(%r)", &scscfIfc_xmlData[SCSCF_IFC_Method].dataName, fpCurSpt, fpCurSpt->sptType, fpCurSpt->method, &pXmlValue->xmlStr);
 			break;
 		case SCSCF_IFC_SIPHeader:
 			if(pXmlValue->isEOT)
@@ -475,40 +486,40 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 				fpCurSpt->sptType = SCSCF_IFC_SPT_TYPE_HEADER;
 				fpCurHdr = &fpCurSpt->header;
 
-				mdebug(LM_CSCF, "dataName=%r, SPT(%p) sptType=%d, SIPHeader(%p)", &scscfIfc_xmlData[SCSCF_IFC_SIPHeader], fpCurSpt, fpCurSpt->sptType, fpCurHdr);
+				mdebug(LM_CSCF, "dataName=%r, SPT(%p) sptType=%d, SIPHeader(%p)", &scscfIfc_xmlData[SCSCF_IFC_SIPHeader].dataName, fpCurSpt, fpCurSpt->sptType, fpCurHdr);
 			}
 			break;
 		case SCSCF_IFC_Header:
 			fpCurHdr->hdrName = sipHdr_getNameCode(&pXmlValue->xmlStr);
 
-			mdebug(LM_CSCF, "dataName=%r, SIPHeader(%p), hdrName=%d(%r)", &scscfIfc_xmlData[SCSCF_IFC_Header], fpCurHdr, fpCurHdr->hdrName, &pXmlValue->xmlStr);
+			mdebug(LM_CSCF, "dataName=%r, SIPHeader(%p), hdrName=%d(%r)", &scscfIfc_xmlData[SCSCF_IFC_Header].dataName, fpCurHdr, fpCurHdr->hdrName, &pXmlValue->xmlStr);
 			break;
 		case SCSCF_IFC_Content:
 			fpCurHdr->hdrContent = pXmlValue->xmlStr;
 
-            mdebug(LM_CSCF, "dataName=%r, SIPHeader(%p), hdrContent=%r", &scscfIfc_xmlData[SCSCF_IFC_Header], fpCurHdr, &fpCurHdr->hdrContent);
+            mdebug(LM_CSCF, "dataName=%r, SIPHeader(%p), hdrContent=%r", &scscfIfc_xmlData[SCSCF_IFC_Header].dataName, fpCurHdr, &fpCurHdr->hdrContent);
 			break;
 		case SCSCF_IFC_RequestURI:
 			fpCurSpt->sptType = SCSCF_IFC_SPT_TYPE_REQUEST_URI;
 			fpCurSpt->reqUri = pXmlValue->xmlStr;
 
-			mdebug(LM_CSCF, "dataName=%r, SPT(%p), type=%d, reqUri=%r", &scscfIfc_xmlData[SCSCF_IFC_RequestURI], fpCurSpt, fpCurSpt->sptType, &fpCurSpt->reqUri );
+			mdebug(LM_CSCF, "dataName=%r, SPT(%p), type=%d, reqUri=%r", &scscfIfc_xmlData[SCSCF_IFC_RequestURI].dataName, fpCurSpt, fpCurSpt->sptType, &fpCurSpt->reqUri );
 			break;
 		case SCSCF_IFC_SessionCase:
 			fpCurSpt->sptType = SCSCF_IFC_SPT_TYPE_SESSION_CASE;
 			fpCurSpt->sessCase = pXmlValue->xmlInt >= SCSCF_IFC_SESS_CASE_ORIGINATING && pXmlValue->xmlInt <= SCSCF_IFC_SESS_CASE_ORIG_CDIV ? pXmlValue->xmlInt : SCSCF_IFC_SESS_CASE_INVALID;
 
-			mdebug(LM_CSCF, "dataName=%r, SPT(%p), type=%d, sessCase=%d", &scscfIfc_xmlData[SCSCF_IFC_SessionCase], fpCurSpt, fpCurSpt->sptType, fpCurSpt->sessCase);
+			mdebug(LM_CSCF, "dataName=%r, SPT(%p), type=%d, sessCase=%d", &scscfIfc_xmlData[SCSCF_IFC_SessionCase].dataName, fpCurSpt, fpCurSpt->sptType, fpCurSpt->sessCase);
 			break;
 		case SCSCF_IFC_ServerName:
 			fpIfc->asName = pXmlValue->xmlStr;
 
-			mdebug(LM_CSCF, "dataName=%r, IFC(%p), asName=%r", &scscfIfc_xmlData[SCSCF_IFC_ServerName], fpIfc, &fpIfc->asName);
+			mdebug(LM_CSCF, "dataName=%r, IFC(%p), asName=%r", &scscfIfc_xmlData[SCSCF_IFC_ServerName].dataName, fpIfc, &fpIfc->asName);
 			break;
 		case SCSCF_IFC_DefaultHandling:
 			fpIfc->isDefaultSessContinued = pXmlValue->xmlInt == SCSCF_IFC_DEFAULT_HANDLING_SESS_CONTINUED ? true : false;
 
-			mdebug(LM_CSCF, "dataName=%r, IFC(%p), isDefaultSessContinued=%d", &scscfIfc_xmlData[SCSCF_IFC_DefaultHandling], fpIfc, &fpIfc->isDefaultSessContinued);
+			mdebug(LM_CSCF, "dataName=%r, IFC(%p), isDefaultSessContinued=%d", &scscfIfc_xmlData[SCSCF_IFC_DefaultHandling].dataName, fpIfc, &fpIfc->isDefaultSessContinued);
 			break;
 		default:
 			mlogInfo(LM_CSCF, "pXmlValue->eDataName(%d) is not processed.", pXmlValue->eDataName);
@@ -517,6 +528,8 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 
 	//sort ifc based on priority
 	osList_sort(&gSIfcSet, scscfIfc_sortPriority, NULL);
+
+	mdebug(LM_CSCF, "gSIfcSet IFC count=%d", osList_getCount(&gSIfcSet));
  
 	return;
 }
