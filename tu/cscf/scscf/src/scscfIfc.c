@@ -346,7 +346,7 @@ EXIT:
 }
 		
 
-#define SCSCFIFC_DEFAULT_SIFC_ID	-1
+#define SCSCFIFC_DEFAULT_SIFC_ID	-1	//implies a sifc has not been assigned a sharedIfcId
 static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* appData)
 {
     if(!pXmlValue)
@@ -374,9 +374,9 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 				if(((scscfIfc_t*)pLE->data)->sIfcGrpId == SCSCFIFC_DEFAULT_SIFC_ID)
 				{
 					((scscfIfc_t*)pLE->data)->sIfcGrpId = pXmlValue->xmlInt;
-				}
 		
-				mdebug(LM_CSCF, "dataName=%r, IFC(%p) is assigned SIFC id=%d", &scscfIfc_xmlData[SCSCF_IFC_SharedIFCSetID].dataName, pLE->data, pXmlValue->xmlInt);	
+					mdebug(LM_CSCF, "dataName=%r, IFC(%p) is assigned SIFC id=%d", &scscfIfc_xmlData[SCSCF_IFC_SharedIFCSetID].dataName, pLE->data, pXmlValue->xmlInt);	
+				}
 
 				pLE = pLE->prev;
 			}
