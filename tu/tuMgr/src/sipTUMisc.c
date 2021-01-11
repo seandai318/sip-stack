@@ -205,11 +205,12 @@ typedef enum {
 } sipTuUriSearchState_e;
 
 
-//<sip:123.com>, <sip:123.com:5060>, <sip:user@123.com>, <sip:user@123.com:5060>, sip:123.com, sip:123.com:5060, sip:user@123.com, sip:user@123.com:5060
+//<sip:123.com>, <sip:123.com:5060>, <sip:user@123.com>, <sip:user@123.com:5060>, sip:123.com, sip:123.com:5060, sip:user@123.com, sip:user@123.com:5060, sip:123.com;lr, etc.
 static osStatus_e sipTu_convertPL2NextHop(osPointerLen_t* pUri, transportIpPort_t* pNextHop)
 {
 	osStatus_e status = OS_STATUS_OK;
 
+debug("to-remove, pUri=%r", pUri);
 	size_t startPos = 0;
 	sipTuUriSearchState_e sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_NONE;
 	size_t pos = 0;
@@ -240,22 +241,21 @@ static osStatus_e sipTu_convertPL2NextHop(osPointerLen_t* pUri, transportIpPort_
 					sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_HOST;
 					startPos = pos+1;
 				}
-				else
+				else if(pUri->p[pos] == ':')
 				{
-					pNextHop->ip.p = &pUri->p[startPos];
-					pNextHop->ip.l = pos - startPos;
-				
-					if(pUri->p[pos] == ':')
-					{
-						sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_PORT;
-						startPos = pos+1;
-					}
-					else
-					{
-						pNextHop->port = 0;
-						goto EXIT;
-					}
+                    pNextHop->ip.p = &pUri->p[startPos];
+                    pNextHop->ip.l = pos - startPos;
+                    startPos = pos+1;
+
+					sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_HOST;
 				}
+				else	//case '>' or ';'
+				{
+                    pNextHop->ip.p = &pUri->p[startPos];
+                    pNextHop->ip.l = pos - startPos;
+					pNextHop->port = 0;
+					goto EXIT;
+				}							
 				break;
 			case SIP_TU_URI_SERACH_STATE_HOST:
 				if(pUri->p[pos] == '@')
@@ -263,34 +263,35 @@ static osStatus_e sipTu_convertPL2NextHop(osPointerLen_t* pUri, transportIpPort_
 					status = OS_ERROR_INVALID_VALUE;
 					goto EXIT;
 				}
-				else
+				else if(pUri->p[pos] == ':')
 				{
-					pNextHop->ip.p = &pUri->p[startPos];
-					pNextHop->ip.l = pos - startPos;
-					if(pUri->p[pos] == ':')
-					{
-						sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_PORT;
-						startPos = pos+1;
-                   	}
-                   	else
-                   	{
-                       	pNextHop->port = 0;
-                       	goto EXIT;
-                   	}
-				}
+   	                pNextHop->ip.p = &pUri->p[startPos];
+                    pNextHop->ip.l = pos - startPos;
+					startPos = pos+1;
+
+                    sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_PORT;
+               	}
+               	else 	//case '>' or ';'
+                {
+                    pNextHop->ip.p = &pUri->p[startPos];
+                    pNextHop->ip.l = pos - startPos;
+
+                   	pNextHop->port = 0;
+                   	goto EXIT;
+                }
 				break;
 			case SIP_TU_URI_SERACH_STATE_PORT:
 				if(pUri->p[pos] == '@' || pUri->p[pos] == ':')
 				{
 					status = OS_ERROR_INVALID_VALUE;
+					goto EXIT;
 				}
-				else
+				else //case '>' or ';'
 				{
 					osPointerLen_t portStr = {&pUri->p[startPos], pos - startPos};
 					osPL_compact(&portStr);
 					pNextHop->port = osPL_str2u32(&portStr);
 				}
-				goto EXIT;
 				break;
 			default:
 				break;
@@ -318,6 +319,7 @@ static osStatus_e sipTu_convertPL2NextHop(osPointerLen_t* pUri, transportIpPort_
 	osPL_compact(&pNextHop->ip);
 
 EXIT:
+debug("to-remove, pNextHop.ip=%r, port=%d", &pNextHop->ip, pNextHop->port);
 	return status;
 }
 

@@ -415,8 +415,9 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfc
         goto EXIT;
     }
 
-    sipTuUri_t targetUri = {*pRegInfo->tempWorkInfo.pAs, true};
+    sipTuUri_t targetUri = {{*pRegInfo->tempWorkInfo.pAs}, true};
     sipTuAddr_t nextHop = {};
+debug("to-remove, pRegInfo->tempWorkInfo.pAs=%r, targetUri.rawUri=%r, isRaw=%d", pRegInfo->tempWorkInfo.pAs, &targetUri.rawSipUri, targetUri.isRaw);
     sipTu_convertUri2NextHop(&targetUri, &nextHop.ipPort);
 
 	//if nextHop is FQDN, perform DNS query
