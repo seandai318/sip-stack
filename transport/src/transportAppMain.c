@@ -25,6 +25,7 @@
 #include "osMBuf.h"
 #include "osConfig.h"
 #include "osResourceMgmt.h"
+#include "dnsResolverIntf.h"
 
 #include "sipTUIntf.h"
 #include "sipConfig.h"
@@ -109,7 +110,7 @@ static void appMain_timerReady()
     dia_init(configDir);
 
     //test perform dns test, temporary here
-//    dnsTest();
+    dnsTest();
 }
 
 	
@@ -137,6 +138,9 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
 	{
 		tpSetting.appStartup(tpSetting.appStartupData);
 	}
+
+	//start DNS
+	dnsResolver_init();
 
     for(int i=0; i< tpSetting.udpInfoNum; i++)
     {
@@ -548,7 +552,6 @@ transportStatus_e tpLocal_udpSend(transportAppType_e appType, transportInfo_t* p
         tpStatus = TRANSPORT_STATUS_UDP;
     }
 
-	logError("tpUdpMgmtGetUdpCallback(fd=%d)=%p", fd, tpUdpMgmtGetUdpCallback(fd));
 EXIT:
 	DEBUG_END
 	return tpStatus;
