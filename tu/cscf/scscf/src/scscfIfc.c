@@ -77,7 +77,7 @@ typedef struct {
 } scscfIfcSptGrp_t;
 		
 typedef struct {
-    int sIfcGrpId; 		//a sifc group id, multiple sIfc may share one group Id.  The default value = -1.  This is NOT part of IFC
+    int sIfcGrpId; 		//a sifc group id(effectively a service profile), multiple sIfc may share one group Id.  The default value = -1.  This is NOT part of IFC
 	bool conditionTypeCNF;
 	uint32_t priority;
 	osList_t sptGrpList;	//each entry contains a scscfIfcSptGrp_t
@@ -187,6 +187,11 @@ osStatus_e scscfIfc_init(char* sIfcFileFolder, char* sIfcXsdFileName, char* sIfc
 	osPointerLen_t xsdName = {sIfcXsdFileName, strlen(sIfcXsdFileName)};
     osXmlDataCallbackInfo_t cbInfo={true, false, false, scscfIfc_parseSIfcCB, &gSIfcSet, scscfIfc_xmlData, SCSCF_IFC_XML_MAX_DATA_NAME_NUM};
     osXml_getElemValue(&xsdName, NULL, gSIfcXmlBuf, true, &cbInfo);
+
+    //sort ifc based on priority
+    osList_sort(&gSIfcSet, scscfIfc_sortPriority, NULL);
+
+	scscfIfc_dbgList(&gSIfcSet);
 
 EXIT:
 	if(status != OS_STATUS_OK)
@@ -527,9 +532,6 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 			break;
 	}
 
-	//sort ifc based on priority
-	osList_sort(&gSIfcSet, scscfIfc_sortPriority, NULL);
-
 	mdebug(LM_CSCF, "gSIfcSet IFC count=%d", osList_getCount(&gSIfcSet));
  
 	return;
@@ -578,7 +580,7 @@ static bool scscfIfc_sortPriority(osListElement_t *le1, osListElement_t *le2, vo
 	scscfIfc_t* pIfc1 = le1->data;
 	scscfIfc_t* pIfc2 = le2->data;
 
-    if(pIfc1->priority > pIfc2->priority)
+    if(pIfc1->priority < pIfc2->priority)
     {
         isSwitch = true;
         goto EXIT;
@@ -653,7 +655,7 @@ static void scscfIfc_dbgList(osList_t* pSIfcSet)
 		return;
 	}
 
-    mdebug(LM_CSCF, "scscf sifc:\n");
+    mdebug(LM_CSCF, "scscf sifc:");
 
 	int i=0;
 	osListElement_t* pLE = pSIfcSet->head;
@@ -669,32 +671,31 @@ static void scscfIfc_dbgList(osList_t* pSIfcSet)
 		mdebug1(LM_CSCF, "    isDefaultSessContinued: %d\n", pSIfc->isDefaultSessContinued);
 		mdebug1(LM_CSCF, "    asName: %r\n", &pSIfc->asName);
 
-		mdebug1(LM_CSCF, "    spt:\n");
 		osListElement_t* pSptGrpLE = pSIfc->sptGrpList.head;
 		while(pSptGrpLE)
 		{
 			int k=0;
-			mdebug1(LM_CSCF, "        spt group-%d\n", k++);
-			scscfIfcSptGrp_t* pSptGrp = pSptLE->LE;
-			osListElement_t* pSptLE = pSptGrp.sptGrp.head;
+			mdebug1(LM_CSCF, "    spt group-%d\n", k++);
+			scscfIfcSptGrp_t* pSptGrp = pSptGrpLE->data;
+			osListElement_t* pSptLE = pSptGrp->sptGrp.head;
 			while(pSptLE)
 			{ 
 				scscfIfcSptInfo_t* pSpt = pSptLE->data;
-				mdebug1(LM_CSCF, "        sptType=%d", pSpt->sptType);
-				mdebug1(LM_CSCF, "        isConditionNegated=%d", pSpt->isConditionNegated);
+                mdebug1(LM_CSCF, "        isConditionNegated=%d\n", pSpt->isConditionNegated);
+				mdebug1(LM_CSCF, "        sptType=%d\n", pSpt->sptType);
 				switch(pSpt->sptType)
 				{
 				    case SCSCF_IFC_SPT_TYPE_METHOD:
-						mdebug1(LM_CSCF, "        method=%d", pSpt->method);
+						mdebug1(LM_CSCF, "            method=%d\n\n", pSpt->method);
 						break;
     				case SCSCF_IFC_SPT_TYPE_REQUEST_URI:
-						mdebug1(LM_CSCF, "        reqUri=%r", &pSpt->reqUri);
+						mdebug1(LM_CSCF, "            reqUri=%r\n\n", &pSpt->reqUri);
 						break;
     				case SCSCF_IFC_SPT_TYPE_SESSION_CASE:
-						mdebug1(LM_CSCF, "        sessCase=%d", pSpt->sessCase);
+						mdebug1(LM_CSCF, "            sessCase=%d\n\n", pSpt->sessCase);
 						break;
     				case SCSCF_IFC_SPT_TYPE_HEADER:
-						mdebug1(LM_CSCF, "        hdrName=%d, hdrContent=%r", pSpt->hdrName, pSpt->hdrContent);
+						mdebug1(LM_CSCF, "            hdrName=%d, hdrContent=%r\n\n", pSpt->header.hdrName, &pSpt->header.hdrContent);
 						break;
 					default:
 						logError("sptType(%d) is unexpected.", pSpt->sptType);
@@ -704,7 +705,7 @@ static void scscfIfc_dbgList(osList_t* pSIfcSet)
 				pSptLE = pSptLE->next;
 			}
 
-			pSptGrp = pSptGrp->next;
+			pSptGrpLE = pSptGrpLE->next;
 		}
 
 		pLE = pLE->next;
