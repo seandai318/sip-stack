@@ -474,7 +474,7 @@ static void scscfReg_dnsCallback(dnsResResponse_t* pRR, void* pData)
 	scscfRegInfo_t* pRegInfo = pData;	
     sipTuAddr_t nextHop = {};
 	scscfIfcEvent_t ifcEvent = {false, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(pRegInfo->tempWorkInfo.sarRegType)};
-	if(!sipTu_getBestNextHop(pRR, true, &nextHop))
+	if(!sipTu_getBestNextHop(pRR, false, &nextHop))
 	{
 		logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
 

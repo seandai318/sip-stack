@@ -14,6 +14,7 @@
  ******************************************************************************/
 
 #include <string.h>
+#include <arpa/inet.h>
 
 #include "osDebug.h"
 #include "osTimer.h"
@@ -40,7 +41,7 @@ static void sipTuDestRecord_cleanup(void* data);
 static void sipTuDestInfo_cleanup(void* data);
 
 
-static osList_t destRecordList;				//contains sipTuDestRecord_t
+static __thread osList_t gDestRecordList;				//contains sipTuDestRecord_t
 
 
 //if isDnsResCached = true, the dnsResponse was cached in the dns module, implies there is no change to the pDnsResponse.
@@ -74,59 +75,79 @@ bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_
 		goto EXIT;
 	}
 
-	sipTuDestRecord_t* pDestRec = NULL;
+	mdebug(LM_SIPAPP, "pRR->rrType=%d, qName=%r, isDnsResCached=%d, isNoError=%d", pRR->rrType, &qName, isDnsResCached, isNoError);
 
+	bool isAddDestRec = false;
+	sipTuDestRecord_t* pDestRec = NULL;
 	switch(pRR->rrType)
 	{
 		case DNS_RR_DATA_TYPE_MSG:
-		{
-			osListElement_t* pLE = sipTuDest_getDestRec(&qName);
-			if(pLE)
+			//isDnsResCached=true means the same dns record already exists in the dns module, implies the sipTuDest shall already have the record  
+			if(isDnsResCached)
 			{
-				if(isDnsResCached || !isNoError)
+				osListElement_t* pLE = sipTuDest_getDestRec(&qName);
+				if(pLE)
 				{
-					pDestRec = pLE->data;
-					break;
-				}
-				else
-				{
-					
-					osList_deleteElementAll(pLE, true);
+					//in the reality, when isDnsResCached == true, isNoError shall always to be true
+					if(isNoError)
+					{
+						pDestRec = pLE->data;
+						break;
+					}
+					else
+					{
+						osList_deleteElementAll(pLE, true);
+					}
 				}
 			}
-
-			pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
-			status = sipTuDest_msgAddRec(pDnsRsp, pDestRec);
-			break;			
-		}
-		case DNS_RR_DATA_TYPE_MSGLIST:
-		{
-            osListElement_t* pLE = sipTuDest_getDestRec(&qName);
-            if(pLE)
-            {
-                if(isDnsResCached || !isNoError)
-                {
-                    pDestRec = pLE->data;
-                    break;
-                }
-                else
-                {
-                    osList_deleteElementAll(pLE, true);
-                }
-            }
-
-            pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
-			status = sipTuDest_msgAddRec(pDnsRsp, pDestRec);
-
-			osListElement_t* pRRLE = pRR->dnsRspList.head;
-			while(pRRLE && pRRLE->data != pDnsRsp)
+			else
 			{
-				sipTUDest_msgListAddARec(pDestRec, pRRLE->data, pRR);
+				if(isNoError)
+				{
+					pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
+					status = sipTuDest_msgAddRec(pDnsRsp, pDestRec);
+					isAddDestRec = true;
+				}
+			}
+			break;			
+		case DNS_RR_DATA_TYPE_MSGLIST:
+			//isDnsResCached=true means the same dns record already exists in the dns module, implies the sipTuDest shall already have the record
+            if(isDnsResCached)
+            {
+            	osListElement_t* pLE = sipTuDest_getDestRec(&qName);
+            	if(pLE)
+            	{
+                    //in the reality, when isDnsResCached == true, isNoError shall always to be true
+                	if(isNoError)
+                	{
+                    	pDestRec = pLE->data;
+                    	break;
+                	}
+                	else
+                	{
+                    	osList_deleteElementAll(pLE, true);
+                	}
+            	}
+			}
+			else
+			{
+				if(isNoError)
+				{
+            		pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
+					status = sipTuDest_msgAddRec(pDnsRsp, pDestRec);
 
-				pRRLE = pRRLE->next;
+					osListElement_t* pRRLE = pRR->dnsRspList.head;
+					while(pRRLE && pRRLE->data != pDnsRsp)
+					{
+						sipTUDest_msgListAddARec(pDestRec, pRRLE->data, pRR);
+
+						pRRLE = pRRLE->next;
+					}
+
+                	isAddDestRec = true;
+				}
 			}
 			break;
-		}	
 		case DNS_RR_DATA_TYPE_STATUS:
 		default:
 			logError("rrType(%d) is not expected.", pRR->rrType);
@@ -134,9 +155,18 @@ bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_
 			break;
 	}
 
-	osList_append(&destRecordList, pDestRec);
-	pDestRec->kaTimerId = osStartTimer(SIP_TU_DEST_KEEP_ALIVE_TIME, sipTuDest_onKATimeout, pDestRec);
-	isFound = sipTuDest_getNextHop(pDestRec, pNextHop);
+	if(isAddDestRec)
+	{
+		osList_append(&gDestRecordList, pDestRec);
+		pDestRec->kaTimerId = osStartTimer(SIP_TU_DEST_KEEP_ALIVE_TIME, sipTuDest_onKATimeout, pDestRec);
+	}
+
+	if(isNoError && pDestRec)
+	{
+		isFound = sipTuDest_getNextHop(pDestRec, pNextHop);
+	}
+
+	mdebug(LM_SIPAPP, "isFound=%d, pNextHop->sockAddr=%A", isFound, isFound ? &pNextHop->sockAddr : NULL);
 
 EXIT:
 	return isFound;
@@ -146,7 +176,7 @@ EXIT:
 bool sipTu_getBestNextHopByName(osPointerLen_t* pQName, sipTuAddr_t* pNextHop)
 {
     bool isFound = false;
-    osListElement_t* pLE = destRecordList.head;
+    osListElement_t* pLE = gDestRecordList.head;
     while(pLE)
     {
         sipTuDestRecord_t* pDestRec = pLE->data;
@@ -166,7 +196,7 @@ bool sipTu_getBestNextHopByName(osPointerLen_t* pQName, sipTuAddr_t* pNextHop)
 bool sipTu_setDestFailure(osPointerLen_t* dest, struct sockaddr_in* destAddr)
 {
 	bool isFound = false;
-	osListElement_t* pLE = destRecordList.head;
+	osListElement_t* pLE = gDestRecordList.head;
 	while(pLE)
 	{
 		sipTuDestRecord_t* pDestRec = pLE->data;
@@ -211,7 +241,7 @@ bool sipTu_replaceDest(osPointerLen_t* dest, sipTuAddr_t* pNextHop)
 		goto EXIT;
 	}
 
-    osListElement_t* pLE = destRecordList.head;
+    osListElement_t* pLE = gDestRecordList.head;
     while(pLE)
     {
         sipTuDestRecord_t* pDestRec = pLE->data;
@@ -257,7 +287,7 @@ void sipTuDest_localSet(osPointerLen_t* dest, struct sockaddr_in destAddr, trans
 	}
 
 	sipTuDestRecord_t* pDestRec = NULL;
-    osListElement_t* pLE = destRecordList.head;
+    osListElement_t* pLE = gDestRecordList.head;
     while(pLE)
     {
         pDestRec = pLE->data;
@@ -279,7 +309,7 @@ void sipTuDest_localSet(osPointerLen_t* dest, struct sockaddr_in destAddr, trans
 	{
 		pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
 		osVPL_copyPL(&pDestRec->destName, dest); 
-		osList_append(&destRecordList, pDestRec);
+		osList_append(&gDestRecordList, pDestRec);
 	}
 
     osList_append(&pDestRec->destList, pDestInfo);
@@ -288,7 +318,7 @@ void sipTuDest_localSet(osPointerLen_t* dest, struct sockaddr_in destAddr, trans
 
 bool sipTuDest_isQuarantined(osPointerLen_t* dest, struct sockaddr_in destAddr)
 {
-	osListElement_t* pLE = destRecordList.head;
+	osListElement_t* pLE = gDestRecordList.head;
 	while(pLE)
 	{
 		sipTuDestRecord_t* pDestRec = pLE->data;
@@ -311,7 +341,7 @@ bool sipTuDest_isQuarantined(osPointerLen_t* dest, struct sockaddr_in destAddr)
 	}
 
 	//if do not find a match, assume is quarantined
-	logError("destRecordList does not contain local address(%A).", &destAddr);
+	logError("gDestRecordList does not contain local address(%A).", &destAddr);
 	return true;
 }
 	
@@ -352,11 +382,12 @@ static void sipTuDest_onKATimeout(uint64_t timerId, void* data)
 	}
 	pDestRec->kaTimerId = 0;
 
-	osList_deletePtrElement(&destRecordList, pDestRec);
+	osList_deletePtrElement(&gDestRecordList, pDestRec);
 	osfree(pDestRec);
 }
 
 
+//create pDestRec based on pDnsRsp
 static osStatus_e sipTuDest_msgAddRec(dnsMessage_t* pDnsRsp, sipTuDestRecord_t* pDestRec)
 {
 	osStatus_e status = OS_STATUS_OK;
@@ -411,7 +442,7 @@ static osStatus_e sipTuDest_msgAddRec(dnsMessage_t* pDnsRsp, sipTuDestRecord_t* 
             while(pLE)
             {
                 dnsRR_t* pDnsRR = pLE->data;
-                debug("SRV, type=%d, rrClase=%d, ttl=%d, priority=%d, weight=%d, port=%d, target=%s", pDnsRR->type, pDnsRR->rrClass, pDnsRR->ttl, pDnsRR->srv.priority, pDnsRR->srv.weight, pDnsRR->srv.port, pDnsRR->srv.target);
+                mdebug(LM_SIPAPP, "SRV, type=%d, rrClase=%d, ttl=%d, priority=%d, weight=%d, port=%d, target=%s", pDnsRR->type, pDnsRR->rrClass, pDnsRR->ttl, pDnsRR->srv.priority, pDnsRR->srv.weight, pDnsRR->srv.port, pDnsRR->srv.target);
 
                 osListElement_t* pARLE = pDnsRsp->addtlAnswerList.head;
                 while(pARLE)
@@ -452,8 +483,10 @@ static osStatus_e sipTuDest_msgAddRec(dnsMessage_t* pDnsRsp, sipTuDestRecord_t* 
                 dnsRR_t* pARDnsRR = pARLE->data;
                 if(pARDnsRR->type == DNS_QTYPE_A)
                 {
-					sipTuDestSrvInfo_t srvInfo[SIP_TU_DEST_MAX_SUPPORTED_TP_TYPE_NUM];	
-					for(int i=0; i<sipTuDest_msgGetSrvInfo(&pDnsRsp->addtlAnswerList, pARDnsRR->name, srvInfo); i++)
+					mdebug(LM_SIPAPP, "qType=DNS_QTYPE_NAPTR, find a DNS_QTYPE_A RR, pARDnsRR->name=%s", pARDnsRR->name);
+					sipTuDestSrvInfo_t srvInfo[SIP_TU_DEST_MAX_SUPPORTED_TP_TYPE_NUM];
+					int srvInfoNum = sipTuDest_msgGetSrvInfo(&pDnsRsp->addtlAnswerList, pARDnsRR->name, srvInfo);	
+					for(int i=0; i<srvInfoNum; i++)
 					{
 						sipTuDestInfo_t* pDestInfo = sipTuDest_isDestExist(((dnsRR_t*)pARDnsRR)->ipAddr, srvInfo[i].port, srvInfo[i].priority, srvInfo[i].weight, &pDestRec->destList);
                     	if(!pDestInfo)
@@ -463,18 +496,19 @@ static osStatus_e sipTuDest_msgAddRec(dnsMessage_t* pDnsRsp, sipTuDestRecord_t* 
                     		pDestInfo->priority = srvInfo[i].priority;
                     		pDestInfo->weight = srvInfo[i].weight;
                     		pDestInfo->destAddr.sin_addr = pARDnsRR->ipAddr;
-                    		pDestInfo->destAddr.sin_port = srvInfo[i].port;
+                    		pDestInfo->destAddr.sin_port = htons(srvInfo[i].port);
                     		pDestInfo->destAddr.sin_family = AF_INET;
+							mdebug(LM_SIPAPP, "pDestInfo=%p, pDestInfo->destAddr=%A, tpType=%d, priority=%d, weight=%d", pDestInfo, &pDestInfo->destAddr, pDestInfo->tpType, pDestInfo->priority, pDestInfo->weight);
 
 			                osList_orderAppend(&pDestRec->destList, sipTuDest_sortDestInfo, pDestInfo, NULL);
 						}
 						else if(pDestInfo->tpType != srvInfo[i].tpType)
 						{
 							pDestInfo->tpType = TRANSPORT_TYPE_ANY;
+							mdebug(LM_SIPAPP, "pDestInfo=%p, tpType=TRANSPORT_TYPE_ANY", pDestInfo);
 						}
 					}
                 }
-
                 pARLE = pARLE->next;
             }
             break;
@@ -549,6 +583,7 @@ static dnsMessage_t* sipTuDest_getRRInfo(dnsResResponse_t* pRR, osPointerLen_t* 
 {
 	dnsMessage_t* pTopDnsRsp = NULL;	//the dns response of the highest qType contained in pRR
 	dnsQType_e highestQType = 0;
+	*isNoError = true;
 
 	if(!pRR)
 	{
@@ -559,7 +594,7 @@ static dnsMessage_t* sipTuDest_getRRInfo(dnsResResponse_t* pRR, osPointerLen_t* 
 	switch(pRR->rrType)
 	{
 		case DNS_RR_DATA_TYPE_MSG:
-			*isNoError = pRR->pDnsRsp->hdr.flags & DNS_RCODE_MASK == DNS_RCODE_NO_ERROR;
+			*isNoError = (pRR->pDnsRsp->hdr.flags & DNS_RCODE_MASK) == DNS_RCODE_NO_ERROR;
 			pTopDnsRsp = pRR->pDnsRsp;
 			break;
 		case DNS_RR_DATA_TYPE_MSGLIST:
@@ -568,11 +603,11 @@ static dnsMessage_t* sipTuDest_getRRInfo(dnsResResponse_t* pRR, osPointerLen_t* 
             while(pRRLE)
             {
                 dnsMessage_t* pDnsRsp = pRRLE->data;
-				*isNoError = *isNoError ? pDnsRsp->hdr.flags & DNS_RCODE_MASK == DNS_RCODE_NO_ERROR : *isNoError;
+				*isNoError = *isNoError ? (pDnsRsp->hdr.flags & DNS_RCODE_MASK) == DNS_RCODE_NO_ERROR : *isNoError;
 				if(highestQType < pDnsRsp->query.qType)
 				{
 					highestQType = pDnsRsp->query.qType;
-					pTopDnsRsp = pRR->pDnsRsp;
+					pTopDnsRsp = pDnsRsp;
 				}
 
 				pRRLE = pRRLE->next;
@@ -623,7 +658,7 @@ static int sipTuDest_msgGetSrvInfo(osList_t* pAnswerList, char* aQName, sipTuDes
 {
 	int srvInfoNum = 0;
 
-	if(!pAnswerList || !aQName || !srvInfo || !srvInfoNum)
+	if(!pAnswerList || !aQName || !srvInfo)
 	{
 		logError("null pointer, pAnswerList=%p, aQName=%p, srvInfo=%p.", pAnswerList, aQName, srvInfo);
 		goto EXIT;
@@ -655,13 +690,14 @@ static int sipTuDest_msgGetSrvInfo(osList_t* pAnswerList, char* aQName, sipTuDes
 			srvInfo[srvInfoNum].weight = pARDnsRR->srv.weight;
 			srvInfo[srvInfoNum].port = pARDnsRR->srv.port;
 
-			break;
+			mdebug(LM_SIPAPP, "srvInfoNum=%d, srv=%p, priority=%d, weight=%d, port=%d", srvInfoNum, &pARDnsRR->srv, srvInfo[srvInfoNum].priority, srvInfo[srvInfoNum].weight, pARDnsRR->srv.port);
+	        if(++srvInfoNum >= SIP_TU_DEST_MAX_SUPPORTED_TP_TYPE_NUM)
+    	    {
+				logError("srvInfoNum(%d) exceed SIP_TU_DEST_MAX_SUPPORTED_TP_TYPE_NUM.  This shall not happen.", srvInfoNum);
+        	    goto EXIT;
+        	}
 		}
 
-		if(++srvInfoNum >= SIP_TU_DEST_MAX_SUPPORTED_TP_TYPE_NUM)
-		{
-			goto EXIT;
-		}
 		pARLE = pARLE->next;
 	}
 
@@ -685,6 +721,7 @@ static int sipTuDest_msgListGetSrvInfo(dnsResResponse_t* pRR, char* aQName, sipT
 	while(pMsgLE)
 	{
 		dnsMessage_t* pDnsRsp = pMsgLE->data;
+		mdebug(LM_SIPAPP, "pDnsRsp=%p, pDnsRsp->query.qType=%d", pDnsRsp, pDnsRsp->query.qType);
 		//if qType=NAPTR, check the addtlAnswerList if there is SRV record.  if qType = SRV, check the answerListType
 		//be noted there is hole here, inside sipTuDest_msgGetSrvInfo() there is check to make sure the entries of srvInfo
 		//be no more than SIP_TU_DEST_MAX_SUPPORTED_TP_TYPE_NUM.  Since each call allows that maximum number, add them
@@ -820,7 +857,7 @@ static int sipTuDest_getSamePriorityNum(osListElement_t* pLE, int* weightSum)
 
 static osListElement_t* sipTuDest_getDestRec(osPointerLen_t* qName)
 {
-    osListElement_t* pLE = destRecordList.head;
+    osListElement_t* pLE = gDestRecordList.head;
     while(pLE)
     {
         sipTuDestRecord_t* pDestRec = pLE->data;
