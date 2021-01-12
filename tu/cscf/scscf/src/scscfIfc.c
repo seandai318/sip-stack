@@ -139,6 +139,7 @@ static bool scscfIfcSptGrpIsMatch(scscfIfcSptGrp_t* pSptGrp, bool isOr, sipMsgDe
 static bool scscfIfc_isIdMatch(sIfcIdList_t* pSIfcIdList, uint32_t sIfcGrpId);
 static bool scscfIfc_sortPriority(osListElement_t *le1, osListElement_t *le2, void *arg);
 static osStatus_e scscfIfc_constructXml(osMBuf_t* origSIfcXmlBuf);
+static void scscfIfc_dbgList(osList_t* pSIfcSet);
 
 
 static osList_t gSIfcSet;	//each entry contains a scscfIfc_t
@@ -641,4 +642,73 @@ static osStatus_e scscfIfc_constructXml(osMBuf_t* origSIfcXmlBuf)
 debug("to-remove, gSIfcXmlBuf=\n%M", gSIfcXmlBuf);
 EXIT:
 	return status;
+}
+
+
+
+static void scscfIfc_dbgList(osList_t* pSIfcSet)
+{
+	if(!pSIfcSet)
+	{
+		return;
+	}
+
+    mdebug(LM_CSCF, "scscf sifc:\n");
+
+	int i=0;
+	osListElement_t* pLE = pSIfcSet->head;
+	while(pLE)
+	{
+		scscfIfc_t* pSIfc = pLE->data;
+		int j=0;
+	
+		mdebug1(LM_CSCF, "sifc-%d\n", i++);
+		mdebug1(LM_CSCF, "    sifc groupId: %d\n", pSIfc->sIfcGrpId);
+		mdebug1(LM_CSCF, "    conditionTypeCNF: %d\n", pSIfc->conditionTypeCNF);
+		mdebug1(LM_CSCF, "    priority: %d\n", pSIfc->priority);
+		mdebug1(LM_CSCF, "    isDefaultSessContinued: %d\n", pSIfc->isDefaultSessContinued);
+		mdebug1(LM_CSCF, "    asName: %r\n", &pSIfc->asName);
+
+		mdebug1(LM_CSCF, "    spt:\n");
+		osListElement_t* pSptGrpLE = pSIfc->sptGrpList.head;
+		while(pSptGrpLE)
+		{
+			int k=0;
+			mdebug1(LM_CSCF, "        spt group-%d\n", k++);
+			scscfIfcSptGrp_t* pSptGrp = pSptLE->LE;
+			osListElement_t* pSptLE = pSptGrp.sptGrp.head;
+			while(pSptLE)
+			{ 
+				scscfIfcSptInfo_t* pSpt = pSptLE->data;
+				mdebug1(LM_CSCF, "        sptType=%d", pSpt->sptType);
+				mdebug1(LM_CSCF, "        isConditionNegated=%d", pSpt->isConditionNegated);
+				switch(pSpt->sptType)
+				{
+				    case SCSCF_IFC_SPT_TYPE_METHOD:
+						mdebug1(LM_CSCF, "        method=%d", pSpt->method);
+						break;
+    				case SCSCF_IFC_SPT_TYPE_REQUEST_URI:
+						mdebug1(LM_CSCF, "        reqUri=%r", &pSpt->reqUri);
+						break;
+    				case SCSCF_IFC_SPT_TYPE_SESSION_CASE:
+						mdebug1(LM_CSCF, "        sessCase=%d", pSpt->sessCase);
+						break;
+    				case SCSCF_IFC_SPT_TYPE_HEADER:
+						mdebug1(LM_CSCF, "        hdrName=%d, hdrContent=%r", pSpt->hdrName, pSpt->hdrContent);
+						break;
+					default:
+						logError("sptType(%d) is unexpected.", pSpt->sptType);
+						break;
+				}
+
+				pSptLE = pSptLE->next;
+			}
+
+			pSptGrp = pSptGrp->next;
+		}
+
+		pLE = pLE->next;
+	}
+
+	return;
 }
