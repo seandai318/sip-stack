@@ -24,14 +24,15 @@ typedef struct sipTUHdrModifyInfo {
     sipHdrName_e nameCode;
     size_t hdrStartPos;
     size_t hdrSkipLen;
-    osPointerLen_t value;
+    sipTuHdrRawValue_t value;
 } sipTUHdrModifyInfo_t;
 
 
 static osStatus_e sipTU_updateMaxForwards(sipRawHdr_t* pRawMF, bool isForce, uint32_t* pMFValue);
-static bool sipTU_hdrModiftListSortHandler(osListElement_t* le, osListElement_t* newLE, void* arg);
-static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* addHdrList, uint8_t addHdrNum);
+static bool sipTU_hdrModListSortHandler(osListElement_t* le, osListElement_t* newLE, void* arg);
+static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipTuHdrRawValueStr_t* addHdrList, uint8_t addHdrNum);
 static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqDecodedRaw, size_t startPos, osList_t* pSortedModifyHdrList);
+static void sipTU_dbgListSortedModHdr(osList_t* pSortedModHdrList);
 
 
 
@@ -44,13 +45,13 @@ static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqD
  *
  * the delete hdr only deletes the top hdr value.  if a hdr has multiple values, and you want to delete all the hdr appearance in a sip message, you have to use a second pass to specially delete the hdr.
  */
-osMBuf_t* sipTU_buildProxyResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* addHdrList, uint8_t addHdrNum)
+osMBuf_t* sipTU_buildProxyResponse(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipTuHdrRawValueStr_t* addHdrList, uint8_t addHdrNum)
 {
 	DEBUG_BEGIN
 
     osStatus_e status = OS_STATUS_OK;
     osMBuf_t* pSipBufResp = NULL;
-	osList_t* pSortedModifyHdrList = NULL;
+	osList_t* pSortedModifyHdrList = NULL;		//each element of the list contains sipTUHdrModifyInfo_t
 
     if(!pReqDecodedRaw || !delHdrList)
     {
@@ -114,7 +115,7 @@ EXIT:
 //add a via, remove top Route if there is lr, decrease Max-Forwarded by 1
 //pTransViaId is IN/OUT, as IN, it passes the real peer's IP/port, when OUT, it contains the top via's branch ID, and host/port
 //if isProxy=false, a new call id is to be generated, there is no need for external to delete/modify/specify a new callid
-osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipTuUri_t* pReqlineUri, size_t* pViaProtocolPos, sipPointerLen_t* pCallId)
+osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipTuHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipTuUri_t* pReqlineUri, size_t* pViaProtocolPos, sipPointerLen_t* pCallId)
 {
 	DEBUG_BEGIN
 
@@ -133,32 +134,8 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
 	//update the hdr delete list
 	sipHdrRawValueId_t* pUpdatedExtraDelHdrList = extraDelHdrList;
 	uint8_t updatedDelHdrNum = delHdrNum;
-#if 0	//ROUTE deletion logic is handled by caller, if needed, pass in from extraDelHdrList, this function does not handle it
-	osPointerLen_t* pLR = NULL;
-	if(pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE])
-	{
-	    //remove the top Route if there is lr, and copy the remaining sipBuf
-	    sipHdrDecoded_t sipHdrDecoded = {};
-    	status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE]->pRawHdr, &sipHdrDecoded, false);
-    	if(status != OS_STATUS_OK)
-    	{
-        	logError("fails to sipDecodeHdr for SIP_HDR_P_SERVED_USER.");
-        	goto EXIT;
-    	}
-
-    	sipHdrRoute_t* pRoute = sipHdrDecoded.decodedHdr;
-    	osPointerLen_t lrName = {"lr", 2};
-    	pLR = sipParamNV_getValuefromList(&pRoute->pGNP->hdrValue.genericParam, &lrName);
-	}
-#endif
-
 	int extraDelItem = 1;		//1 is count for via
-#if 0	//do not handle specifically for Route header in this function
-	if(pLR)
-	{
-		++extraDelItem;
-	}
-#endif
+
 	if(!isProxy)
 	{
 		++extraDelItem;		//for call id
@@ -172,14 +149,6 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
     pUpdatedExtraDelHdrList[extraDelItem].nameCode = SIP_HDR_VIA;
     pUpdatedExtraDelHdrList[extraDelItem].isTopOnly = true;
 
-#if 0	//do not handle specifically for Route header in this function	
-	if(pLR)
-	{
-    	--extraDelItem;
-    	pUpdatedExtraDelHdrList[extraDelItem].nameCode = SIP_HDR_ROUTE;
-    	pUpdatedExtraDelHdrList[extraDelItem].isTopOnly = true;
-	}
-#endif
 	if(!isProxy)
 	{
 		 --extraDelItem;
@@ -210,6 +179,9 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
         goto EXIT;
     }
 
+	//dbg print the sorted modHdr list
+	sipTU_dbgListSortedModHdr(pSortedModifyHdrList);	
+
 	//allocate the new sipRequest buffer
     pSipBufReq = osMBuf_alloc(SIP_MAX_MSG_SIZE);
     if(!pSipBufReq)
@@ -219,7 +191,6 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
         goto EXIT;
     }
 
-logError("to-remove, VIA-MEMORY, 1");
 	//prepare for the building of new request
     status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_VIA]->pRawHdr, &viaHdr, false);
     if(status != OS_STATUS_OK)
@@ -227,7 +198,6 @@ logError("to-remove, VIA-MEMORY, 1");
         logError("fails to decode the top via hdr in sipDecodeHdr.");
         goto EXIT;
     }
-logError("to-remove, VIA-MEMORY, 2");
 
     //update MF in the original sipBuf
 	if(isProxy)
@@ -273,7 +243,6 @@ logError("to-remove, VIA-MEMORY, 2");
     //insert a new via hdr as the first header
 	sipHostport_t viaHostport;
     status = sipTU_addOwnVia(pSipBufReq, NULL, NULL, &pTransViaId->branchId, &viaHostport.host, &viaHostport.portValue, pViaProtocolPos);
-logError("to-remove, VIA-MEMORY, 2-1");
 
 	//add back the received via if isProxy=true
 	if(isProxy)
@@ -282,7 +251,6 @@ logError("to-remove, VIA-MEMORY, 2-1");
     	peer.host = pTransViaId->host;
     	peer.portValue = pTransViaId->port;
 
-		logError("to-remove, PEER, host=%r, port=%d", &peer.host, peer.portValue);
     	status = sipHdrVia_rspEncode(pSipBufReq, viaHdr.decodedHdr, pReqDecodedRaw, &peer);
 	}
 	else
@@ -291,14 +259,11 @@ logError("to-remove, VIA-MEMORY, 2-1");
 		status = sipHdrCallId_createAndAdd(pSipBufReq, pCallId);
 	}
 
-logError("to-remove, VIA-MEMORY, 2-2");
-
 	status = sipTU_copyHdrs(pSipBufReq, pReqDecodedRaw, pReqDecodedRaw->sipMsgBuf.hdrStartPos, pSortedModifyHdrList);
 
 	//update pTransViaId host/port to reflect the transaction top via's host/port
 	pTransViaId->host = viaHostport.host;
 	pTransViaId->port = viaHostport.portValue;
-logError("to-remove, VIA-MEMORY, 2-3");
 
 EXIT:
 	osfree(pSortedModifyHdrList);
@@ -308,9 +273,7 @@ EXIT:
         pSipBufReq = osfree(pSipBufReq);
     }
 
-logError("to-remove, VIA-MEMORY, 3");
 	osfree(viaHdr.decodedHdr);
-logError("to-remove, VIA-MEMORY, 4");
 
 	DEBUG_END
     return pSipBufReq;
@@ -567,7 +530,7 @@ EXIT:
 /*
  * return the modified pSipMsgBuf (if the function is executed without error) or the original pSipMsgBuf (if there is error in the execution of the function)
  */
-osMBuf_t* sipTU_modifySipMsgHdr(osMBuf_t* pSipBuf, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* addHdrList, uint8_t addHdrNum)
+osMBuf_t* sipTU_modifySipMsgHdr(osMBuf_t* pSipBuf, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipTuHdrRawValueStr_t* addHdrList, uint8_t addHdrNum)
 {
     osStatus_e status = OS_STATUS_OK;
     osMBuf_t* pSipBufNew = NULL;
@@ -1068,10 +1031,20 @@ static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqD
             }
             else if(startPos > pHdrId->hdrStartPos)
             {
-                logError("unexpected event, startPos (%d) > pHdrId->hdrStartPos(%d) when inserting a new hdr.", startPos, pHdrId->hdrStartPos);
+                logError("unexpected event, startPos (%d) > pHdrId->hdrStartPos(%d) when inserting a new hdr (namecode=%d, %s).", startPos, pHdrId->hdrStartPos, pHdrId->nameCode, sipHdr_getNameByCode(pHdrId->nameCode));
             }
 
-            osMBuf_writePL(pSipBuf, &pHdrId->value, true);
+			osMBuf_writeStr(pSipBuf, sipHdr_getNameByCode(pHdrId->nameCode), true);
+			osMBuf_writeStr(pSipBuf, ": ", true);
+			if(pHdrId->value.isIntValue)
+			{
+				osMBuf_writeU32Str(pSipBuf, pHdrId->value.intValue, true);
+			}
+			else
+			{
+            	osMBuf_writePL(pSipBuf, pHdrId->value.strValue, true);
+			}
+			osMBuf_writeStr(pSipBuf, "\r\n", true);
         }
 
         pLE = pLE->next;
@@ -1090,14 +1063,14 @@ EXIT:
 
 
 /* the assumption is the list already been filled with delete hdr before processing the add hdr
- * 1. if the same hdr for add and delete, delete has priority
+ * 1. if the same hdr for add and delete, add before delete
  * 2. if the same hdr for add, the later added hdr value will be added before the existing hdr value in the sorted list (that effectively implies that in the final constructed sip message, the later added hdr value will appear after the earlier added hdr) 
  * 2. for delete hdr, sort based on its existing position.
  * 3. if a hdr to be added already has a existing hdr, add as the top hdr for the existing hdr
  * 4. if a hdr to be added does not have existing hdr, add before content len hdr. 
  * 5. if content len does not exist, add to the end of sip hdr
  */
-static bool sipTU_hdrModiftListSortHandler(osListElement_t* le, osListElement_t* newLE, void* arg)
+static bool sipTU_hdrModListSortHandler(osListElement_t* le, osListElement_t* newLE, void* arg)
 {
 	bool isPrepend = false;
 
@@ -1119,28 +1092,13 @@ static bool sipTU_hdrModiftListSortHandler(osListElement_t* le, osListElement_t*
 		//since we always insert delList first, and the same hdr in delList is not allowed, the addList for the same nameCode will always after the hdr in the delList, and the same hdr in the add List will be always FILO 
 		if(pNewHdrInfo->nameCode == pHdrInfo->nameCode)
 		{
-			if(!pHdrInfo->isDelete)
-			{
-				isPrepend = true;
-			}
-			goto EXIT;
+			//if pHdrInfo is a delete, add before delete.  if pHdrInfo is add, new add before the existing add	
+			isPrepend = true;
+		}
+		else if((pNewHdrInfo->hdrStartPos < pHdrInfo->hdrStartPos))
+		{
+			isPrepend = true;
 		}	
-			
-		if(pReqDecodedRaw->msgHdrList[pNewHdrInfo->nameCode])
-		{
-        	sipHdrGetRawHdrPos(pReqDecodedRaw->msgHdrList[pNewHdrInfo->nameCode]->pRawHdr, &pNewHdrInfo->hdrStartPos, &pNewHdrInfo->hdrSkipLen);
-			pNewHdrInfo->hdrSkipLen = 0;
-		}
-		else if(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTENT_LENGTH])
-		{
-            sipHdrGetRawHdrPos(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTENT_LENGTH]->pRawHdr, &pNewHdrInfo->hdrStartPos, &pNewHdrInfo->hdrSkipLen);
-		}
-		else
-		{
-			pNewHdrInfo->hdrStartPos = SIP_HDR_EOF;
-		}
-
-        pNewHdrInfo->hdrSkipLen = 0;
 	}     
 	
 EXIT:
@@ -1163,7 +1121,7 @@ EXIT:
  * the del list can have the same hdr that appears in add list, vice versa
  * the added hdr ALWAYS the top hdr values.
  */
-static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* addHdrList, uint8_t addHdrNum)
+static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipTuHdrRawValueStr_t* addHdrList, uint8_t addHdrNum)
 {
 	osStatus_e status = OS_STATUS_OK;
 
@@ -1205,7 +1163,7 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
             goto EXIT;
         }
 
-		osList_orderAppend(pList, sipTU_hdrModiftListSortHandler, pHdrInfo, NULL);
+		osList_orderAppend(pList, sipTU_hdrModListSortHandler, pHdrInfo, NULL);
 
 		//check if more than one hdr line to be removed (a hdr line means a whole hdr entry in a SIP message, hdr-name: hdrvalue1, hdrvalue2...
 		if(!delHdrList[i].isTopOnly && pReqDecodedRaw->msgHdrList[delHdrList[i].nameCode]->rawHdrNum > 1)
@@ -1223,7 +1181,7 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
            			goto EXIT;
 				} 
 
-        		osList_orderAppend(pList, sipTU_hdrModiftListSortHandler, pHdrInfo, NULL);
+        		osList_orderAppend(pList, sipTU_hdrModListSortHandler, pHdrInfo, NULL);
 				
 				pLE = pLE->next;
 			}
@@ -1238,7 +1196,22 @@ static osList_t* sipTU_sortModifyHdrList(sipMsgDecodedRawHdr_t* pReqDecodedRaw, 
 		pHdrInfo->value = addHdrList[i].value;
         pHdrInfo->isDelete = false;
 
-		osList_orderAppend(pList, sipTU_hdrModiftListSortHandler, pHdrInfo, pReqDecodedRaw);
+		//fill >hdrStartPos & hdrSkipLen for add headers
+        if(pReqDecodedRaw->msgHdrList[addHdrList[i].nameCode])
+        {
+            sipHdrGetRawHdrPos(pReqDecodedRaw->msgHdrList[addHdrList[i].nameCode]->pRawHdr, &pHdrInfo->hdrStartPos, &pHdrInfo->hdrSkipLen);
+        }
+        else if(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTENT_LENGTH])
+        {
+            sipHdrGetRawHdrPos(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTENT_LENGTH]->pRawHdr, &pHdrInfo->hdrStartPos, &pHdrInfo->hdrSkipLen);
+        }
+        else
+        {
+            pHdrInfo->hdrStartPos = SIP_HDR_EOF;
+        }
+        pHdrInfo->hdrSkipLen = 0;
+
+		osList_orderAppend(pList, sipTU_hdrModListSortHandler, pHdrInfo, pReqDecodedRaw);
 	}
 
 EXIT:
@@ -1250,3 +1223,39 @@ EXIT:
 
 	return pList;
 }
+
+
+static void sipTU_dbgListSortedModHdr(osList_t* pSortedModHdrList)
+{
+	mdebug(LM_SIPAPP, "sorted modifyHdr:");
+	if(!pSortedModHdrList)
+	{
+		return;
+	}
+
+	osListElement_t* pLE = pSortedModHdrList->head;
+	while(pLE)
+	{
+		sipTUHdrModifyInfo_t* pHdrModInfo = pLE->data;
+
+        mdebug1(LM_SIPAPP, "nameCode=%d(%s)\n", pHdrModInfo->nameCode, sipHdr_getNameByCode(pHdrModInfo->nameCode));
+		mdebug1(LM_SIPAPP, "    isDelete=%d, isDelTopOnly=%d, hdrStartPos=%ld, hdrSkipLen=%d", pHdrModInfo->isDelete, pHdrModInfo->isDelTopOnly, pHdrModInfo->hdrStartPos, pHdrModInfo->hdrSkipLen);
+		if(!pHdrModInfo->isDelete)
+		{
+			if(pHdrModInfo->value.isIntValue)
+			{
+				mdebug1(LM_SIPAPP, ", inserted hdr value=%d", pHdrModInfo->value.intValue);
+			}
+			else
+			{
+				mdebug1(LM_SIPAPP, ", inserted hdr value=%r\n", pHdrModInfo->value.strValue);
+			}
+		}
+		else
+		{
+			mdebug1(LM_SIPAPP, "\n");
+		}
+
+		pLE = pLE->next;
+	}
+}	

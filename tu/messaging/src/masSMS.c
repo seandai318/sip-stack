@@ -151,10 +151,10 @@ static osStatus_e masSMS_onSipRequest(sipTUMsg_t* pSipTUMsg)
         goto BUILD_RESPONSE;
 	}	
 
+#if 0
 	//prepare for sipTU_buildRequest(), add a P-Called-ID 
-	sipHdrRawValueStr_t calledId;
-	calledId.nameCode = SIP_HDR_P_CALLED_PARTY_ID;
-	calledId.value = pCalledContactUser->sipUser;
+	sipTuHdrRawValueStr_t calledId = {SIP_HDR_P_CALLED_PARTY_ID, {false, {&pCalledContactUser->sipUser}}};
+#endif
 
 	size_t topViaProtocolPos = 0;
 	sipTransInfo_t sipTransInfo;

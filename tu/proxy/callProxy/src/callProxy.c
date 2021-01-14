@@ -455,7 +455,7 @@ logError("to-remvoe, just to check the creation of a address.");
 		targetUri.sipUri = *pTargetUri;
 	}
 #endif
-	status = sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, pTargetUri ? &targetUri : NULL, &msgModInfo, &nextHop, false, pCallInfo->pProxyInfo, &pTransId);
+	status = sipProxy_forwardReq(SIPTU_APP_TYPE_PROXY, pSipTUMsg, pReqDecodedRaw, pTargetUri ? &targetUri : NULL, &msgModInfo, &nextHop, false, pCallInfo->pProxyInfo, &pTransId);
 	if(status != OS_STATUS_OK || !pTransId)
 	{
 		logError("fails to forward sip request, status=%d, pTransId=%p.", status, pTransId);
@@ -525,7 +525,7 @@ osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRa
 				{
 			        sipProxy_uasResponse(SIP_RESPONSE_200, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
 					sipProxy_msgModInfo_t msgModInfo = {true, false};
-		            sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, &pCallInfo->cancelNextHop, true, pCallInfo->pProxyInfo, NULL);
+		            sipProxy_forwardReq(SIPTU_APP_TYPE_PROXY, pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, &pCallInfo->cancelNextHop, true, pCallInfo->pProxyInfo, NULL);
 				}
 				else
 				{
@@ -537,7 +537,7 @@ osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRa
 			//for other requests, just pass.
 			void* pUacTransId = NULL;
 			sipProxy_msgModInfo_t msgModInfo = {true, true};
-			status = sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, NULL, false, pCallInfo->pProxyInfo, &pUacTransId);
+			status = sipProxy_forwardReq(SIPTU_APP_TYPE_PROXY, pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, NULL, false, pCallInfo->pProxyInfo, &pUacTransId);
 			if(status != OS_STATUS_OK)
 	        {
                 sipProxy_uasResponse(SIP_RESPONSE_500, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
@@ -551,14 +551,12 @@ osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRa
 		}
         case SIP_MSG_RESPONSE:
 		{
-			debug("received a sip response, rspCode=%d.", pSipTUMsg->sipMsgBuf.rspCode);
+			debug("received a sip response, rspCode=%d, method=%r, pCallInfo->seqNum=%d, seqNum=%d.", pSipTUMsg->sipMsgBuf.rspCode, &method, pCallInfo->seqNum, seqNum);
 
 			//check the seq num, and method, if seq and method match, if 1xx, restart timerC, and forward the response, if 2xx, change state, and stop timer C.  if >300, stop timerC, close the session. if not match, simply forward the response, stay in the same state.  Do not expect to receive response for CANCEL as transaction layer will drop it.
 			sipCallProxyState_e newState = pCallInfo->state;
-debug("to-remove, pCallInfo->seqNum=%d, seqNum=%d, seqEqual=%d, method=%r, osPL_strcmp(&method, INVITE)=%d", pCallInfo->seqNum, seqNum, pCallInfo->seqNum == seqNum, &method, osPL_strcmp(&method, "INVITE"));
 			if(pCallInfo->seqNum == seqNum && osPL_strcmp(&method, "INVITE")==0)
 			{
-debug("to-remove, I am here.");
 				if(pSipTUMsg->sipMsgBuf.rspCode > SIP_RESPONSE_100 && pSipTUMsg->sipMsgBuf.rspCode < SIP_RESPONSE_200)
 				{
 					pCallInfo->timerIdC = osRestartTimer(pCallInfo->timerIdC);
@@ -583,7 +581,6 @@ debug("to-remove, I am here.");
 					goto EXIT;
 				}
 
-debug("to-remove, before sipProxy_forwardResp.");
 				status = sipProxy_forwardResp(pSipTUMsg, pReqDecodedRaw, pTransId, pCallInfo->pProxyInfo);
 				if(newState != pCallInfo->state)
 				{
@@ -709,7 +706,7 @@ osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 			}
 
 		    sipProxy_msgModInfo_t msgModInfo = {true, true};
-            status = sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, NULL, isTpDirect, pCallInfo->pProxyInfo, &pUacTransId);
+            status = sipProxy_forwardReq(SIPTU_APP_TYPE_PROXY, pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, NULL, isTpDirect, pCallInfo->pProxyInfo, &pUacTransId);
             if(status != OS_STATUS_OK)
             {
                 sipProxy_uasResponse(SIP_RESPONSE_500, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
@@ -804,7 +801,7 @@ osStatus_e callProxyStateInitAck_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHd
 		{
 			void* pUacTransId;
 		    sipProxy_msgModInfo_t msgModInfo = {true, true};
-            status = sipProxy_forwardReq(pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, NULL, false, pCallInfo->pProxyInfo, &pUacTransId);
+            status = sipProxy_forwardReq(SIPTU_APP_TYPE_PROXY, pSipTUMsg, pReqDecodedRaw, NULL, &msgModInfo, NULL, false, pCallInfo->pProxyInfo, &pUacTransId);
             callProxy_addTrInfo(&pCallInfo->proxyTransInfo, pSipTUMsg->sipMsgBuf.reqCode, seqNum, pSipTUMsg->pTransId, pUacTransId, pCallInfo->pProxyInfo, false);
 
             if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_BYE)

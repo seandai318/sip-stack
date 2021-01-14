@@ -480,7 +480,7 @@ static osStatus_e icscfReg_forwardSipRegister(icscfRegInfo_t* pRegInfo, sipTuAdd
 #endif
 
     void* pTransId = NULL;
-    status = sipProxy_forwardReq(pRegInfo->pSipTUMsg, pRegInfo->pReqDecodedRaw, NULL, &msgModInfo, pNextHop, false, pRegInfo, &pTransId);
+    status = sipProxy_forwardReq(SIPTU_APP_TYPE_ICSCF, pRegInfo->pSipTUMsg, pRegInfo->pReqDecodedRaw, NULL, &msgModInfo, pNextHop, false, pRegInfo, &pTransId);
     if(status != OS_STATUS_OK || !pTransId)
     {
         logError("fails to forward sip request, status=%d, pTransId=%p.", status, pTransId);

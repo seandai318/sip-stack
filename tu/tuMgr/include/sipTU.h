@@ -23,11 +23,21 @@
 #include "sipTransIntf.h"
 
 
+
 //the whole value string for a hdr entry in a sip message
-typedef struct sipHdrRawValueStr {
+typedef struct {
+    bool isIntValue;
+    union {
+        osPointerLen_t* strValue;
+        int intValue;
+    };
+} sipTuHdrRawValue_t;
+
+
+typedef struct {
     sipHdrName_e nameCode;
-    osPointerLen_t value;
-} sipHdrRawValueStr_t;
+	sipTuHdrRawValue_t value;
+} sipTuHdrRawValueStr_t;
 
 
 //if there are multiple values for a hdr in a sip message, specify whether the action is towards to the top value or the whole values for the hdr in a sip message
@@ -83,7 +93,7 @@ osMBuf_t* sipTU_uacBuildRequest(sipRequest_e code, sipTuUri_t* pReqlineUri, osPo
  * can also add/delete extra hdrs.
  * if isProxy=true, all received via headers will be included, otherwise, they will be removed
  */
-osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipTuUri_t* pReqlineUri, size_t* pProtocolViaPos, sipPointerLen_t* pCallId);
+osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isProxy, sipHdrRawValueId_t* extraDelHdrList, uint8_t delHdrNum, sipTuHdrRawValueStr_t* extraAddHdrList, uint8_t addHdrNum, sipTransViaInfo_t* pTransViaId, sipTuUri_t* pReqlineUri, size_t* pProtocolViaPos, sipPointerLen_t* pCallId);
 
 /* build a proxy response based on the received SIP response
  * remove top via, and hdr in delHdrList, and add hdr in addHdrList
@@ -94,7 +104,7 @@ osMBuf_t* sipTU_b2bBuildRequest(sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isPr
  *
  * the delete hdr only deletes the top hdr value.  if a hdr has multiple values, and you want to delete all the hdr appearance in a sip message, you have to use a second pass to specially delete the hdr.
  */
-osMBuf_t* sipTU_buildProxyResponse(sipMsgDecodedRawHdr_t* pRespDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* addHdrList, uint8_t addHdrNum);
+osMBuf_t* sipTU_buildProxyResponse(sipMsgDecodedRawHdr_t* pRespDecodedRaw, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipTuHdrRawValueStr_t* addHdrList, uint8_t addHdrNum);
 
 
 /* build a UAS response based on the received sip Request
@@ -118,7 +128,7 @@ osStatus_e sipTU_copySipMsgHdr(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pMsgDec
 /* modify a SIP message.  the existing SIP message will be deleted.
  * return the modified pSipMsgBuf (if the function is executed without error) or the original pSipMsgBuf (if there is error in the execution of the function)
  */
-osMBuf_t* sipTU_modifySipMsgHdr(osMBuf_t* pSipBuf, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipHdrRawValueStr_t* addHdrList, uint8_t addHdrNum);
+osMBuf_t* sipTU_modifySipMsgHdr(osMBuf_t* pSipBuf, sipHdrRawValueId_t* delHdrList, uint8_t delHdrNum, sipTuHdrRawValueStr_t* addHdrList, uint8_t addHdrNum);
 
 
 /* add a sip header to the current pos of a SIP message under building. 

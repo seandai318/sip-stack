@@ -261,7 +261,7 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
 	mlogInfo(LM_CSCF, "regExpire=%d.", regExpire);
 
 	pRegInfo = osPlHash_getUserData(gScscfRegHash, pImpi, true);
-debug("to-remove, pImpi=%r, pRegInfo=%p.", pImpi, pRegInfo);
+	mdebug(LM_CSCF, "pImpi=%r, pRegInfo=%p.", pImpi, pRegInfo);
     if(!pRegInfo)
     {
 		if(regExpire == 0)
@@ -415,9 +415,11 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfc
         goto EXIT;
     }
 
+    mdebug(LM_CSCF, "next hop is %r", pRegInfo->tempWorkInfo.pAs);
+
     sipTuUri_t targetUri = {{*pRegInfo->tempWorkInfo.pAs}, true};
     sipTuAddr_t nextHop = {};
-debug("to-remove, pRegInfo->tempWorkInfo.pAs=%r, targetUri.rawUri=%r, isRaw=%d", pRegInfo->tempWorkInfo.pAs, &targetUri.rawSipUri, targetUri.isRaw);
+
     sipTu_convertUri2NextHop(&targetUri, &nextHop.ipPort);
 
 	//if nextHop is FQDN, perform DNS query
@@ -482,6 +484,7 @@ static void scscfReg_dnsCallback(dnsResResponse_t* pRR, void* pData)
 		goto EXIT;
 	}
 
+	mdebug(LM_CSCF, "send 3rd party register to %A.", &nextHop.sockAddr);
     if(scscfReg_forwardSipRegister(pRegInfo, &nextHop) != OS_STATUS_OK)
     {
         is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
@@ -656,24 +659,46 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 	msgModInfo.isChangeCallId = true;
 
 	//add to header
-	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_TO, &pRegInfo->tempWorkInfo.impu);
+	sipTuHdrRawValue_t hdrToRawValue = {false, {&pRegInfo->tempWorkInfo.impu}};
+	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_TO, &hdrToRawValue);
 
 	//add from header
 	sipPointerLen_t fromHdr = SIPPL_INIT(fromHdr);
 	sipPointerLen_t tagId = SIPPL_INIT(tagId);
 	sipHdrFromto_generateSipPLTagId(&tagId, true);
+	sipTuHdrRawValue_t hdrFromRawValue = {false, {&fromHdr.pl}};
 	len = osPrintf_buffer((char*)fromHdr.pl.p, SIP_HDR_MAX_SIZE, "%s;%r", SCSCF_URI_WITH_PORT, &tagId.pl);
-	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_FROM, &fromHdr.pl);
+	if(len < 0)
+	{
+        logError("fails to osPrintf_buffer for From header.");
+		status = OS_ERROR_INVALID_VALUE;
+		goto EXIT;	
+	}
+	else
+	{
+		fromHdr.pl.l = len;
+		sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_FROM, &hdrFromRawValue);
+	}
 
 	//add route
-	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_ROUTE, pRegInfo->tempWorkInfo.pAs);
+	sipTuHdrRawValue_t hdrRouteRawValue = {false, {pRegInfo->tempWorkInfo.pAs}};
+	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_ROUTE, &hdrRouteRawValue);
 
 	//add contact
 	osPointerLen_t scscfContact = {SCSCF_URI_WITH_PORT, strlen(SCSCF_URI_WITH_PORT)};
-	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_CONTACT, &scscfContact);
+	sipTuHdrRawValue_t hdrContactRawValue = {false, {&scscfContact}};
+	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_CONTACT, &hdrContactRawValue);
+
+	//add expires if the register from UE does not have Expires header
+	sipTuHdrRawValue_t hdrExpiresRawValue = {true, {.intValue=pRegInfo->ueContactInfo.regExpire}};
+	if(!pRegInfo->tempWorkInfo.pReqDecodedRaw->msgHdrList[SIP_HDR_EXPIRES])
+	{
+		sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_EXPIRES, &hdrExpiresRawValue);
+	}
 
 	//add P-Charging-Function-Addresses
 	sipPointerLen_t chgInfo = SIPPL_INIT(chgInfo);
+	sipTuHdrRawValue_t hdrChgRawValue = {false, {&chgInfo.pl}};
 	if(pRegInfo->hssChgInfo.chgAddrType != CHG_ADDR_TYPE_INVALID)
 	{
 		len = osPrintf_buffer((char*)chgInfo.pl.p, SIP_HDR_MAX_SIZE, "%s=\"%r\"", pRegInfo->hssChgInfo.chgAddrType == CHG_ADDR_TYPE_CCF ? "ccf" : "ecf", &pRegInfo->hssChgInfo.chgAddr.pl);
@@ -684,9 +709,8 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 		else
 		{
         	chgInfo.pl.l = len;
+			sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_P_CHARGING_FUNCTION_ADDRESSES, &hdrChgRawValue);		
 		}
-
-		sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_P_CHARGING_FUNCTION_ADDRESSES, &chgInfo.pl);		
 	}
 
 	//delete hdrs
@@ -697,7 +721,7 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_SUPPORTED, true);
 	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_PATH, true);
 	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_CONTACT, true);
-
+	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_AUTHORIZATION, true);
 #if 0
     proxyInfo_t* pProxyInfo = oszalloc(sizeof(proxyInfo_t), NULL);
     pProxyInfo->proxyOnMsg = NULL;		//for cscf proxyOnMsg is not used since cscf does not distribute message further after receiving from TU
@@ -706,7 +730,7 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 
 	sipTuUri_t targetUri = {*pRegInfo->tempWorkInfo.pAs, true};
 	void* pTransId = NULL;
-	status = sipProxy_forwardReq(pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, &targetUri, &msgModInfo, pNextHop, false, pRegInfo, &pTransId);
+	status = sipProxy_forwardReq(SIPTU_APP_TYPE_SCSCF_REG, pRegInfo->tempWorkInfo.pTUMsg, pRegInfo->tempWorkInfo.pReqDecodedRaw, &targetUri, &msgModInfo, pNextHop, false, pRegInfo, &pTransId);
     if(status != OS_STATUS_OK || !pTransId)
     {
         logError("fails to forward sip request, status=%d, pTransId=%p.", status, pTransId);

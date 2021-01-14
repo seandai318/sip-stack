@@ -273,7 +273,7 @@ logError("to-remove, call sipTransInit, size=%u", SIP_CONFIG_TRANSACTION_HASH_BU
                     osMBuf_t* udpBuf = osMBuf_alloc(SIP_CONFIG_TRANSPORT_TCP_BUFFER_SIZE);
                     memcpy(udpBuf->buf, udpRcv, len);
 
-                    debug("to-remove, peer=%A.", &peerAddr);
+                    logInfo("receive a udp message from peer=%A, fd=%d.", &peerAddr, events[i].data.fd);
                     udpBuf->end = len;
 					udpCallback(TRANSPORT_STATUS_UDP, events[i].data.fd, udpBuf);
                 }

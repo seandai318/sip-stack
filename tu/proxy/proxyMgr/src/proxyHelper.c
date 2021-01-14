@@ -23,7 +23,7 @@
 
 
 //proxy forwards the request
-osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipTuUri_t* pTargetUri,  sipProxy_msgModInfo_t* pHdrModInfo, sipTuAddr_t* pNextHop, bool isTpDirect, void* proxyInfo, void** ppTransId)
+osStatus_e sipProxy_forwardReq(sipTuAppType_e proxyType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipTuUri_t* pTargetUri,  sipProxy_msgModInfo_t* pHdrModInfo, sipTuAddr_t* pNextHop, bool isTpDirect, void* proxyInfo, void** ppTransId)
 
 {
 	osStatus_e status = OS_STATUS_OK;
@@ -48,16 +48,10 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
     size_t topViaProtocolPos = 0;
     sipTransInfo_t sipTransInfo;
     sipTransViaInfo_t viaId;
-#if 0	//use network address
-    viaId.host = pSipTUMsg->pPeer->ip;
-    viaId.port = pSipTUMsg->pPeer->port;
-#else
 	osIpPort_t osPeer;
 	osConvertntoPL(pSipTUMsg->pPeer, &osPeer);
 	viaId.host = osPeer.ip.pl;
 	viaId.port = osPeer.port;
-#endif
-//logError("to-remove, PEER, host=%r, port=%d", &pSipTUMsg->pPeer->ip, pSipTUMsg->pPeer->port);
 
     //prepare message forwarding
     sipHdrRawValueId_t delList = {SIP_HDR_ROUTE, true};
@@ -89,8 +83,8 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 		osPL_setStr(&rr, ipPort, len);
 		addNum = 1;
 	}
-    sipHdrRawValueStr_t addList = {SIP_HDR_RECORD_ROUTE, rr};
-	
+    sipTuHdrRawValueStr_t addList = {SIP_HDR_RECORD_ROUTE, {false, {&rr}}};
+
     //forward the SIP INVITE, add top via, remove top Route, reduce the max-forarded by 1.  The viaId shall be filled with the real peer IP/port
 	if(pHdrModInfo->isAuto)
 	{
@@ -129,7 +123,7 @@ osStatus_e sipProxy_forwardReq(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 		}
 	}
 
-    void* pTransId = sipTU_sendReq2Tr(pSipTUMsg->sipMsgBuf.reqCode, pReq, &viaId, pNextHop ? pNextHop : &nextHop, isTpDirect, SIPTU_APP_TYPE_PROXY, topViaProtocolPos, proxyInfo);
+    void* pTransId = sipTU_sendReq2Tr(pSipTUMsg->sipMsgBuf.reqCode, pReq, &viaId, pNextHop ? pNextHop : &nextHop, isTpDirect, proxyType, topViaProtocolPos, proxyInfo);
 	if(!pTransId && !isTpDirect)
 	{
 		logError("fails to sipTU_sendReq2Tr.");
