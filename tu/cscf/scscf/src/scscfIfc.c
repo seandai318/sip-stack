@@ -63,6 +63,7 @@ typedef struct {
 typedef struct {
 	scscfIfcSptType_e sptType;
 	bool isConditionNegated;
+	uint8_t regTypeMap;		//each one of the three regType occupies one bit, 1<<reg_type
 	union {
 		osPointerLen_t reqUri;
 		sipRequest_e method;
@@ -86,13 +87,6 @@ typedef struct {
 } scscfIfc_t;	
 
 
-#if 0
-typedef struct {
-	uint32_t sIfcGrpId;	//a sifc group id, multiple sIfc may share one group Id
-	scscfIfc_t sIfc;		
-} scscfIfcInfo_t;
-#endif
-
 typedef enum {
 	SCSCF_IFC_SPT,
 	SCSCF_IFC_Group,
@@ -108,7 +102,8 @@ typedef enum {
 	SCSCF_IFC_SharedIFCSetID,
 	SCSCF_IFC_DefaultHandling,
 	SCSCF_IFC_ConditionNegated,
-	SCSCF_IFC_ConditionTypeCNF,	
+	SCSCF_IFC_ConditionTypeCNF,
+	SCSCF_IFC_RegistrationType,	
 	SCSCF_IFC_InitialFilterCriteria,
     SCSCF_IFC_XML_MAX_DATA_NAME_NUM,
 } scscfIfc_xmlDataName_e;
@@ -130,6 +125,7 @@ osXmlData_t scscfIfc_xmlData[SCSCF_IFC_XML_MAX_DATA_NAME_NUM] = {
     {SCSCF_IFC_DefaultHandling,	{"DefaultHandling", sizeof("DefaultHandling")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
     {SCSCF_IFC_ConditionNegated,	{"ConditionNegated", sizeof("ConditionNegated")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
     {SCSCF_IFC_ConditionTypeCNF,	{"ConditionTypeCNF", sizeof("ConditionTypeCNF")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
+    {SCSCF_IFC_RegistrationType, 	{"RegistrationType", sizeof("RegistrationType")-1}, OS_XML_DATA_TYPE_SIMPLE, false},
     {SCSCF_IFC_InitialFilterCriteria, {"InitialFilterCriteria", sizeof("InitialFilterCriteria")-1}, OS_XML_DATA_TYPE_COMPLEX, true},
 }; 
 
@@ -233,10 +229,21 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 		//if last As failed, and the default handling is terminated, stop here.
 		if(!pIfcEvent->isLastAsOK && !pIfc->isDefaultSessContinued)
 		{
+			mdebug(LM_CSCF, "!isLastAsOK && !pIfc->isDefaultSessContinued, quit.");
 			goto EXIT;
 		}
 
 		osListElement_t* pSptGrpLE = pIfc->sptGrpList.head;
+
+        //if an IFC has empty SPT, directly use AS
+        if(!pSptGrpLE)
+        {
+            mdebug(LM_CSCF, "the IFC(%p) does not have SPT, just use the AS(%r).", pIfc, &pIfc->asName);
+            pAs = &pIfc->asName;
+            goto EXIT;
+        }
+
+		//there is SPT inside the IFC, check the conditions
 		while(pSptGrpLE)
 		{
 			if(pIfc->conditionTypeCNF)
@@ -260,10 +267,10 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 			pSptGrpLE = pSptGrpLE->next;
 		}
 
-		//if an IFC has empty SPT, directly use AS
-		if(!pSptGrpLE)
+		//when getting here, for pIfc->conditionTypeCNF, all conditions meet. for !pIfc->conditionTypeCNF, the ifc match fails, need to go to next ifc
+		if(pIfc->conditionTypeCNF)
 		{
-			mdebug(LM_CSCF, "the IFC(%p) does not have SPT, just use the AS(%r).", pIfc, &pIfc->asName);
+			mdebug(LM_CSCF, "conditionTypeCNF, all SPTs match for the IFC(%p), use the AS(%r).", pIfc, &pIfc->asName);
 			pAs = &pIfc->asName;
 			goto EXIT;
 		}
@@ -288,13 +295,22 @@ static bool scscfIfcSptGrpIsMatch(scscfIfcSptGrp_t* pSptGrp, bool isOr, sipMsgDe
 		while(pLE)
 		{
 			scscfIfcSptInfo_t* pSpt = pLE->data;
-debug("to-remove, sptType=%d, isConditionNegated=%d, method=%d, sessCase=%d", pSpt->sptType, pSpt->isConditionNegated, pSpt->method, pSpt->sessCase);
 			switch(pSpt->sptType)
 			{
 				case SCSCF_IFC_SPT_TYPE_METHOD:
 					if((pSpt->method == pIfcEvent->sipMethod && !pSpt->isConditionNegated) || (pSpt->method != pIfcEvent->sipMethod && pSpt->isConditionNegated))
 					{
-						isMatch = true;
+						if(pSpt->method == SIP_METHOD_REGISTER)
+						{
+							if(((pSpt->regTypeMap & 1<<pIfcEvent->regType) && !pSpt->isConditionNegated) || !((pSpt->regTypeMap & 1<<pIfcEvent->regType) && pSpt->isConditionNegated))
+							{
+								isMatch = true;
+							}
+						}
+						else
+						{
+							isMatch = true;
+						}
 						goto EXIT;
 					}
 					break;			
@@ -328,6 +344,16 @@ debug("to-remove, sptType=%d, isConditionNegated=%d, method=%d, sessCase=%d", pS
                         isMatch = false;
                         goto EXIT;
                     }
+
+					//for REGISTER, one more check
+                    if(pSpt->method == SIP_METHOD_REGISTER)
+                    {
+                        if(((pSpt->regTypeMap & 1<<pIfcEvent->regType) && pSpt->isConditionNegated) || !((pSpt->regTypeMap & 1<<pIfcEvent->regType) && !pSpt->isConditionNegated))
+                        {
+                            isMatch = false;
+							goto EXIT;
+                        }
+					}
                     break;
                 case SCSCF_IFC_SPT_TYPE_REQUEST_URI:
                 case SCSCF_IFC_SPT_TYPE_SESSION_CASE:
@@ -438,11 +464,16 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 				osList_append(&fpCurSptGrp->sptGrp, fpCurSpt);
                 mdebug(LM_CSCF, "dataName=%r, close a SPT(%p)", &scscfIfc_xmlData[SCSCF_IFC_SPT].dataName, fpCurSpt);
 
+				if(!fpCurSpt->regTypeMap)
+				{
+					fpCurSpt->regTypeMap = 0x7;	//if there is no regType configured for this SPT, set to match all
+				}
 				fpCurSpt = NULL;
 			}
 			else
 			{
 				fpCurSpt = osmalloc(sizeof(scscfIfcSptInfo_t), NULL);
+				fpCurSpt->regTypeMap = 0;
 	            mdebug(LM_CSCF, "dataName=%r, start a new SPT(%p)", &scscfIfc_xmlData[SCSCF_IFC_SPT].dataName, fpCurSpt);
 			}
 
@@ -451,6 +482,18 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 			fpCurSpt->isConditionNegated = pXmlValue->xmlInt > 0 ? true : false;			
 
 			mdebug(LM_CSCF, "dataName=%r, SPT(%p) isConditionNegated=%d", &scscfIfc_xmlData[SCSCF_IFC_ConditionNegated].dataName, fpCurSpt, fpCurSpt->isConditionNegated);
+			break;
+		case SCSCF_IFC_RegistrationType:
+			if(pXmlValue->xmlInt > SCSCF_IFC_REGISTRATION_TYPE_DEREG)
+			{
+				logError("the SPT registration type value(%d) exceeds the max allowed(%d).", pXmlValue->xmlInt, SCSCF_IFC_REGISTRATION_TYPE_DEREG);
+			}
+			else
+			{
+				fpCurSpt->regTypeMap |= 1 << pXmlValue->xmlInt;
+			}
+
+            mdebug(LM_CSCF, "dataName=%r, SPT(%p) regType value=%d, SPT regTypemap=0x%x", &scscfIfc_xmlData[SCSCF_IFC_RegistrationType].dataName, fpCurSpt, pXmlValue->xmlInt, fpCurSpt->regTypeMap);
 			break;
 		case SCSCF_IFC_Group:
 			//assume all SPTs with the same group value are continuous
@@ -469,9 +512,14 @@ static void scscfIfc_parseSIfcCB(osXmlData_t* pXmlValue, void* nsInfo, void* app
 		case SCSCF_IFC_TriggerPoint:
             if(pXmlValue->isEOT)
             {
+                //if there is sptGrp remaining, push into the ifc's sptGrpList, and reset fpCurSptGrp, fpCurSpt, fCurGrp (they shall be initiated for each ifc)
 				if(fpCurSptGrp)
 				{
 					osList_append(&fpIfc->sptGrpList, fpCurSptGrp);
+					fpCurSptGrp = NULL;
+					fpCurSpt = NULL;
+					fCurGrp = -1;
+
 	                mdebug(LM_CSCF, "dataName=%r, IFC(%p), SCSCF_IFC_TriggerPoint closes, SPT group(%p) is added into fpIfc->sptGrpList.", &scscfIfc_xmlData[SCSCF_IFC_TriggerPoint].dataName, fpIfc, fpCurSptGrp);
 				}
 			}
@@ -544,10 +592,10 @@ scscfIfcRegType_e scscfIfc_mapSar2IfcRegType(scscfRegSarRegType_e sarRegType)
 	switch(sarRegType)
 	{
     	case SCSCF_REG_SAR_RE_REGISTER:
-			return SCSCF_IFC_REG_TYPE_RE_REG;
+			return SCSCF_IFC_REGISTRATION_TYPE_REREG;
 			break;
     	case SCSCF_REG_SAR_DE_REGISTER:
-			return SCSCF_IFC_REG_TYPE_DE_REG;
+			return SCSCF_IFC_REGISTRATION_TYPE_DEREG;
 			break;
         case SCSCF_REG_SAR_REGISTER:
     	case SCSCF_REG_SAR_UN_REGISTER:
@@ -556,7 +604,7 @@ scscfIfcRegType_e scscfIfc_mapSar2IfcRegType(scscfRegSarRegType_e sarRegType)
 			break;
 	}
 
-	return SCSCF_IFC_REG_TYPE_INITIAL_REG;
+	return SCSCF_IFC_REGISTRATION_TYPE_INITIAL;
 }
 
 
@@ -594,7 +642,8 @@ EXIT:
 static osStatus_e scscfIfc_constructXml(osMBuf_t* origSIfcXmlBuf)
 {
 	osStatus_e status = OS_STATUS_OK;
-    static int tagLen = sizeof("</Extension")-1;
+    static int extensionTagLen = sizeof("</Extension")-1;
+	static int sIfcSetTagLen = sizeof("</SharedIFCSetID")-1;
 	bool isTagExtensionFound = false;
 
 	if(!origSIfcXmlBuf)
@@ -612,13 +661,25 @@ static osStatus_e scscfIfc_constructXml(osMBuf_t* origSIfcXmlBuf)
 	size_t origPos = 0;
 	while(origSIfcXmlBuf->pos < origSIfcXmlBuf->end)
 	{
-		if((origSIfcXmlBuf->size - origSIfcXmlBuf->pos) > tagLen && (OSMBUF_CHAR(origSIfcXmlBuf, 0) == '<' && OSMBUF_CHAR(origSIfcXmlBuf, 1) == '/' && OSMBUF_CHAR(origSIfcXmlBuf, 2) == 'E'))
+		//look for <Extension> </Extension> that wraps SharedIFCSetID element
+		if((origSIfcXmlBuf->end - origSIfcXmlBuf->pos) > sIfcSetTagLen && (OSMBUF_CHAR(origSIfcXmlBuf, 0) == '<' && OSMBUF_CHAR(origSIfcXmlBuf, 1) == '/' && OSMBUF_CHAR(origSIfcXmlBuf, 2) == 'S'))
 		{
-			if(strncasecmp(&OSMBUF_CHAR(origSIfcXmlBuf, 0), "</Extension", tagLen) == 0 && (OSMBUF_CHAR(origSIfcXmlBuf, tagLen) == '>' || OSMBUF_CHAR(origSIfcXmlBuf, tagLen) == ' ' || OSMBUF_CHAR(origSIfcXmlBuf, tagLen) == 0x09))
+			if(strncasecmp(&OSMBUF_CHAR(origSIfcXmlBuf, 0), "</SharedIFCSetID", sIfcSetTagLen) == 0 && (OSMBUF_CHAR(origSIfcXmlBuf, sIfcSetTagLen) == '>' || OSMBUF_CHAR(origSIfcXmlBuf, sIfcSetTagLen) == ' ' || OSMBUF_CHAR(origSIfcXmlBuf, sIfcSetTagLen) == 0x09))
 			{
-				origSIfcXmlBuf->pos += tagLen;
-				isTagExtensionFound = true;
-				mdebug(LM_CSCF, "isTagExtensionFound=%d, pos=%ld", isTagExtensionFound, origSIfcXmlBuf->pos);
+				origSIfcXmlBuf->pos += sIfcSetTagLen;
+				osMBuf_skipUntil(origSIfcXmlBuf, '<');
+		
+				//after identified </SharedIFCSetID>, search for </Extension>		
+				if((origSIfcXmlBuf->end - origSIfcXmlBuf->pos) > extensionTagLen && (OSMBUF_CHAR(origSIfcXmlBuf, 0) == '<' && OSMBUF_CHAR(origSIfcXmlBuf, 1) == '/' && OSMBUF_CHAR(origSIfcXmlBuf, 2) == 'E'))
+				{
+
+					if(strncasecmp(&OSMBUF_CHAR(origSIfcXmlBuf, 0), "</Extension", extensionTagLen) == 0 && (OSMBUF_CHAR(origSIfcXmlBuf, extensionTagLen) == '>' || OSMBUF_CHAR(origSIfcXmlBuf, extensionTagLen) == ' ' || OSMBUF_CHAR(origSIfcXmlBuf, extensionTagLen) == 0x09))
+					{
+						origSIfcXmlBuf->pos += extensionTagLen;
+						isTagExtensionFound = true;
+						mdebug(LM_CSCF, "isTagExtensionFound=%d, pos=%ld", isTagExtensionFound, origSIfcXmlBuf->pos);
+					}
+				}
 			}
 		}
 		else if(isTagExtensionFound && OSMBUF_CHAR(origSIfcXmlBuf, 0) == '<')
@@ -641,7 +702,7 @@ static osStatus_e scscfIfc_constructXml(osMBuf_t* origSIfcXmlBuf)
 
 	osMBuf_writeBuf(gSIfcXmlBuf, SIFC_XSD_SUFFIX, sizeof(SIFC_XSD_SUFFIX)-1, true);
 
-debug("to-remove, gSIfcXmlBuf=\n%M", gSIfcXmlBuf);
+	mdebug(LM_CSCF, "gSIfcXmlBuf=\n%M", gSIfcXmlBuf);
 EXIT:
 	return status;
 }
@@ -664,7 +725,7 @@ static void scscfIfc_dbgList(osList_t* pSIfcSet)
 		scscfIfc_t* pSIfc = pLE->data;
 		int j=0;
 	
-		mdebug1(LM_CSCF, "sifc-%d\n", i++);
+		mdebug1(LM_CSCF, "sifc-%d(%p)\n", i++, pSIfc);
 		mdebug1(LM_CSCF, "    sifc groupId: %d\n", pSIfc->sIfcGrpId);
 		mdebug1(LM_CSCF, "    conditionTypeCNF: %d\n", pSIfc->conditionTypeCNF);
 		mdebug1(LM_CSCF, "    priority: %d\n", pSIfc->priority);
@@ -674,19 +735,21 @@ static void scscfIfc_dbgList(osList_t* pSIfcSet)
 		osListElement_t* pSptGrpLE = pSIfc->sptGrpList.head;
 		while(pSptGrpLE)
 		{
+            scscfIfcSptGrp_t* pSptGrp = pSptGrpLE->data;
 			int k=0;
-			mdebug1(LM_CSCF, "    spt group-%d\n", k++);
-			scscfIfcSptGrp_t* pSptGrp = pSptGrpLE->data;
+			mdebug1(LM_CSCF, "    spt group-%d(%p)\n", k++, pSptGrp);
 			osListElement_t* pSptLE = pSptGrp->sptGrp.head;
+			int l=0;
 			while(pSptLE)
 			{ 
 				scscfIfcSptInfo_t* pSpt = pSptLE->data;
+				mdebug1(LM_CSCF, "        spt-%d(%p)\n", l++, pSpt);
                 mdebug1(LM_CSCF, "        isConditionNegated=%d\n", pSpt->isConditionNegated);
 				mdebug1(LM_CSCF, "        sptType=%d\n", pSpt->sptType);
 				switch(pSpt->sptType)
 				{
 				    case SCSCF_IFC_SPT_TYPE_METHOD:
-						mdebug1(LM_CSCF, "            method=%d\n\n", pSpt->method);
+						mdebug1(LM_CSCF, "            method=%d, regTypeMap=0x%x\n\n", pSpt->method, pSpt->regTypeMap);
 						break;
     				case SCSCF_IFC_SPT_TYPE_REQUEST_URI:
 						mdebug1(LM_CSCF, "            reqUri=%r\n\n", &pSpt->reqUri);

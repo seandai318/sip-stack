@@ -12,10 +12,16 @@ src = $(wildcard $(SRC_DIR)/*.c)
 obj = $(src:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 dep = $(obj:.o=.d)  # one dependency file for each source
 
-CFLAGS=$(INC) -g -DPREMEM
-DEBUG = true
-ifeq ($(DEBUG), true)
-    override CFLAGS += -DDEBUG -DPREMEM_DEBUG
+ifdef $(APP_BASE)
+    include $(APP_BASE)/Makefile.cflags
+else
+    CC=gcc
+    AR=ar
+    CFLAGS=$(INC) -g -DPREMEM -std=gnu99
+    DEBUG = true
+    ifeq ($(DEBUG), true)
+        override CFLAGS += -DDEBUG -DPREMEM_DEBUG
+    endif
 endif
 
 LDFLAGS = -lpthread

@@ -37,6 +37,7 @@ static bool sipTuDest_getNextHop(sipTuDestRecord_t* pDestRec, sipTuAddr_t* pNext
 static int sipTuDest_getSamePriorityNum(osListElement_t* pLE, int* weightSum);
 static void sipTuDest_onQTimeout(uint64_t timerId, void* data);
 static void sipTuDest_onKATimeout(uint64_t timerId, void* data);
+static void sipTuDest_dbgList();
 static void sipTuDestRecord_cleanup(void* data);
 static void sipTuDestInfo_cleanup(void* data);
 
@@ -76,6 +77,7 @@ bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_
 	}
 
 	mdebug(LM_SIPAPP, "pRR->rrType=%d, qName=%r, isDnsResCached=%d, isNoError=%d", pRR->rrType, &qName, isDnsResCached, isNoError);
+sipTuDest_dbgList();
 
 	bool isAddDestRec = false;
 	sipTuDestRecord_t* pDestRec = NULL;
@@ -98,16 +100,17 @@ bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_
 					{
 						osList_deleteElementAll(pLE, true);
 					}
+
+					break;
 				}
 			}
-			else
+
+            //if !isDnsResCached or pLE ==NULL (may happen when the dest KA times out, but on dns cache side, there is still record)				
+			if(isNoError)
 			{
-				if(isNoError)
-				{
-					pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
-					status = sipTuDest_msgAddRec(pDnsRsp, pDestRec);
-					isAddDestRec = true;
-				}
+				pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
+				status = sipTuDest_msgAddRec(pDnsRsp, pDestRec);
+				isAddDestRec = true;
 			}
 			break;			
 		case DNS_RR_DATA_TYPE_MSGLIST:
@@ -127,25 +130,26 @@ bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_
                 	{
                     	osList_deleteElementAll(pLE, true);
                 	}
+
+					break;
             	}
 			}
-			else
+		
+			//if !isDnsResCached or pLE ==NULL (may happen when the dest KA times out, but on dns cache side, there is still record)
+			if(isNoError)
 			{
-				if(isNoError)
+           		pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
+				status = sipTuDest_msgAddRec(pDnsRsp, pDestRec);
+
+				osListElement_t* pRRLE = pRR->dnsRspList.head;
+				while(pRRLE && pRRLE->data != pDnsRsp)
 				{
-            		pDestRec = oszalloc(sizeof(sipTuDestRecord_t), sipTuDestRecord_cleanup);
-					status = sipTuDest_msgAddRec(pDnsRsp, pDestRec);
+					sipTUDest_msgListAddARec(pDestRec, pRRLE->data, pRR);
 
-					osListElement_t* pRRLE = pRR->dnsRspList.head;
-					while(pRRLE && pRRLE->data != pDnsRsp)
-					{
-						sipTUDest_msgListAddARec(pDestRec, pRRLE->data, pRR);
-
-						pRRLE = pRRLE->next;
-					}
-
-                	isAddDestRec = true;
+					pRRLE = pRRLE->next;
 				}
+
+               	isAddDestRec = true;
 			}
 			break;
 		case DNS_RR_DATA_TYPE_STATUS:
@@ -166,7 +170,7 @@ bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_
 		isFound = sipTuDest_getNextHop(pDestRec, pNextHop);
 	}
 
-	mdebug(LM_SIPAPP, "isFound=%d, pNextHop->sockAddr=%A", isFound, isFound ? &pNextHop->sockAddr : NULL);
+    mdebug(LM_SIPAPP, "qName=%r, isFound=%d%s%A", &qName, isFound, isFound ? ", pNextHop->sockAddr=" : "", isFound ? &pNextHop->sockAddr: NULL);
 
 EXIT:
 	return isFound;
@@ -382,6 +386,7 @@ static void sipTuDest_onKATimeout(uint64_t timerId, void* data)
 	}
 	pDestRec->kaTimerId = 0;
 
+	mdebug(LM_SIPAPP, "ka timerId(0x%lx) times out, delete pDestRec(%p) for destName=%r from gDestRecordList.", timerId, pDestRec, &pDestRec->destName);
 	osList_deletePtrElement(&gDestRecordList, pDestRec);
 	osfree(pDestRec);
 }
@@ -788,8 +793,10 @@ static bool sipTuDest_getNextHop(sipTuDestRecord_t* pDestRec, sipTuAddr_t* pNext
 			continue;
 		}
 
+		//the pLE here is the highest priority(smallest value)  element, but there may have multiple elements witht he same priority, let's check
 		int weightSum = 0;
-		if(sipTuDest_getSamePriorityNum(pLE, &weightSum) == 1)
+		int destSamePriNum = sipTuDest_getSamePriorityNum(pLE, &weightSum);
+		if(destSamePriNum == 1)
 		{
 			pNextHop->isSockAddr = true;
 			pNextHop->sockAddr = pDestInfo->destAddr;
@@ -798,6 +805,7 @@ static bool sipTuDest_getNextHop(sipTuDestRecord_t* pDestRec, sipTuAddr_t* pNext
 		}
 		else
 		{
+			//find multiple elements with the same priority, use weight to select a element
 		    struct timespec tp;
     		clock_gettime(CLOCK_REALTIME, &tp);
 			int rand = tp.tv_nsec % (weightSum+1);
@@ -905,3 +913,26 @@ static void sipTuDestInfo_cleanup(void* data)
 		osStopTimer(pDestInfo->qTimerId);
 	}
 }
+
+
+static void sipTuDest_dbgList()
+{
+	mdebug(LM_SIPAPP, "dest record list:");
+
+	int i=0;
+	osListElement_t* pLE = gDestRecordList.head;
+	while(pLE)
+	{
+		mdebug1(LM_SIPAPP, "i=%d, destName=%r\n", i++, &((sipTuDestRecord_t*)pLE->data)->destName);
+		osListElement_t* pDestLE = ((sipTuDestRecord_t*)pLE->data)->destList.head;
+		while(pDestLE)
+		{
+			sipTuDestInfo_t* pDestInfo = pDestLE->data;
+			mdebug1(LM_SIPAPP, "    isQuarantined=%d, tpType=%d, priority=%d, weight=%d, destAddr=%A\n", pDestInfo->isQuarantined, pDestInfo->tpType, pDestInfo->priority, pDestInfo->weight, &pDestInfo->destAddr);
+			pDestLE = pDestLE->next;
+		}
+
+		pLE = pLE->next;
+	}
+}    
+		

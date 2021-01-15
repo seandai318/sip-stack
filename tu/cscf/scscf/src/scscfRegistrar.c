@@ -368,6 +368,7 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
 	bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
 	if(is3rdPartyRegDone)
 	{
+        logInfo("3rd party registration is completed for impi=%r.", &pRegInfo->tempWorkInfo.impi);
    		pRegInfo->tempWorkInfo.regWorkState =  SCSCF_REG_WORK_STATE_NONE;
 		if(pRegInfo->tempWorkInfo.sarRegType == SCSCF_REG_SAR_RE_REGISTER || pRegInfo->tempWorkInfo.sarRegType == SCSCF_REG_SAR_REGISTER)
 		{
@@ -450,7 +451,7 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfc
         	goto EXIT;
     	}
 	}
-	
+
 	if(scscfReg_forwardSipRegister(pRegInfo, &nextHop) != OS_STATUS_OK)
 	{
 		pIfcEvent->isLastAsOK = false;
@@ -474,8 +475,17 @@ static void scscfReg_dnsCallback(dnsResResponse_t* pRR, void* pData)
 	}
 
 	scscfRegInfo_t* pRegInfo = pData;	
+
+    scscfIfcEvent_t ifcEvent = {false, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(pRegInfo->tempWorkInfo.sarRegType)};
+	if(pRR->rrType == DNS_RR_DATA_TYPE_STATUS)
+	{
+		logInfo("dns query failed, qName=%r, resStatus=%d, dnsRCode=%d", pRR->status.pQName, pRR->status.resStatus, pRR->status.dnsRCode);
+
+        is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+		goto EXIT;
+    }
+
     sipTuAddr_t nextHop = {};
-	scscfIfcEvent_t ifcEvent = {false, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(pRegInfo->tempWorkInfo.sarRegType)};
 	if(!sipTu_getBestNextHop(pRR, false, &nextHop))
 	{
 		logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
@@ -496,6 +506,7 @@ EXIT:
 
 	if(is3rdPartyRegDone)
 	{
+		logInfo("3rd party registration is completed for impi=%r.", &pRegInfo->tempWorkInfo.impi); 
         pRegInfo->tempWorkInfo.regWorkState =  SCSCF_REG_WORK_STATE_NONE;
         if(pRegInfo->tempWorkInfo.sarRegType == SCSCF_REG_SAR_RE_REGISTER || pRegInfo->tempWorkInfo.sarRegType == SCSCF_REG_SAR_REGISTER)
         {
@@ -521,9 +532,9 @@ static osStatus_e scscfReg_onSipResponse(sipTUMsgType_e msgType, sipTUMsg_t* pSi
 		goto EXIT;
     }
 
-    logInfo("received a sip response, rspCode=%d.", pSipTUMsg->sipMsgBuf.rspCode);
+    logInfo("received a sip response, rspCode=%d, pRegInfo=%p.", pSipTUMsg->sipMsgBuf.rspCode, pSipTUMsg->pTUId);
 
-    scscfRegInfo_t* pRegInfo = ((proxyInfo_t*)pSipTUMsg->pTUId)->pCallInfo;
+    scscfRegInfo_t* pRegInfo = pSipTUMsg->pTUId;
     if(!pRegInfo)
     {
         logError("null pointer, pRegInfo is null.");
@@ -541,6 +552,7 @@ static osStatus_e scscfReg_onSipResponse(sipTUMsgType_e msgType, sipTUMsg_t* pSi
     		bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
     		if(is3rdPartyRegDone)
     		{
+		        logInfo("3rd party registration is completed for impi=%r.", &pRegInfo->tempWorkInfo.impi);
         		pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_NONE;
         		scscfRegTempWorkInfo_cleanup(&pRegInfo->tempWorkInfo);
 
@@ -593,7 +605,9 @@ static osStatus_e scscfReg_onTrFailure(sipTUMsgType_e msgType, sipTUMsg_t* pSipT
 		goto EXIT;
 	}
 
-    scscfRegInfo_t* pRegInfo = ((proxyInfo_t*)pSipTUMsg->pTUId)->pCallInfo;
+	logInfo("receive a TrFailure, sipTuMsgType=%d, pRegInfo=%p", pSipTUMsg->sipTuMsgType, pSipTUMsg->pTUId);
+
+	scscfRegInfo_t* pRegInfo = pSipTUMsg->pTUId;
     if(!pRegInfo)
     {
         logError("pRegInfo is NULL.");
@@ -611,10 +625,11 @@ static osStatus_e scscfReg_onTrFailure(sipTUMsgType_e msgType, sipTUMsg_t* pSipT
     {
         case SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE:
         {
-			bool is3rdPartyRegDone = false;
 			scscfIfcEvent_t ifcEvent = {false, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(pRegInfo->tempWorkInfo.sarRegType)};
-			if(is3rdPartyRegDone == scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent))
+			bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+			if(is3rdPartyRegDone)
 			{
+		        logInfo("3rd party registration is completed for impi=%r.", &pRegInfo->tempWorkInfo.impi);
 				pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_NONE;
 				scscfRegTempWorkInfo_cleanup(&pRegInfo->tempWorkInfo);
 
@@ -722,11 +737,6 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_PATH, true);
 	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_CONTACT, true);
 	sipProxyMsgModInfo_delHdr(msgModInfo.extraDelHdr, &msgModInfo.delNum, SIP_HDR_AUTHORIZATION, true);
-#if 0
-    proxyInfo_t* pProxyInfo = oszalloc(sizeof(proxyInfo_t), NULL);
-    pProxyInfo->proxyOnMsg = NULL;		//for cscf proxyOnMsg is not used since cscf does not distribute message further after receiving from TU
-    pProxyInfo->pCallInfo = pRegInfo;    
-#endif
 
 	sipTuUri_t targetUri = {*pRegInfo->tempWorkInfo.pAs, true};
 	void* pTransId = NULL;
