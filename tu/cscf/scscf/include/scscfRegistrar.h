@@ -2,6 +2,8 @@
 #define _SCSCF_REGISTRAR_H
 
 
+#include "diaMsg.h"
+
 #include "sipHdrMisc.h"
 #include "sipTUIntf.h"
 #include "sipTU.h"
@@ -82,6 +84,7 @@ typedef struct {
 typedef struct {
 	scscfRegWorkState_e	regWorkState;	//indicating in what stage a registration is
     scscfRegSarRegType_e sarRegType;    //when not in SAR procedure, this shall be set to SCSCF_REG_SAR_INVALID
+	bool isIfcContinuedDH;				//if a ifc wants to continue the session when the current AS fails
 	osPointerLen_t impi;
 	osPointerLen_t impu;
 	sipTUMsg_t* pTUMsg;
@@ -91,7 +94,6 @@ typedef struct {
 	osListElement_t* pLastIfc;		//points to the last ifc that was used to find the AS
 	struct sockaddr_in sipLocalHost;	//if reg was recived via icscf, this stores icscf address, otherwise, scscf address
 } scscfRegTempWorkInfo_t;
-
 
 
 typedef struct {
@@ -112,8 +114,12 @@ typedef struct {
 
 
 void scscfReg_onTimeout(uint64_t timerId, void* data);
-void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo);
+void* scscfReg_onSessSaa(diaMsgDecoded_t* pDiaDecoded, sipResponse_e* rspCode, sIfcIdList_t* pSIfcIdList);
+osStatus_e scscfReg_createSubHash(scscfRegInfo_t* pRegInfo, bool isAllowSameId);
+void* scscfReg_getRegInfo(osPointerLen_t* pImpu, scscfRegState_e* pRegState, sIfcIdList_t* pSIfcIdList);
 osPointerLen_t* scscfReg_getNoBarImpu(scscfRegIdentity_t ueList[], uint8_t ueNum, bool isTelPreferred);
+osPointerLen_t* scscfReg_getAnyBarredUser(void* pRegInfo, osPointerLen_t user[], int userNum);
+osPointerLen_t* scscfReg_getUeContact(void* pRegInfo, sipTuAddr_t* pNextHop);
 void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo);
 void scscfRegTempWorkInfo_cleanup(scscfRegTempWorkInfo_t* pTempWorkInfo);
 

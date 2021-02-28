@@ -54,6 +54,7 @@ static void scscfRegInfo_cleanup(void* data);
 static inline osPointerLen_t* scscfReg_getUserId(scscfRegIdentity_t* pIdentity);
 static inline bool scscfReg_isPerformMar(scscfRegState_e regState, bool isAuthForReReg);
 static inline bool scscfReg_isPeformSar(scscfRegState_e regState, int regExpire);
+static osStatus_e scscfIfc_decodeHssMsg(diaMsgDecoded_t* pDiaDecoded, scscfRegInfo_t* pRegInfo, diaResultCode_t* pResultCode);
 static void scscfReg_updateContactUri(osDPointerLen_t* pOldUri, osPointerLen_t* pNewUri);
 
 static uint64_t scscfReg_startTimer(time_t msec, scscfRegInfo_t* pRegInfo);
@@ -363,9 +364,8 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
 	pRegInfo->tempWorkInfo.impu = *pImpu;
 
 	pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE;
-	scscfIfcEvent_t ifcEvent = {true, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(pRegInfo->tempWorkInfo.sarRegType)}; 
 	//perform 3rd party registration.  if SAR is performed, this function will be called when SAA returns
-	bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+	bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo);
 	if(is3rdPartyRegDone)
 	{
         logInfo("3rd party registration is completed for impi=%r.", &pRegInfo->tempWorkInfo.impi);
@@ -396,7 +396,7 @@ EXIT:
 
 
 //this function will recursively calling itself if fails to send REGISTER to 3rd party AS until no more AS to try (for sessCase=continued)
-bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfcEvent)
+bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo)
 {
 	bool isDone = false;
     dnsResResponse_t* pDnsResponse = NULL;
@@ -408,7 +408,8 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfc
 		goto EXIT;
 	}
 
-    pRegInfo->tempWorkInfo.pAs = scscfIfc_getNextAS(&pRegInfo->tempWorkInfo.pLastIfc, &pRegInfo->userProfile.sIfcIdList, pRegInfo->tempWorkInfo.pReqDecodedRaw, pIfcEvent);
+    scscfIfcEvent_t ifcEvent = {SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(pRegInfo->tempWorkInfo.sarRegType)};
+    pRegInfo->tempWorkInfo.pAs = scscfIfc_getNextAS(&pRegInfo->tempWorkInfo.pLastIfc, &pRegInfo->userProfile.sIfcIdList, pRegInfo->tempWorkInfo.pReqDecodedRaw, &ifcEvent, &pRegInfo->tempWorkInfo.isIfcContinuedDH);
     if(!pRegInfo->tempWorkInfo.pAs)
     {
 		mdebug(LM_CSCF, "no more AS, 3rd party registration for IMPI(%r), IMPU(%r) is completed.", &pRegInfo->tempWorkInfo.impi, &pRegInfo->tempWorkInfo.impu);
@@ -430,8 +431,14 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfc
 		if(dnsQueryStatus == DNS_QUERY_STATUS_FAIL)
 		{
 			logError("fails to perform dns query for %r.", &nextHop.ipPort.ip);
-			pIfcEvent->isLastAsOK = false;
-        	isDone = scscfReg_perform3rdPartyReg(pRegInfo, pIfcEvent);
+			if(pRegInfo->tempWorkInfo.isIfcContinuedDH)
+			{
+        		isDone = scscfReg_perform3rdPartyReg(pRegInfo);
+			}
+			else
+			{
+				isDone = true;
+			}
         	goto EXIT;
 		}
 
@@ -445,17 +452,28 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo, scscfIfcEvent_t* pIfc
 		if(!sipTu_getBestNextHop(pDnsResponse, true, &nextHop))
 		{
 			logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
-
-	    	pIfcEvent->isLastAsOK = false;
-       		isDone = scscfReg_perform3rdPartyReg(pRegInfo, pIfcEvent);
+            if(pRegInfo->tempWorkInfo.isIfcContinuedDH)
+	    	{	
+       			isDone = scscfReg_perform3rdPartyReg(pRegInfo);
+			}
+			else
+			{
+				isDone = true;
+			}
         	goto EXIT;
     	}
 	}
 
 	if(scscfReg_forwardSipRegister(pRegInfo, &nextHop) != OS_STATUS_OK)
 	{
-		pIfcEvent->isLastAsOK = false;
-        isDone = scscfReg_perform3rdPartyReg(pRegInfo, pIfcEvent);
+		if(pRegInfo->tempWorkInfo.isIfcContinuedDH)
+		{
+        	isDone = scscfReg_perform3rdPartyReg(pRegInfo);
+		}
+		else
+		{
+			isDone = true;
+		}
         goto EXIT;
 	}
 
@@ -476,12 +494,11 @@ static void scscfReg_dnsCallback(dnsResResponse_t* pRR, void* pData)
 
 	scscfRegInfo_t* pRegInfo = pData;	
 
-    scscfIfcEvent_t ifcEvent = {false, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(pRegInfo->tempWorkInfo.sarRegType)};
 	if(pRR->rrType == DNS_RR_DATA_TYPE_STATUS)
 	{
 		logInfo("dns query failed, qName=%r, resStatus=%d, dnsRCode=%d", pRR->status.pQName, pRR->status.resStatus, pRR->status.dnsRCode);
 
-        is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+        is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo);
 		goto EXIT;
     }
 
@@ -490,14 +507,21 @@ static void scscfReg_dnsCallback(dnsResResponse_t* pRR, void* pData)
 	{
 		logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
 
-		is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+		is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo);
 		goto EXIT;
 	}
 
 	mdebug(LM_CSCF, "send 3rd party register to %A.", &nextHop.sockAddr);
     if(scscfReg_forwardSipRegister(pRegInfo, &nextHop) != OS_STATUS_OK)
     {
-        is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+		if(pRegInfo->tempWorkInfo.isIfcContinuedDH)
+		{
+        	is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo);
+		}
+		else
+		{
+			is3rdPartyRegDone = true;
+		}
         goto EXIT;
     }
 
@@ -548,8 +572,12 @@ static osStatus_e scscfReg_onSipResponse(sipTUMsgType_e msgType, sipTUMsg_t* pSi
 		{
     		//continue to perform 3rd party registration.
     		bool isLastAsOk = sipMsg_isRsp2xx(pSipTUMsg->sipMsgBuf.rspCode) ? true : false;
-    		scscfIfcEvent_t ifcEvent = {isLastAsOk, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(pRegInfo->tempWorkInfo.sarRegType)};
-    		bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+			bool is3rdPartyRegDone = true;
+			if(isLastAsOk || (!isLastAsOk && pRegInfo->tempWorkInfo.isIfcContinuedDH))
+			{ 
+    			is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo);
+			}
+
     		if(is3rdPartyRegDone)
     		{
 		        logInfo("3rd party registration is completed for impi=%r.", &pRegInfo->tempWorkInfo.impi);
@@ -625,8 +653,11 @@ static osStatus_e scscfReg_onTrFailure(sipTUMsgType_e msgType, sipTUMsg_t* pSipT
     {
         case SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE:
         {
-			scscfIfcEvent_t ifcEvent = {false, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(pRegInfo->tempWorkInfo.sarRegType)};
-			bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+            bool is3rdPartyRegDone = true;
+            if(pRegInfo->tempWorkInfo.isIfcContinuedDH)
+            {
+                is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo);
+			}
 			if(is3rdPartyRegDone)
 			{
 		        logInfo("3rd party registration is completed for impi=%r.", &pRegInfo->tempWorkInfo.impi);
@@ -929,10 +960,10 @@ void scscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData)
 
 	scscfRegInfo_t* pRegInfo = pAppData;
 	diaResultCode_t resultCode;
-	if(OS_STATUS_OK != scscfReg_decodeHssMsg(pDiaDecoded, pRegInfo, &resultCode))
+	if(OS_STATUS_OK != scscfIfc_decodeHssMsg(pDiaDecoded, pRegInfo, &resultCode))
 	{
-		logError("fails to scscfReg_decodeHssMsg for pRegInfo(%p).", pRegInfo);
-		//to-do, needs to free hash, and notify sessions
+		logError("fails to scscfIfc_decodeHssMsg for pRegInfo(%p).", pRegInfo);
+		//to-do, needs to free hash, and send back reg failure
 		goto EXIT;
 	}
 
@@ -958,9 +989,120 @@ void scscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData)
 	}
 			
 EXIT:
+	osfree(pDiaDecoded);
 	return;	
 }
 
+
+//scscfSess received SAA for unregistered user case
+void* scscfReg_onSessSaa(diaMsgDecoded_t* pDiaDecoded, sipResponse_e* rspCode, sIfcIdList_t* pSIfcIdList)
+{
+	osStatus_e status = OS_STATUS_OK;
+	*rspCode = SIP_RESPONSE_200;
+	scscfRegInfo_t* pRegInfo = NULL;
+
+	if(pDiaDecoded->cmdCode != DIA_CMD_CODE_SAR && (pDiaDecoded->cmdFlag & DIA_CMD_FLAG_REQUEST))
+	{
+		logError("received diameter message is not SAA(cmdCode=%d).", pDiaDecoded->cmdCode);
+		*rspCode = SIP_RESPONSE_500;
+		status = OS_ERROR_INVALID_VALUE;
+		goto EXIT;
+	}
+
+	pRegInfo = oszalloc(sizeof(scscfRegInfo_t), scscfRegInfo_cleanup);
+
+    diaResultCode_t resultCode;
+	status = scscfIfc_decodeHssMsg(pDiaDecoded, pRegInfo, &resultCode);
+	if(status != OS_STATUS_OK)
+    {
+        logError("fails to scscfIfc_decodeHssMsg for SAA for pRegInfo(%p).", pRegInfo);
+		*rspCode = SIP_RESPONSE_500;
+        goto EXIT;
+    }
+
+	*rspCode = cscf_cx2SipRspCodeMap(resultCode);
+	if(*rspCode != SIP_RESPONSE_200)
+	{
+		logInfo("saa resultCode is not 2xxx for pRegInfo(%p).", pRegInfo);
+		goto EXIT;
+	}
+
+	/* sessSar was initiated when there is no regInfo.  If during the SAR a user tried to register, and regInfo was created
+       (even though SAR for the register may still on the way), reject the sessSar to avoid collision.
+     */
+	status = scscfReg_createSubHash(pRegInfo, true);
+	if(status != OS_STATUS_OK)
+	{
+		logInfo("a UE registration is on the way, abort the UNREGISTERED session.");
+		*rspCode = SIP_RESPONSE_500;
+		goto EXIT;
+	}
+	
+EXIT:
+	//no need to free pDiaDecoded, as this function is the the entry callback by the diameter module
+
+	if(status != OS_STATUS_OK)
+	{
+		pRegInfo = osfree(pRegInfo);
+	}
+	else if(pRegInfo)
+	{
+		*pSIfcIdList = pRegInfo->userProfile.sIfcIdList;
+	}
+
+	return pRegInfo;
+}
+
+
+static osStatus_e scscfIfc_decodeHssMsg(diaMsgDecoded_t* pDiaDecoded, scscfRegInfo_t* pRegInfo, diaResultCode_t* pResultCode)
+{
+    osStatus_e status = OS_STATUS_OK;
+
+    switch(pDiaDecoded->cmdCode)
+    {
+        case DIA_CMD_CODE_SAR:
+            if(pDiaDecoded->cmdFlag & DIA_CMD_FLAG_REQUEST)
+            {
+                logError("received SAR request, ignore.");
+                status = OS_ERROR_INVALID_VALUE;
+                goto EXIT;
+            }
+
+            status = scscfReg_decodeSaa(pDiaDecoded, &pRegInfo->userProfile, pResultCode, &pRegInfo->hssChgInfo);
+            if(status == OS_STATUS_OK && cscf_cx2SipRspCodeMap(*pResultCode) == SIP_RESPONSE_200)
+            {
+                pRegInfo->ueList[0].isImpi = true;
+                pRegInfo->ueList[0].impi = pRegInfo->userProfile.impi;
+                for(int i=0; i<pRegInfo->userProfile.impuNum; i++)
+                {
+                    pRegInfo->ueList[i+1].isImpi = false;
+                    pRegInfo->ueList[i+1].impuInfo = pRegInfo->userProfile.impuInfo[i];
+                }
+                pRegInfo->regInfoUENum = pRegInfo->userProfile.impuNum + 1;
+            }
+            break;
+        default:
+            logError("unexpected dia command(%d) received, ignore.", pDiaDecoded->cmdCode);
+            break;
+    }
+
+EXIT:
+    return status;
+}
+
+
+void* scscfReg_getRegInfo(osPointerLen_t* pImpu, scscfRegState_e* pRegState, sIfcIdList_t* pSIfcIdList)
+{
+	scscfRegInfo_t* pRegInfo = osPlHash_getUserData(gScscfRegHash, pImpu, true);
+	if(pRegInfo)
+	{
+		*pRegState = pRegInfo->regState;
+		*pSIfcIdList = pRegInfo->userProfile.sIfcIdList;
+	}
+
+	return pRegInfo;
+}
+	
 
 osPointerLen_t* scscfReg_getNoBarImpu(scscfRegIdentity_t ueList[], uint8_t ueNum, bool isTelPreferred)
 {
@@ -999,8 +1141,80 @@ EXIT:
 }
 				
 
-void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo)
+//fir the first barred user
+osPointerLen_t* scscfReg_getAnyBarredUser(void* pRegId, osPointerLen_t user[], int userNum)
 {
+	if(!pRegId || !user)
+	{
+		return NULL;
+	}
+
+	scscfRegInfo_t* pRegInfo = pRegId;
+    uint8_t regInfoUENum;
+    scscfRegIdentity_t ueList[SCSCF_MAX_ALLOWED_IMPU_NUM+1];
+	for(int i=0; i<userNum; i++)
+	{
+		for(int j=0; j<pRegInfo->regInfoUENum; j++)
+		{
+			if(pRegInfo->ueList[j].isImpi)
+			{
+				continue;
+			}
+			if(osPL_cmp(&user[i], &pRegInfo->ueList[j].impuInfo.impu) == 0)
+			{
+				if(pRegInfo->ueList[j].impuInfo.isBarred)
+				{
+					return &pRegInfo->ueList[j].impuInfo.impu;
+				}
+
+				break;
+			}
+		}
+	}
+
+	return NULL;
+}
+
+
+osPointerLen_t* scscfReg_getUeContact(void* pRegId, sipTuAddr_t* pNextHop)
+{
+	osPointerLen_t* pContactUri = NULL;
+
+	if(!pRegId || !pNextHop)
+	{
+		logError("null pointer, pRegId=%p, pNextHop=%p.", pRegId, pNextHop);
+		goto EXIT;
+	}
+
+	scscfRegInfo_t* pRegInfo = pRegId;
+	pContactUri = (osPointerLen_t*) &pRegId->ueContactInfo.contactUri;
+	pNextHop->isSockAddr = false;
+	sipUtil_parseUri(pContactUri, &pNextHop->ipPort.ip, &pNextHop->ipPort.port);
+
+EXIT:
+	return pContactUri;
+}
+		
+
+//isAllowSameId: true: if the same imsi/impu already in the hash, replace the old one.  false: not allow and return error
+osStatus_e scscfReg_createSubHash(scscfRegInfo_t* pRegInfo, bool isAllowSameId)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	if(!isAllowSameId)
+	{
+		for(int i=0; i<pRegInfo->regInfoUENum; i++)
+	    {
+			osPointerLen_t* pId = pRegInfo->ueList[i].isImpi ? &pRegInfo->ueList[i].impi : &pRegInfo->ueList[i].impuInfo.impu;
+			if(osPlHash_getElement(gScscfRegHash, pId, true))
+			{
+				status =OS_ERROR_INVALID_VALUE;
+				goto EXIT;
+			}
+		}
+	}
+
+	//isAllowSameId has been checked, no need to worry about isAllowSameId anymore
 	for(int i=0; i<pRegInfo->regInfoUENum; i++)
 	{
 		osPointerLen_t* pId = pRegInfo->ueList[i].isImpi ? &pRegInfo->ueList[i].impi : &pRegInfo->ueList[i].impuInfo.impu;
@@ -1017,6 +1231,9 @@ void scscfReg_createSubHash(scscfRegInfo_t* pRegInfo)
 
 		pRegInfo->ueList[i].pRegHashLE = pHashLE;
 	}
+
+EXIT:
+	return status;
 }
 
 	
@@ -1050,10 +1267,6 @@ static void scscfRegInfo_cleanup(void* data)
 
 	scscfRegInfo_t* pRegInfo = data;
 
-	pRegInfo->regState = SCSCF_REG_STATE_NOT_REGISTERED;
-	osList_delete(&pRegInfo->asRegInfoList);
-    osDPL_dealloc(&pRegInfo->ueContactInfo.contactUri);
-
 	if(pRegInfo->expiryTimerId)
 	{
 		pRegInfo->expiryTimerId = osStopTimer(pRegInfo->expiryTimerId);
@@ -1064,6 +1277,11 @@ static void scscfRegInfo_cleanup(void* data)
 		pRegInfo->purgeTimerId = osStopTimer(pRegInfo->purgeTimerId);
 	}
 
+    pRegInfo->regState = SCSCF_REG_STATE_NOT_REGISTERED;
+    osList_delete(&pRegInfo->asRegInfoList);
+    osDPL_dealloc(&pRegInfo->ueContactInfo.contactUri);
+
+	osMBuf_reset(&pRegInfo->userProfile.rawUserProfile);
 	scscfRegTempWorkInfo_cleanup(&pRegInfo->tempWorkInfo);
 }
 

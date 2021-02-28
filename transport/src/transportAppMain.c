@@ -110,7 +110,7 @@ static void appMain_timerReady()
     dia_init(configDir);
 
     //test perform dns test, temporary here
-    dnsTest();
+//    dnsTest();
 }
 
 	

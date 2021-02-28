@@ -5,11 +5,15 @@
  ********************************************************/
 
 #include <string.h>
+#include <stdio.h>
 
 #include "osPL.h"
 #include "osMBuf.h"
 #include "osSockAddr.h"
 #include "osMemory.h"
+
+#include "sipTu.h"
+#include "sipHdrMisc.h"
 
 #include "cscfConfig.h"
 #include "scscfRegistrar.h"
@@ -24,6 +28,8 @@ static osPointerLen_t gCxXsdName;
 static struct sockaddr_in gScscfSockAddr, gIcscfSockAddr;
 static scscfAddrInfo_t gScscfAddrInfo[ICSCF_CONFIG_MAX_SCSCF_NUM];
 static uint8_t gScscfAddrNum;
+static sipPointerLen_t gScscfRR = SIPPL_INIT(gScscfRR);
+static sipPointerLen_t gIcscfRR = SIPPL_INIT(gIcscfRR);
 
 
 osXmlData_t scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM] = {
@@ -52,6 +58,18 @@ debug("to-remove, gCxXsdName=%r.", &gCxXsdName);
 
 	//set gScscfSockAddr and gIcscfSockAddr
 	cscfConfig_setGlobalSockAddr();
+
+	gScscfRR.pl.l = snprintf(&gScscfRR.pl.p, SIP_HDR_MAX_SIZE, "<sip:%s:%d; lr>", SCSCF_IP_ADDR, SCSCF_LISTEN_PORT);
+	if(gScscfRR.pl.l >= SIP_HDR_MAX_SIZE)
+	{
+		logError("fails to construct SCSCF RR for size overflow.");
+	}
+
+	gIcscfRR.pl.l = snprintf(&gIcscfRR.pl.p, SIP_HDR_MAX_SIZE, "<sip:%s:%d; lr>", ICSCF_IP_ADDR, ICSCF_LISTEN_PORT);
+	if(gIcscfRR.pl.l >= SIP_HDR_MAX_SIZE)
+    {
+        logError("fails to construct ICSCF RR for size overflow.");
+    }
 }
 
 
@@ -67,12 +85,16 @@ osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUs
 	}
 
 	mdebug(LM_CSCF, "Cx xsdName=%r, parse user profile:\n%r", &gCxXsdName, pRawUserProfile);	
-	osMBuf_t xmlMBuf = {(uint8_t*)pRawUserProfile->p, pRawUserProfile->l, 0, pRawUserProfile->l};
+
+	osMBuf_writePL(&pDecodedUserProfile->rawUserProfile, pRawUserProfile, false);
+//	osMBuf_t xmlMBuf = {(uint8_t*)pRawUserProfile->p, pRawUserProfile->l, 0, pRawUserProfile->l};
 	pDecodedUserProfile->impuNum = 0;
 	pDecodedUserProfile->sIfcIdList.sIfcIdNum = 0;
     osXmlDataCallbackInfo_t cbInfo={true, false, false, scscfConfig_userProfileCB, pDecodedUserProfile, scscfConfig_xmlUsrProfileData, SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM};
-	osXml_getElemValue(&gCxXsdName, NULL, &xmlMBuf, true, &cbInfo);
+	osXml_getElemValue(&gCxXsdName, NULL, &pDecodedUserProfile->rawUserProfile, true, &cbInfo);
 
+	//reset rawUserProfile pos to the beginning
+	osMBuf_setPos(&pDecodedUserProfile->rawUserProfile, 0);
 	scscf_dbgListUsrProfile(pDecodedUserProfile);
 
 EXIT:
@@ -169,9 +191,38 @@ struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseLi
 }
 
 
+//if the rcvLocal a SCSCF address
 bool cscf_isS(struct sockaddr_in* rcvLocal)
 {
 	return osIsSameSA(rcvLocal, &gScscfSockAddr) ? true : false;
+}
+
+
+osPointerLen_t* cscfConfig_getRR(cscfType_e cscfType)
+{
+	osPointerLen_t* pRR = NULL;
+
+	switch(cscfType)
+	{
+		case CSCF_TYPE_ICSCF:
+			pRR = &gIcscfRR.pl;
+		case CSCF_TYPE_SCSCF:
+			pRR = &gScscfRR.pl;
+		default:
+			logError("unexpected cscfType(%d).", cscfType);
+			break;
+	}
+
+	return pRR;
+}
+
+
+void cscfConfig_getMgcpAddr(sipTuAddr_t* pMgcpAddr)
+{
+	pMgcpAddr->isSockAddr = false;
+	pMgcpAddr->tpType = TRANSPORT_TYPE_ANY;
+	osPL_setStr1(&pMgcpAddr->ipPort.ip, MGCP_IP_ADDR, strlen(MGCP_IP_ADDR));
+	pMgcpAddr->ipPort.port = MGCP_LISTEN_PORT;
 }
 
 

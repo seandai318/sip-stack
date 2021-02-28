@@ -229,3 +229,112 @@ sipResponse_e cscf_cx2SipRspCodeMap(diaResultCode_t diaResultCode)
 	
 	return sipRspCode;
 }
+
+
+//userNum: in/out, the maximum requested user as the input, the user in the sip request message as the output
+osStatus_e cscf_getRequestUser(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isMO, osPointerLen_t* pUser, int* userNum)
+{
+	osStatus_e status = OS_STATUS_OK;
+	*userNum = 0;
+
+	if(!pSipTUMsg || !pReqDecodedRaw || !pUser)
+	{
+		logError("null pointer, pSipTUMsg=%p, pReqDecodedRaw=%p, pUser=%p", pSipTUMsg, pReqDecodedRaw, pUser);
+		return OS_ERROR_NULL_POINTER;
+	}
+
+	/* rules to extract user
+     * if exists P-Served-user, and the sessCase matches with isMO, use it, regardless of MO/MT case.  
+     * Note this is a deviation from 3GPP24.229, as 24.229 only says to use PSU for MO
+     * if P-Served-user DOES NOT exists
+     *     For MO, P-Asserted-Identity exists, use it.  PAI may contain 2 entries.   If PAI does not exist, use URI from From header
+	 *     for MT, from the req URI
+	 */
+	//check if there is PSU
+    if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_SERVED_USER] != NULL)
+    {
+        sipHdrDecoded_t sipHdrDecoded = {};
+        if(sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_P_SERVED_USER]->pRawHdr, &sipHdrDecoded, false) == OS_STATUS_OK)
+		{
+        	sipHdrType_pServedUser_t* pPSU = sipHdrDecoded.decodedHdr;
+        	osPointerLen_t sescaseName = {"sescase", 7};
+        	osPointerLen_t* pSescase = sipParamNV_getValuefromList(&pPSU->genericParam, &sescaseName);
+        	bool isSesCaseMO = true;
+        	if(pSescase->p[0] == 'o' && osPL_strcmp(pSescase, "orig"))
+        	{
+            	isSesCaseMO = true;
+        	}
+        	else if(pSescase->p[0] == 't' && osPL_strcmp(pSescase, "term"))
+        	{
+            	isSesCaseMO = false;
+        	}
+
+        	if(isSesCaseMO == isMO)
+        	{
+            	pUser[0] = pPSU->uri.sipUser;
+	        	*userNum = 1;
+
+				osfree(pPSU);
+				goto EXIT;
+			}
+    
+        	osfree(pPSU);        
+    	}
+		else
+		{
+			logInfo("fails to sipDecodeHdr for SIP_HDR_P_SERVED_USER, use other method to find the sip user.");
+		}
+	}
+
+	//first check the MT case
+    if(!isMO)
+    {
+        sipFirstline_t firstLine;
+        status = sipParser_firstLine(pSipTUMsg->sipMsgBuf.pSipMsg, &firstLine, true);
+        if(status == OS_STATUS_OK && !firstLine.isReqLine)
+        {
+            logError("the sip message is not a request.");
+            status = OS_ERROR_INVALID_VALUE;
+        }
+
+        if(status != OS_STATUS_OK)
+        {
+            logError("fails to sipParser_firstLine for MT.");
+            goto EXIT;
+        }
+
+        pUser[0] = firstLine.sipReqLine.sipUri.sipUser;
+        *userNum = 1;
+        goto EXIT;
+    }
+
+	//now checke MO case, first check if there is PAI
+	if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY] != NULL)
+	{
+		 status = sipDecode_getMGNPHdrURIs(SIP_HDR_P_ASSERTED_IDENTITY, pReqDecodedRaw, pUser, userNum);
+		if(status != OS_STATUS_OK)
+		{
+            logError("fails to sipDecode_getMGNPHdrURIs for SIP_HDR_FROM.");
+			*userNum = 0;
+			goto EXIT;
+		}
+	}
+	else
+	{
+		//if there is no PAI, use From header
+        status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_FROM]->pRawHdr->value, false, pUser);
+        if(status == OS_STATUS_OK)
+        {
+			*userNum = 1;
+		}
+		else
+		{
+            logError("fails to sipParamUri_getUriFromRawHdrValue for SIP_HDR_FROM.");
+            *userNum = 0;
+            goto EXIT;
+        }
+	}
+	
+EXIT:
+	return status;
+}	

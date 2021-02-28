@@ -15,6 +15,7 @@
 
 #include "sipTU.h"
 
+
 #define SCSCF_MAX_ALLOWED_SIFC_ID_NUM	20	
 #define SCSCF_MAX_ALLOWED_IMPU_NUM   	10
 
@@ -47,6 +48,12 @@
 #define ICSCF_CONFIG_MAX_SCSCF_NUM	6
 #define ICSCF_UAR_AUTHTYPE_CAPABILITY	true
 
+#define MGCP_IP_ADDR					"6.7.8.9"
+#define MGCP_LISTEN_PORT				5060
+
+#define SCSCF_MAX_PAI_NUM			3
+
+
 typedef enum {
 	CSCF_TYPE_INVALID,
 	CSCF_TYPE_ICSCF,
@@ -77,6 +84,7 @@ typedef struct {
 
 
 typedef struct scscfUserProfile {
+	osMBuf_t rawUserProfile;
     osPointerLen_t impi;
 	scscfImpuInfo_t impuInfo[SCSCF_MAX_ALLOWED_IMPU_NUM];
 	uint8_t impuNum;
@@ -98,6 +106,8 @@ void cscfConfig_init(char* cxFolder, char* cxXsdFileName);
 osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUserProfile_t* pDecodedUserProfile);
 struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseListenPort);
 bool cscf_isS(struct sockaddr_in* rcvLocal);
+osPointerLen_t* cscfConfig_getRR(cscfType_e cscfType);
+void cscfConfig_getMgcpAddr(sipTuAddr_t* pMgcpAddr);
 
 bool icscfConfig_getScscfInfoByCap(uint32_t capValue, sipTuAddr_t* pScscfAddr, bool* isLocal);
 bool icscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pScscfAddr, bool* isLocal);

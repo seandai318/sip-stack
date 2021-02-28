@@ -11,7 +11,12 @@
 #include "sipMsgRequest.h"
 
 
+#define sipDecodeTopRouteValue(pReqDecodedRaw, sipHdrDecoded, isDupRawHdr)	sipDecodeMGNPHdrTopValue(SIP_HDR_ROUTE, pReqDecodedRaw, sipHdrDecoded, isDupRawHdr)
+
+
 void sipMsgBuf_copy(sipMsgBuf_t* dest, sipMsgBuf_t* src);
+sipHdrGenericNameParam_t* sipDecodeMGNPHdrTopValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipHdrDecoded_t* sipHdrDecoded, bool isDupRawHdr);
+osStatus_e sipDecode_getMGNPHdrURIs(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* pUser, int* userNum);
 
 
 static inline bool sip_isRspCode2xx(uint32_t rspCode)

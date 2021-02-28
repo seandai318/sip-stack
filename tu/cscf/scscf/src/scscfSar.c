@@ -22,8 +22,6 @@
 #include "scscfIntf.h"
 
 
-static osStatus_e scscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, scscfUserProfile_t* pUsrProfile, diaResultCode_t* pResultCode, scscfChgInfo_t* pChgInfo);
-
 
 static osStatus_e scscfReg_performMar(osPointerLen_t* pImpi, osPointerLen_t* pImpu, scscfRegInfo_t* pRegInfo)
 {
@@ -137,7 +135,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
             else
             {
                 //create hash for all identities belong to the UE's subscription
-                scscfReg_createSubHash(pRegInfo);
+                scscfReg_createSubHash(pRegInfo, false);
 
                 pRegInfo->regState = SCSCF_REG_STATE_REGISTERED;
                 pRegInfo->expiryTimerId = osStartTimer(pRegInfo->ueContactInfo.regExpire, scscfReg_onTimeout, pRegInfo);
@@ -156,8 +154,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
 
                 //continue 3rd party registration
                 pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE;
-                scscfIfcEvent_t ifcEvent = {true, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(SCSCF_REG_SAR_REGISTER)};
-                bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent);
+                bool is3rdPartyRegDone = scscfReg_perform3rdPartyReg(pRegInfo);
 				if(is3rdPartyRegDone)
                 {
                     pRegInfo->tempWorkInfo.regWorkState =  SCSCF_REG_WORK_STATE_NONE;
@@ -177,8 +174,8 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
 
                 //continue 3rd party registration
                 pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE;
-                scscfIfcEvent_t ifcEvent = {true, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(SCSCF_REG_SAR_RE_REGISTER)};
-                if(scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent))
+                scscfIfcEvent_t ifcEvent = {SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(SCSCF_REG_SAR_RE_REGISTER)};
+                if(scscfReg_perform3rdPartyReg(pRegInfo))
                 {
                     pRegInfo->tempWorkInfo.regWorkState =  SCSCF_REG_WORK_STATE_NONE;
                     scscfRegTempWorkInfo_cleanup(&pRegInfo->tempWorkInfo);
@@ -193,8 +190,8 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
 
             //continue 3rd party registration
             pRegInfo->tempWorkInfo.regWorkState = SCSCF_REG_WORK_STATE_WAIT_3RD_PARTY_REG_RESPONSE;
-            scscfIfcEvent_t ifcEvent = {true, SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(SCSCF_REG_SAR_DE_REGISTER)};
-            if(scscfReg_perform3rdPartyReg(pRegInfo, &ifcEvent))
+            scscfIfcEvent_t ifcEvent = {SIP_METHOD_REGISTER, SCSCF_IFC_SESS_CASE_ORIGINATING, scscfIfc_mapSar2IfcRegType(SCSCF_REG_SAR_DE_REGISTER)};
+            if(scscfReg_perform3rdPartyReg(pRegInfo))
             {
                 pRegInfo->tempWorkInfo.regWorkState =  SCSCF_REG_WORK_STATE_NONE;
                 scscfRegTempWorkInfo_cleanup(&pRegInfo->tempWorkInfo);
@@ -215,44 +212,7 @@ EXIT:
 }
 
 
-osStatus_e scscfReg_decodeHssMsg(diaMsgDecoded_t* pDiaDecoded, scscfRegInfo_t* pRegInfo, diaResultCode_t* pResultCode)
-{
-    osStatus_e status = OS_STATUS_OK;
-
-    switch(pDiaDecoded->cmdCode)
-    {
-        case DIA_CMD_CODE_SAR:
-            if(pDiaDecoded->cmdFlag & DIA_CMD_FLAG_REQUEST)
-            {
-                logError("received SAR request, ignore.");
-                status = OS_ERROR_INVALID_VALUE;
-                goto EXIT;
-            }
-
-            status = scscfReg_decodeSaa(pDiaDecoded, &pRegInfo->userProfile, pResultCode, &pRegInfo->hssChgInfo);
-			if(status == OS_STATUS_OK)
-			{
-				pRegInfo->ueList[0].isImpi = true;
-				pRegInfo->ueList[0].impi = pRegInfo->userProfile.impi;	
-				for(int i=0; i<pRegInfo->userProfile.impuNum; i++)
-				{
-					pRegInfo->ueList[i+1].isImpi = false;
-					pRegInfo->ueList[i+1].impuInfo = pRegInfo->userProfile.impuInfo[i];
-				}
-				pRegInfo->regInfoUENum = pRegInfo->userProfile.impuNum + 1;
-			}	
-            break;
-        default:
-            logError("unexpected dia command(%d) received, ignore.", pDiaDecoded->cmdCode);
-            break;
-    }
-
-EXIT:
-    return status;
-}
-
-
-static osStatus_e scscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, scscfUserProfile_t* pUsrProfile, diaResultCode_t* pResultCode, scscfChgInfo_t* pChgInfo)
+osStatus_e scscfReg_decodeSaa(diaMsgDecoded_t* pDiaDecoded, scscfUserProfile_t* pUsrProfile, diaResultCode_t* pResultCode, scscfChgInfo_t* pChgInfo)
 {
     osStatus_e status = OS_STATUS_OK;
 

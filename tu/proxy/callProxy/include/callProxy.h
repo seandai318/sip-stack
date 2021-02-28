@@ -36,7 +36,7 @@ typedef struct callProxyInfo {
 	sipCallProxyState_e state;
 	void* regId;
 	proxyInfo_t* pProxyInfo;
-	osListElement_t* pCallHashLE;
+//	osListElement_t* pCallHashLE;
 	uint32_t seqNum;
 	osDPointerLen_t callId;
 	sipTuAddr_t cancelNextHop;		//make sure the ip is cleaned up when this data structure is reclaimed
@@ -47,6 +47,7 @@ typedef struct callProxyInfo {
 
 
 void callProxy_init();
-osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osListElement_t* pHashLE);
+osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo);
+
 
 #endif

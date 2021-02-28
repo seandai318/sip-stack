@@ -765,13 +765,15 @@ osStatus_e sipTU_asGetUser(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t
 			isSesCaseMO = false;
 		}
 
-		osfree(pPSU);
-
 		if(isOrigUser == isSesCaseMO)
 		{
 			*sipUser = pPSU->uri.sipUser;
+
+			osfree(pPSU);
 			goto EXIT;
 		}
+
+		osfree(pPSU);
 	}
 
 	if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY] != NULL)

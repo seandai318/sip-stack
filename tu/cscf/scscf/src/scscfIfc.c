@@ -200,8 +200,7 @@ EXIT:
 }
 
 
-
-osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent)
+osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent, bool* isContinueDH)
 {
 	osPointerLen_t* pAs = NULL;
 	if(!ppLastSIfc || !pSIfcIdList || !pIfcEvent)
@@ -210,7 +209,7 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 		goto EXIT;
 	}
 
-	mdebug(LM_CSCF, "ifc event: isLastAsOK=%d, sipMethod=%d, sessCase=%d, regType=%d", pIfcEvent->isLastAsOK, pIfcEvent->sipMethod, pIfcEvent->sessCase, pIfcEvent->regType);
+	mdebug(LM_CSCF, "ifc event: sipMethod=%d, sessCase=%d, regType=%d", pIfcEvent->sipMethod, pIfcEvent->sessCase, pIfcEvent->regType);
 
 	osListElement_t* pLE = *ppLastSIfc ? (*ppLastSIfc)->next : gSIfcSet.head;
 	while(pLE)
@@ -226,13 +225,6 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 
 		mdebug(LM_CSCF, "a matching IFC(%p) is found, sIfcGrpId=%d, isDefaultSessContinued=%d, conditionTypeCNF=%d", pIfc, pIfc->sIfcGrpId, pIfc->isDefaultSessContinued, pIfc->conditionTypeCNF);
 
-		//if last As failed, and the default handling is terminated, stop here.
-		if(!pIfcEvent->isLastAsOK && !pIfc->isDefaultSessContinued)
-		{
-			mdebug(LM_CSCF, "!isLastAsOK && !pIfc->isDefaultSessContinued, quit.");
-			goto EXIT;
-		}
-
 		osListElement_t* pSptGrpLE = pIfc->sptGrpList.head;
 
         //if an IFC has empty SPT, directly use AS
@@ -240,6 +232,7 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
         {
             mdebug(LM_CSCF, "the IFC(%p) does not have SPT, just use the AS(%r).", pIfc, &pIfc->asName);
             pAs = &pIfc->asName;
+			*isContinueDH = pIfc->isDefaultSessContinued;
             goto EXIT;
         }
 
@@ -260,6 +253,7 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 				{
 					mdebug(LM_CSCF, "not conditionTypeCNF, SPT match, find the IFC(%p), AS=%r.", pIfc, &pIfc->asName);
 					pAs = &pIfc->asName;
+		            *isContinueDH = pIfc->isDefaultSessContinued;
 					goto EXIT;
 				}
 			}
@@ -272,6 +266,7 @@ osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastSIfc, sIfcIdList_t* p
 		{
 			mdebug(LM_CSCF, "conditionTypeCNF, all SPTs match for the IFC(%p), use the AS(%r).", pIfc, &pIfc->asName);
 			pAs = &pIfc->asName;
+			*isContinueDH = pIfc->isDefaultSessContinued;
 			goto EXIT;
 		}
 
@@ -707,6 +702,39 @@ EXIT:
 	return status;
 }
 
+
+scscfIfcSessCase_e scscfIfc_getSessCase(scscfRegState_e regState, bool isMO)
+{
+	scscfIfcSessCase_e sessCase = SCSCF_IFC_SESS_CASE_INVALID;
+
+	switch(regState)
+	{
+		case SCSCF_REG_STATE_UN_REGISTERED:
+			if(isMO)
+			{
+				sessCase = SCSCF_IFC_SESS_CASE_ORIG_UNREGISTERED;
+			}
+			else
+			{
+				sessCase = SCSCF_IFC_SESS_CASE_TERM_UNREGISTERED;
+			}
+			break;
+		case SCSCF_REG_STATE_REGISTERED:  
+			if(isMO)
+			{
+				sessCase = SCSCF_IFC_SESS_CASE_ORIGINATING;
+			}
+			else
+			{
+				sessCase = SCSCF_IFC_SESS_CASE_TERM_REGISTERED;
+			}
+			break;
+		default:
+			break;
+	}
+
+	return sessCase;
+}
 
 
 static void scscfIfc_dbgList(osList_t* pSIfcSet)

@@ -27,13 +27,14 @@
 
 
 
-static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg,  sipMsgDecodedRawHdr_t* pReqDecodedRaw, osListElement_t* pHashLE);
+static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo);
+
 static osStatus_e callProxy_onSipTransError(sipTUMsg_t* pSipTUMsg);
 static void callProxy_onTimeout(uint64_t timerId, void* data);
 static void callProxyInfo_cleanup(void* pData);
 
 osStatus_e callProxyEnterState(sipCallProxyState_e newState, callProxyInfo_t* pCallInfo);
-static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw);
+static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo);
 static osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
 static osStatus_e callProxyStateInitError_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
 static osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
@@ -46,17 +47,27 @@ static osStatus_e callProxyStateBye_onTrError(sipTUMsg_t* pSipTUMsg, callProxyIn
 
 
 //can not declare callHash as per thread, unless callProxy_init() is called within a thread, which is not for now
-static osHash_t* callHash;
+static proxyStatusNtfyCB_h fProxyStatusNtfyCB; //callback function to notify proxyMgr the proxy status change
+//to-do, proxyReg2RegistrarCB_h and proxyDelFromRegistrarCB_h can be removed to be part of proxyStatusNtfyCB_h
+static proxyReg2RegistrarCB_h fProxyRegCB;		//callback to register to registrar.  This CB maybe NULL since some application (like CSCF) already handle it by fProxyStatusNtfyCB, there is no need for this CB
 
 
-
-void callProxy_init()
+void callProxy_init(proxyStatusNtfy_h proxyStatusNtfy, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar)
 {
-	callHash = proxy_getHash();
-}
- 
+	if(!proxyStatusNtfy)
+	{
+		logError("null pointer, proxyStatusNtfy=%p.", proxyStatusNtfy);
+		return;
+	}
 
-osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osListElement_t* pHashLE)
+	fProxyStatusNtfyCB = proxyStatusNtfy;
+	fProxyRegCB = proxyReg2Registrar;
+	fProxyDelCB = proxyDelFromRegistrar;
+}
+	 
+
+//pProxyMgrInfo: proxyMgr info that associated with the aprticular proxy.  for example, for scscf, it is scscfSessInfo_t, for standalone proxyMgr, it is osListElement_t* pHashLE.  That is used to pass back to the proxyMgr for function fProxyCreation and fProxyStatusNtfy.  This parameter must be no NULL in the initial request
+osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo)
 {
 	DEBUG_BEGIN
 
@@ -65,7 +76,7 @@ osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, s
 	switch (msgType)
 	{
 		case SIP_TU_MSG_TYPE_MESSAGE:
-			status = callProxy_onSipMsg(pSipTUMsg, pReqDecodedRaw, pHashLE);
+			status = callProxy_onSipMsg(pSipTUMsg, pReqDecodedRaw, pRouteCtl, ppProxyInfo, pProxyMgrInfo);
 			break;
 		case SIP_TU_MSG_TYPE_TRANSACTION_ERROR:
 		default:
@@ -140,23 +151,21 @@ void callProxy_onTimeout(uint64_t timerId, void* data)
 }	
 
 
-static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osListElement_t* pHashLE)
+//static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osListElement_t* pHashLE)
+static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo)
 {
 	osStatus_e status = OS_STATUS_OK;
 
 	if(!pSipTUMsg)
 	{
-		logError("null pointer, pSipTUMsg.");
+		logError("null pointer, pSipTUMsg=%p.", pSipTUMsg);
 		return OS_ERROR_NULL_POINTER;
 	}
 
 	callProxyInfo_t* pCallInfo = pSipTUMsg->pTUId ? ((proxyInfo_t*)pSipTUMsg->pTUId)->pCallInfo : NULL;
-	if(!pCallInfo)
+	if(!pCallInfo && *ppProxyInfo)
 	{
-		if(pHashLE)
-		{
-			pCallInfo = ((proxyInfo_t*)((osHashData_t*)pHashLE->data)->pData)->pCallInfo;
-		}
+		pCallInfo = (*ppProxyInfo)->pCallInfo;
 	}
 
 	if(pCallInfo)
@@ -185,7 +194,7 @@ static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_
 	}
 	else
 	{
-		return callProxyStateNone_onMsg(pSipTUMsg, pReqDecodedRaw);
+		return callProxyStateNone_onMsg(pSipTUMsg, pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, pProxyMgrInfo, ppProxyInfo);
 	}
 
 	return status;
@@ -232,17 +241,24 @@ static osStatus_e callProxy_onSipTransError(sipTUMsg_t* pSipTUMsg)
 }
 
 
-osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw)
+static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, void* pProxyMgrInfo, proxyInfo_t** ppProxyInfo)
 {
 	DEBUG_BEGIN
 
     osStatus_e status = OS_STATUS_OK;
     callProxyInfo_t* pCallInfo = NULL;
 
-	if(!pSipTUMsg)
+	if(!pSipTUMsg || !ppProxyInfo)
 	{
-		logError("null pointer, pSipTUMsg.");
+		logError("null pointer, pSipTUMsg=%p, ppProxyInfo=%p.", pSipTUMsg, ppProxyInfo);
 		status = OS_ERROR_NULL_POINTER;
+		goto EXIT;
+	}
+
+	if(*ppProxyInfo)
+	{
+		logError("pProxyInfo(%p) already exists for a initial request.", *ppProxyInfo);
+		status = OS_STATUS_INVALID_VALUE;
 		goto EXIT;
 	}
 
@@ -273,7 +289,24 @@ osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t
     pCallInfo->state = SIP_CALLPROXY_STATE_NONE;
     //for now, the proxy does not initiate BYE. when reg is gone, simply drop all sessions.  Otherwise, has to store from, to seq, route set etc.
 
-	//add the session to the hash
+	//request proxyMgr to create a proxy and add pCallInfo to the proxy.  Reason to let proxyMgr to create a proxy is that there may have different criteria to create a session, like callId, ODI(in scscf), etc., only proxyMgr knows the criteria
+    *ppProxyInfo = oszalloc(sizeof(proxyInfo_t), NULL);
+	if(!(*ppProxyInfo))
+	{
+		logError("fails to allocate a proxyInfo for request (callId=%r).", &callId);
+        //the ACK for this error response would not be able to reach the proper session as the hash for the callId has not been created.  the outcome is that the transaction may send error response multiple times. to avoid it, we will have to associate callId+seqNum with transactionId in the transaction layer. since this must be an extreme rare situation, we just live with it.
+        sipProxy_uasResponse(SIP_RESPONSE_500, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
+        status = OS_ERROR_MEMORY_ALLOC_FAILURE;
+        goto EXIT;
+    }
+
+	pCallInfo->pProxyMgrInfo = pProxyMgrInfo;
+    pCallInfo->pProxyInfo = *ppProxyInfo;
+    (*ppProxyInfo)->pCallInfo = pCallInfo;
+    (*ppProxyInfo)->proxyOnMsg = callProxy_onSipTUMsg;
+    logInfo("proxy for callId(%r) is created(%p), pProxyMgrInfo=%p, pCallInfo=%p.", &callId, *ppProxyInfo, pProxyMgrInfo, pCallInfo);
+
+#if 0
     osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), NULL);
     if(!pHashData)
     {
@@ -294,6 +327,7 @@ osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t
 logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCallInfo=%p.", pProxyInfo, pCallInfo);
     pCallInfo->pCallHashLE = osHash_add(callHash, pHashData);
     logInfo("callId(%r) is added into callProxyHash, key=0x%x, pCallHashLE=%p, pCallInfo=%p.", &callId, pHashData->hashKeyInt, pCallInfo->pCallHashLE, pCallInfo);
+#endif
 
     callProxy_addTrInfo(&pCallInfo->proxyTransInfo, SIP_METHOD_INVITE, pCallInfo->seqNum, pSipTUMsg->pTransId, NULL, pCallInfo->pProxyInfo, true);
 
@@ -312,6 +346,7 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
         goto EXIT;
     }
 
+	//if there is pRoteCtl and pRouteCtl->pNextHop != NULL, use it for next route.
     //for now, we only support lr route
     //check the number of route values,
     //  if >= 1, check if the top route belongs to this proxy
@@ -325,11 +360,15 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
     //     if yes, put the called user contact or next hop address in the req uri
     //     if no, use the req line host/port as the peer
 
-    //to-do, for now, we do not check if the top route is this proxy, just assume it is, and remove it
+    //to-do, for now, we do not check if the top route is this proxy, just assume it is, and remove it (to-be-done)
     bool isMultiRoute = sipMsg_isHdrMultiValue(SIP_HDR_ROUTE, pReqDecodedRaw, false, NULL);
 
     sipTuAddr_t nextHop={};
-    if(!isMultiRoute)
+	if(pRouteCtl && pRouteCtl->pNextHop)
+	{
+		nextHop = *pRouteCtl->pNextHop;
+	}
+	else if(!isMultiRoute)
     {
         bool isNextHopDone = false;
 
@@ -385,15 +424,6 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
         }
 	}
 
-#if 0
-    pCallInfo = oszalloc(sizeof(callProxyInfo_t), callProxyInfo_cleanup);
-
-    osPointerLen_t callId;
-	status = sipHdrCallId_getValue(pReqDecodedRaw, &callId);
-    osDPL_dup(&pCallInfo->callId, &callId);
-
-	sipHdrCSeq_getValue(pReqDecodedRaw, &pCallInfo->seqNum, NULL);
-#endif
 	if(nextHop.isSockAddr)
 	{
 		pCallInfo->cancelNextHop = nextHop;
@@ -410,9 +440,10 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
     //for now, the proxy does not initiate BYE. when reg is gone, simply drop all sessions.  Otherwise, has to store from, to seq, route set etc.
 #endif
 
-	if(proxyConfig_hasRegistrar())
+//	if(proxyConfig_hasRegistrar())
+	if(fProxyRegCB)
 	{
-        pCallInfo->regId = masReg_addAppInfo(&calledUri, pCallInfo);
+        pCallInfo->regId = fProxyRegCB(&calledUri, pCallInfo);
         if(!pCallInfo->regId)
         {
 	        sipProxy_uasResponse(SIP_RESPONSE_500, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
@@ -422,28 +453,6 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
             goto EXIT;
         }
 	}
-
-#if 0
-    //now add callInfo to callHash
-    osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), NULL);
-    if(!pHashData)
-    {
-        logError("fails to allocate pHashData.");
-        sipProxy_uasResponse(SIP_RESPONSE_500, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
-        status = OS_ERROR_MEMORY_ALLOC_FAILURE;
-        goto EXIT;
-    }
-
-    proxyInfo_t* pProxyInfo = oszalloc(sizeof(proxyInfo_t), NULL);
-    pProxyInfo->proxyOnMsg = callProxy_onSipTUMsg;
-    pProxyInfo->pCallInfo = pCallInfo;
-    pHashData->pData = pProxyInfo;
-    pHashData->hashKeyType = OSHASHKEY_INT;
-    pHashData->hashKeyInt = osHash_getKeyPL(&callId, true);
-logError("to-remvoe, just to check the creation of a address.");
-    pCallInfo->pCallHashLE = osHash_add(callHash, pHashData);
-    logInfo("callId(%r) is added into callProxyHash, key=0x%x, pCallHashLE=%p", &callId, pHashData->hashKeyInt, pCallInfo->pCallHashLE);
-#endif
 
 	void* pTransId = NULL;
 	sipProxy_msgModInfo_t msgModInfo = {true, true};
@@ -475,9 +484,14 @@ logError("to-remvoe, just to check the creation of a address.");
     goto EXIT;
 
 EXIT:
-	if(status != OS_STATUS_OK && pCallInfo && pCallInfo->state == SIP_CALLPROXY_STATE_NONE)
+	if(status != OS_STATUS_OK)
 	{
-		osfree(pCallInfo);
+		if(pCallInfo && pCallInfo->state == SIP_CALLPROXY_STATE_NONE)
+		{
+			osfree(pCallInfo);
+		}
+
+		*ppProxyInfo = osfree(*ppProxyInfo);
 	}
 
 	osfree(pReqDecodedRaw);
@@ -956,19 +970,23 @@ static void callProxyInfo_cleanup(void* pData)
     }
 
     //remove from registrar if regId != 0
-    if(pCallInfo->regId)
+    if(pCallInfo->regId && fProxyDelCB)
     {
-        masReg_deleteAppInfo(pCallInfo->regId, pCallInfo);
+		fProxyDelCB(pCallInfo->regId, pCallInfo);
+//        masReg_deleteAppInfo(pCallInfo->regId, pCallInfo);
     }
 
     //remove from hash
-    if(pCallInfo->pCallHashLE)
+    if(pCallInfo->pProxyMgrInfo)
     {
-        logInfo("delete hash element, key=%u", ((osHashData_t*)pCallInfo->pCallHashLE->data)->hashKeyInt);
+		fProxyStatusNtfy(pCallInfo->pProxyMgrInfo, pCallInfo->pProxyInfo, SIP_PROXY_STATUS_DELETE);
+        logInfo("remove proxy(%p) from proxyMgr(%p) for callId(%r)", pCallInfo->pProxyInfo, pCallInfo->pProxyMgrInfo, &pCallInfo->callId);
+//		pCallInfo->pCallHashLE = NULL;
+#if 0
 		//remove memory allocated for proxyInfo_t
         osHash_deleteNode(pCallInfo->pCallHashLE, OS_HASH_DEL_NODE_TYPE_ALL);
         pCallInfo->pCallHashLE = NULL;
-
+#endif
 #if 0
 		//remove memory allocated for proxyInfo_t
 		osfree(((osHashData_t*)pCallInfo->pCallHashLE->data)->pData);

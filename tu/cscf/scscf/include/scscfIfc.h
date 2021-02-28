@@ -37,7 +37,7 @@ typedef enum {
 
 
 typedef struct {
-	bool isLastAsOK;	//if SCSCF successfully sent SIP request to the last AS, for default handling
+//	bool isLastAsOK;	//if SCSCF successfully sent SIP request to the last AS, for default handling
 	sipRequest_e sipMethod;
 	scscfIfcSessCase_e sessCase;
 	scscfIfcRegType_e regType;
@@ -46,7 +46,8 @@ typedef struct {
 
 
 osStatus_e scscfIfc_init(char* sIfcFileFolder, char* sIfcXsdFileName, char* sIfcXmlFileName);
-osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastifc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent);
+osPointerLen_t* scscfIfc_getNextAS(osListElement_t** ppLastifc, sIfcIdList_t* pSIfcIdList, sipMsgDecodedRawHdr_t* pReqDecodedRaw, scscfIfcEvent_t* pIfcEvent, bool* pIsContunedDH);
+scscfIfcSessCase_e scscfIfc_getSessCase(scscfRegState_e regState, bool isMO);
 osStatus_e scscfIfc_parseSIfcSet(osPointerLen_t* pSIfc, osList_t* pSIfcSet);
 scscfIfcRegType_e scscfIfc_mapSar2IfcRegType(scscfRegSarRegType_e sarRegType);
 
