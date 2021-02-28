@@ -51,7 +51,7 @@ typedef struct {
 
 
 typedef struct {
-	osDPointerLen_t contactUri;
+	sipHdrDecoded_t regContact;	//the type of sipHdrMultiContact_t.decodedHdr is sipHdrMultiContact_t
 	uint32_t regExpire;
 } scscfRegContactInfo_t;
 
@@ -119,7 +119,7 @@ osStatus_e scscfReg_createSubHash(scscfRegInfo_t* pRegInfo, bool isAllowSameId);
 void* scscfReg_getRegInfo(osPointerLen_t* pImpu, scscfRegState_e* pRegState, sIfcIdList_t* pSIfcIdList);
 osPointerLen_t* scscfReg_getNoBarImpu(scscfRegIdentity_t ueList[], uint8_t ueNum, bool isTelPreferred);
 osPointerLen_t* scscfReg_getAnyBarredUser(void* pRegInfo, osPointerLen_t user[], int userNum);
-osPointerLen_t* scscfReg_getUeContact(void* pRegInfo, sipTuAddr_t* pNextHop);
+osStatus_e scscfReg_getUeContact(void* pRegInfo, sipTuAddr_t* pNextHop);
 void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo);
 void scscfRegTempWorkInfo_cleanup(scscfRegTempWorkInfo_t* pTempWorkInfo);
 

@@ -846,7 +846,7 @@ static osStatus_e scscfSessStateToUe_onMsg(scscfSessInfo_t* pSessInfo)
 	}
 
 	sipTuAddr_t nextHop = {};
-	osPointerLen_t* pContactUri = scscfReg_getUeContact(pSessInfo->pRegInfo, &nextHop);
+	scscfReg_getUeContact(pSessInfo->pRegInfo, &nextHop);
     sipProxyRouteCtl_t routeCtl = {&nextHop, cscfConfig_getRR(CSCF_TYPE_SCSCF)};
 
 	proxyInfo_t* pProxyInfo = NULL;

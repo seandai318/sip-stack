@@ -20,6 +20,7 @@
 #include "sipHdrVia.h"
 #include "sipHdrFromto.h"
 #include "sipMsgFirstLine.h"
+#include "sipUri.h"
 
 #include "sipTUIntf.h"
 #include "sipTU.h"
@@ -55,7 +56,6 @@ static inline osPointerLen_t* scscfReg_getUserId(scscfRegIdentity_t* pIdentity);
 static inline bool scscfReg_isPerformMar(scscfRegState_e regState, bool isAuthForReReg);
 static inline bool scscfReg_isPeformSar(scscfRegState_e regState, int regExpire);
 static osStatus_e scscfIfc_decodeHssMsg(diaMsgDecoded_t* pDiaDecoded, scscfRegInfo_t* pRegInfo, diaResultCode_t* pResultCode);
-static void scscfReg_updateContactUri(osDPointerLen_t* pOldUri, osPointerLen_t* pNewUri);
 
 static uint64_t scscfReg_startTimer(time_t msec, scscfRegInfo_t* pRegInfo);
 
@@ -302,15 +302,19 @@ static void scscfReg_processRegMsg(osPointerLen_t* pImpi, osPointerLen_t* pImpu,
 	pRegInfo->ueContactInfo.regExpire = regExpire;
 	if(regExpire)
 	{
-		osPointerLen_t newContactUri={};
-		status = sipParamUri_getUriFromRawHdrValue(&pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT]->pRawHdr->value, true, &newContactUri);
-		if(status != OS_STATUS_OK)
+		//if there is contact change
+		if(osPL_strplcmp(pRegInfo->ueContactInfo.regContact.rawHdr.buf, pRegInfo->ueContactInfo.regContact.rawHdr.size, &pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT]->pRawHdr->value, true) != 0)
 		{
-			logError("fails to get contact URI for impi(%r).", pImpi);
-			rspCode = SIP_RESPONSE_403;
-			goto EXIT;
+			sipHdrDecoded_cleanup(&pRegInfo->ueContactInfo.regContact);
+
+			status = sipDecodeHdr(pReqDecodedRaw->msgHdrList[SIP_HDR_CONTACT]->pRawHdr, &pRegInfo->ueContactInfo.regContact, true);
+			if(status != OS_STATUS_OK)
+			{
+				logError("fails to get contact URI for impi(%r).", pImpi);
+				rspCode = SIP_RESPONSE_403;
+				goto EXIT;
+			}
 		}
-		scscfReg_updateContactUri(&pRegInfo->ueContactInfo.contactUri, &newContactUri);
 	}
 
     //for icscf and scscf co-existence, each keeps its own copy of pSipTUMsg and pReqDecodedRaw, and free on its own independently
@@ -1176,9 +1180,9 @@ osPointerLen_t* scscfReg_getAnyBarredUser(void* pRegId, osPointerLen_t user[], i
 }
 
 
-osPointerLen_t* scscfReg_getUeContact(void* pRegId, sipTuAddr_t* pNextHop)
+osStatus_e scscfReg_getUeContact(void* pRegId, sipTuAddr_t* pNextHop)
 {
-	osPointerLen_t* pContactUri = NULL;
+	osStatus_e status = OS_STATUS_OK;
 
 	if(!pRegId || !pNextHop)
 	{
@@ -1187,12 +1191,40 @@ osPointerLen_t* scscfReg_getUeContact(void* pRegId, sipTuAddr_t* pNextHop)
 	}
 
 	scscfRegInfo_t* pRegInfo = pRegId;
-	pContactUri = (osPointerLen_t*) &pRegId->ueContactInfo.contactUri;
+	sipHdrMultiContact_t* pContact = pRegInfo->ueContactInfo.regContact.decodedHdr;
+	if(!pContact)
+	{
+		logError("pContact is null.");
+		status = OS_ERROR_INVALID_VALUE;
+		goto EXIT;
+	}
+
+	if(pContact->isStar)
+    {
+        logError("contact contains star.");
+        status = OS_ERROR_INVALID_VALUE;
+        goto EXIT;
+    }
+
+	sipUri_t* pContactUri = &pContact->contactList.pGNP->hdrValue.uri;
+	pNextHop->ipPort.ip = pContactUri->hostport.host;
+	pNextHop->ipPort.port = pContactUri->hostport.portValue;
 	pNextHop->isSockAddr = false;
-	sipUtil_parseUri(pContactUri, &pNextHop->ipPort.ip, &pNextHop->ipPort.port);
+    pNextHop->tpType = TRANSPORT_TYPE_ANY;
+	if(pContactUri->uriParam.uriParamMask & (1<<SIP_URI_PARAM_TRANSPORT))
+	{
+		if(osPL_strcasecmp(&pContactUri->uriParam.transport, "tcp") == 0)
+		{
+			pNextHop->tpType = TRANSPORT_TYPE_TCP;
+		}
+		else if(osPL_strcasecmp(&pContactUri->uriParam.transport, "udp") == 0)
+		{
+			pNextHop->tpType = TRANSPORT_TYPE_UDP;
+		}
+	}
 
 EXIT:
-	return pContactUri;
+	return status;
 }
 		
 
@@ -1279,7 +1311,7 @@ static void scscfRegInfo_cleanup(void* data)
 
     pRegInfo->regState = SCSCF_REG_STATE_NOT_REGISTERED;
     osList_delete(&pRegInfo->asRegInfoList);
-    osDPL_dealloc(&pRegInfo->ueContactInfo.contactUri);
+	sipHdrDecoded_cleanup(&pRegInfo->ueContactInfo.regContact);
 
 	osMBuf_reset(&pRegInfo->userProfile.rawUserProfile);
 	scscfRegTempWorkInfo_cleanup(&pRegInfo->tempWorkInfo);
@@ -1324,23 +1356,4 @@ static inline bool scscfReg_isPerformMar(scscfRegState_e regState, bool isAuthFo
 static inline bool scscfReg_isPeformSar(scscfRegState_e regState, int regExpire)
 {
 	return (regState != SCSCF_REG_STATE_REGISTERED || (regState == SCSCF_REG_STATE_REGISTERED && !regExpire));
-}
-
-
-static void scscfReg_updateContactUri(osDPointerLen_t* pOldUri, osPointerLen_t* pNewUri)
-{
-	if(!pOldUri || !pNewUri)
-	{
-		logError("null pointer, pOldUri=%p, pNewUri=%p.", pOldUri, pNewUri);
-		return;
-	}
-
-	if(osPL_casecmp((osPointerLen_t*)pOldUri, pNewUri) == 0)
-	{
-		//nothing changed, do nothing
-		return;
-	}
-
-	osDPL_dealloc(pOldUri);
-	osDPL_dup(pOldUri, pNewUri);
 }
