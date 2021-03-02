@@ -5,15 +5,22 @@
  * contains the common helper functions for both SCSCF and ICSCF
  ********************************************************************8***********************/
 
+#include <stdlib.h>
+#include <time.h>
+#include <string.h>
+
 #include "osTypes.h"
 #include "osPL.h"
 #include "osPrintf.h"
+#include "osSockAddr.h"
 
 #include "diaMsg.h"
 
 #include "sipHeader.h"
 #include "sipHdrNameValue.h"
 #include "sipHdrVia.h"
+#include "sipCodecUtil.h"
+#include "proxyMgr.h"
 
 #include "scscfRegistrar.h"
 
@@ -303,7 +310,7 @@ osStatus_e cscf_getRequestUser(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
             goto EXIT;
         }
 
-        pUser[0] = firstLine.sipReqLine.sipUri.sipUser;
+        pUser[0] = firstLine.u.sipReqLine.sipUri.sipUser;
         *userNum = 1;
         goto EXIT;
     }
@@ -337,4 +344,138 @@ osStatus_e cscf_getRequestUser(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 	
 EXIT:
 	return status;
-}	
+}
+
+
+osStatus_e cscf_getEnumQName(osPointerLen_t* pUser, osPointerLen_t* qName)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	//qName shall already allocated space for qName->p
+	if(!pUser || !qName || !qName->p)
+	{
+		logError("null pointer, pUser=%p, qName=%p, qName->p=%p.", pUser, qName, qName->p);
+		status = OS_ERROR_NULL_POINTER;
+		goto EXIT;
+	}
+
+	//the pUser may take the form like: sip:+19723247326@ims.com, tel:19723247326, etc.
+	//this function would not check the format, simply starts from the first digit, until the last digit to convert to qName
+	int digitStart=0;
+	int digitStop = 0;
+	for(int i=0; i<pUser->l; i++)
+	{
+		if(!digitStart)
+		{
+			if(pUser->p[i] <= '9' && pUser->p[i] >= '0')
+			{
+				digitStart = i;
+			}
+			else if(pUser->p[i] == '@')
+			{
+				break;
+			}
+		}
+
+		if(digitStart && (pUser->p[i] < '0' || pUser->p[i] > '9'))
+		{
+			digitStop = i;
+			break;
+		}
+	} 
+
+	if(!digitStart)
+	{
+		logError("the user(%r) is not proper to convert to enum, no digit.", pUser);
+		status = OS_ERROR_INVALID_VALUE;
+		goto EXIT;
+	}
+
+	int j=0;
+	for (int i=digitStop; i>digitStart; i--)
+	{
+		((char*)qName->p)[j++] = pUser->p[i];
+		((char*)qName->p)[j++] = '.';
+	}
+
+	strcpy((char*)&qName->p[j], "e164.arpa");
+	qName->l = j + sizeof("e164.arpa") -1;
+
+EXIT:
+	return status;
+}
+
+
+sipTuRR_t* cscf_buildOwnRR(osPointerLen_t* pUser, sipTuAddr_t* pOwnAddr)
+{
+	sipTuRR_t* pOwnRR = oszalloc(sizeof(sipTuRR_t), NULL);
+
+    strcpy((char*)pOwnRR->rawHdr.pl.p, "Record-Route: <sip:");
+    pOwnRR->rawHdr.pl.l = sizeof("Record-Route: <sip:") - 1;
+	pOwnRR->user.p = &pOwnRR->rawHdr.pl.p[pOwnRR->rawHdr.pl.l];
+	if(pUser)
+	{
+	    struct timespec tp;
+    	clock_gettime(CLOCK_REALTIME, &tp);
+    	srand(tp.tv_nsec);
+    	int randValue=rand();
+
+		pOwnRR->user.l = snprintf((char*)pOwnRR->rawHdr.pl.p, SIP_HDR_MAX_SIZE, "%lx%x", tp.tv_nsec % tp.tv_sec, randValue);
+		pOwnRR->rawHdr.pl.l += pOwnRR->user.l;
+
+		strncpy((char*)&pOwnRR->rawHdr.pl.p[pOwnRR->rawHdr.pl.l], pUser->p, pUser->l);
+        pOwnRR->rawHdr.pl.l += pUser->l;
+		pOwnRR->user.l += pUser->l;
+		for(int i=0; i<pOwnRR->user.l; i++)
+		{
+			if((pOwnRR->user.p[i] >='0' && pOwnRR->user.p[i] <=9) ||(pOwnRR->user.p[i] >='A' && pOwnRR->user.p[i] <= 'Z') || (pOwnRR->user.p[i] >= 'a' && pOwnRR->user.p[i] <= 'z'))
+			{
+				continue;
+			}
+
+			//override any other char to be '%'
+			((char*)pOwnRR->user.p)[i] = '%';
+		}
+	}
+
+	osPointerLen_t* pIp = NULL;
+	int port = 0;
+	if(pOwnAddr->isSockAddr)
+	{
+		osIpPort_t ipPort;
+		osConvertntoPL(&pOwnAddr->sockAddr, &ipPort);
+		pIp = &ipPort.ip.pl;
+		port = ipPort.port;
+	}
+	else
+	{
+		pIp = &pOwnAddr->ipPort.ip;
+		port = pOwnAddr->ipPort.port;
+	}
+
+	if(port)
+	{
+		if(pOwnAddr->tpType == TRANSPORT_TYPE_ANY)
+		{
+			pOwnRR->rawHdr.pl.l += osPrintf_buffer((char*)&pOwnRR->rawHdr.pl.p[pOwnRR->rawHdr.pl.l], SIP_HDR_MAX_SIZE, "@%r:%d; lr>\r\n", pIp, port);
+		}
+		else
+		{
+			pOwnRR->rawHdr.pl.l += osPrintf_buffer((char*)&pOwnRR->rawHdr.pl.p[pOwnRR->rawHdr.pl.l], SIP_HDR_MAX_SIZE, "@%r:%d; transport=%s; lr>\r\n",  pIp, port, pOwnAddr->tpType == TRANSPORT_STATUS_UDP ? "udp" : "tcp");
+		}
+	}
+	else
+	{
+        if(pOwnAddr->tpType == TRANSPORT_TYPE_ANY)
+        {
+			pOwnRR->rawHdr.pl.l += osPrintf_buffer((char*)&pOwnRR->rawHdr.pl.p[pOwnRR->rawHdr.pl.l], SIP_HDR_MAX_SIZE, "@%r; lr>\r\n", pIp);
+		}
+		else
+		{
+            pOwnRR->rawHdr.pl.l += osPrintf_buffer((char*)&pOwnRR->rawHdr.pl.p[pOwnRR->rawHdr.pl.l], SIP_HDR_MAX_SIZE, "@%r; transport=%s; lr>\r\n",  pIp, pOwnAddr->tpType == TRANSPORT_STATUS_UDP ? "udp" : "tcp");
+		}
+	}
+
+EXIT:
+	return pOwnRR;
+}		

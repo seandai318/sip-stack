@@ -41,16 +41,24 @@ struct sipProxyRouteCtl;
 
 typedef osStatus_e (*proxy_onMsgCallback) (sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, struct sipProxyRouteCtl* pRouteCtl, struct proxyInfo** ppProxyInfo, void* pProxyMgrInfo);
 
+
+typedef struct {
+	sipPointerLen_t rawHdr;
+	osPointerLen_t user;	//pointer to content in rawHdr
+} sipTuRR_t;
+
+
 typedef struct proxyInfo {
 	proxy_onMsgCallback proxyOnMsg;	
 	void* pCallInfo;	//contains proxy user info, like pRegInfo (scscfRegInfo_t) for scscf, etc. will be passed back as ((proxyInfo_t*)pSipTUMsg->pTUId)->pCallInfo when proxyOnMsg is called
+	sipTuRR_t* pOwnRR;	//contains own RR, can be NULL if app does not need this info, proxyInfo is responsible to free this memory
 } proxyInfo_t;
 
 
 //this data structure is used to control the routing setting for a initial request when the request is re-directed via app
 typedef struct sipProxyRouteCtl {
 	sipTuAddr_t* pNextHop;
-	osPointerLen_t* pRR;
+	sipTuRR_t* pOwnRR;
 }sipProxyRouteCtl_t;
 
 

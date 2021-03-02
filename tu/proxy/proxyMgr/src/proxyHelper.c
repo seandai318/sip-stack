@@ -59,35 +59,33 @@ osStatus_e sipProxy_forwardReq(sipTuAppType_e proxyType, sipTUMsg_t* pSipTUMsg, 
 	if(pHdrModInfo->isAuto)
 	{
     	delNum = pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE] ? 1 : 0;
-	}
 
-	osPointerLen_t rr;
-	uint8_t addNum = 0;
-	char* ipPort = NULL;
-	int len = 0;
-    if(pHdrModInfo->isAuto && pHdrModInfo->isAddRR)
-	{
-	    osPointerLen_t localIP;
-    	int localPort;
-    	sipConfig_getHost(&localIP, &localPort);
-        ipPort = oszalloc_r(SIP_HDR_MAX_SIZE, NULL);
-    	len = osPrintf_buffer(ipPort, SIP_HDR_MAX_SIZE, "Record-Route: <sip:%r:%d;lr>\r\n", &localIP, localPort);
-    	if(len < 0)
-    	{
-        	logError("fails to osPrintf_buffer for ipPort(%r:%d)", &localIP, localPort);
-        	osfree(ipPort);
-        	status = OS_ERROR_INVALID_VALUE;
-        	goto EXIT;
-    	}
+		osPointerLen_t rr;
+		uint8_t addNum = 0;
+		char* ipPort = NULL;
+		int len = 0;
+    	if(pHdrModInfo->isAddRR)
+		{
+	    	osPointerLen_t localIP;
+    		int localPort;
+    		sipConfig_getHost(&localIP, &localPort);
+        	ipPort = oszalloc_r(SIP_HDR_MAX_SIZE, NULL);
+    		len = osPrintf_buffer(ipPort, SIP_HDR_MAX_SIZE, "Record-Route: <sip:%r:%d;lr>\r\n", &localIP, localPort);
+    		if(len < 0)
+    		{
+        		logError("fails to osPrintf_buffer for ipPort(%r:%d)", &localIP, localPort);
+        		osfree(ipPort);
+        		status = OS_ERROR_INVALID_VALUE;
+        		goto EXIT;
+    		}
 
-		osPL_setStr(&rr, ipPort, len);
-		addNum = 1;
-	}
-    sipTuHdrRawValueStr_t addList = {SIP_HDR_RECORD_ROUTE, {false, {&rr}}};
+			osPL_setStr(&rr, ipPort, len);
+			addNum = 1;
+		}
+			
+		sipTuHdrRawValueStr_t addList = {SIP_HDR_RECORD_ROUTE, {false, {&rr}}};
 
-    //forward the SIP INVITE, add top via, remove top Route, reduce the max-forarded by 1.  The viaId shall be filled with the real peer IP/port
-	if(pHdrModInfo->isAuto)
-	{
+    	//forward the SIP INVITE, add top via, remove top Route, reduce the max-forarded by 1.  The viaId shall be filled with the real peer IP/port
 	   	pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, true, &delList, delNum, &addList, addNum, &viaId, pTargetUri, &topViaProtocolPos, NULL);
 	    osfree(ipPort);
 	}

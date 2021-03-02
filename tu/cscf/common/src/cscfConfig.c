@@ -12,7 +12,7 @@
 #include "osSockAddr.h"
 #include "osMemory.h"
 
-#include "sipTu.h"
+#include "sipTU.h"
 #include "sipHdrMisc.h"
 
 #include "cscfConfig.h"
@@ -28,8 +28,8 @@ static osPointerLen_t gCxXsdName;
 static struct sockaddr_in gScscfSockAddr, gIcscfSockAddr;
 static scscfAddrInfo_t gScscfAddrInfo[ICSCF_CONFIG_MAX_SCSCF_NUM];
 static uint8_t gScscfAddrNum;
-static sipPointerLen_t gScscfRR = SIPPL_INIT(gScscfRR);
-static sipPointerLen_t gIcscfRR = SIPPL_INIT(gIcscfRR);
+static sipTuAddr_t gScscfLocalAddr;	//the local SCSCF addr
+static sipTuAddr_t gIcscfLocalAddr; //the local ICSCF addr
 
 
 osXmlData_t scscfConfig_xmlUsrProfileData[SCSCF_USR_PROFILE_MAX_DATA_NAME_NUM] = {
@@ -59,17 +59,17 @@ debug("to-remove, gCxXsdName=%r.", &gCxXsdName);
 	//set gScscfSockAddr and gIcscfSockAddr
 	cscfConfig_setGlobalSockAddr();
 
-	gScscfRR.pl.l = snprintf(&gScscfRR.pl.p, SIP_HDR_MAX_SIZE, "<sip:%s:%d; lr>", SCSCF_IP_ADDR, SCSCF_LISTEN_PORT);
-	if(gScscfRR.pl.l >= SIP_HDR_MAX_SIZE)
-	{
-		logError("fails to construct SCSCF RR for size overflow.");
-	}
+	gScscfLocalAddr.isSockAddr = false;
+	gScscfLocalAddr.tpType = TRANSPORT_TYPE_ANY;
+	gScscfLocalAddr.ipPort.ip.p = SCSCF_IP_ADDR;
+	gScscfLocalAddr.ipPort.ip.l = strlen(SCSCF_IP_ADDR);
+	gScscfLocalAddr.ipPort.port = SCSCF_LISTEN_PORT;
 
-	gIcscfRR.pl.l = snprintf(&gIcscfRR.pl.p, SIP_HDR_MAX_SIZE, "<sip:%s:%d; lr>", ICSCF_IP_ADDR, ICSCF_LISTEN_PORT);
-	if(gIcscfRR.pl.l >= SIP_HDR_MAX_SIZE)
-    {
-        logError("fails to construct ICSCF RR for size overflow.");
-    }
+    gIcscfLocalAddr.isSockAddr = false;
+    gIcscfLocalAddr.tpType = TRANSPORT_TYPE_ANY;
+    gIcscfLocalAddr.ipPort.ip.p = SCSCF_IP_ADDR;
+    gIcscfLocalAddr.ipPort.ip.l = strlen(ICSCF_IP_ADDR);
+    gIcscfLocalAddr.ipPort.port = ICSCF_LISTEN_PORT;
 }
 
 
@@ -198,22 +198,22 @@ bool cscf_isS(struct sockaddr_in* rcvLocal)
 }
 
 
-osPointerLen_t* cscfConfig_getRR(cscfType_e cscfType)
+sipTuAddr_t* cscfConfig_getOwnAddr(cscfType_e cscfType)
 {
-	osPointerLen_t* pRR = NULL;
+	sipTuAddr_t* pAddr = NULL;
 
 	switch(cscfType)
 	{
 		case CSCF_TYPE_ICSCF:
-			pRR = &gIcscfRR.pl;
+			pAddr = &gIcscfLocalAddr;
 		case CSCF_TYPE_SCSCF:
-			pRR = &gScscfRR.pl;
+			pAddr = &gScscfLocalAddr;
 		default:
 			logError("unexpected cscfType(%d).", cscfType);
 			break;
 	}
 
-	return pRR;
+	return pAddr;
 }
 
 

@@ -20,6 +20,7 @@
 #include "osHash.h"
 #include "osDebug.h"
 #include "osPL.h"
+#include "osLB.h"
 
 #include "diaMsg.h"
 #include "diaCxSar.h"
@@ -34,6 +35,7 @@
 #include "proxyMgr.h"
 #include "proxyHelper.h"
 
+#include "icscfCxLir.h"
 #include "scscfSession.h"
 #include "cscfHelper.h"
 #include "scscfIfc.h"
@@ -61,7 +63,7 @@ static osStatus_e scscfSessStateEstablished_onMsg(scscfSessInfo_t* pSessInfo);
 static osStatus_e scscfSessStateClosing_onMsg(scscfSessInfo_t* pSessInfo);
 
 static void scscfSessStateSar_onSaaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData);
-static void scscfSessStateLir_onLia(scscfSessInfo_t* pSessInfo);
+static void scscfSessStateLir_onLia(void* pSessInfo);
 static void scscfSessState_dnsCallback(dnsResResponse_t* pRR, void* pData);
 static void scscfSessStateClosing_onProxyDelete(scscfSessInfo_t* pSessInfo, proxyInfo_t* pProxy);
 
@@ -497,8 +499,9 @@ static osStatus_e scscfSessStateDnsAs_onMsg(scscfSessInfo_t* pSessInfo)
     //if nextHop is FQDN, perform DNS query
     if(osIsIpv4(&pSessInfo->tempWorkInfo.nextHop.ipPort.ip))
     {
+		sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
+		sipProxyRouteCtl_t routeCtl = {&pSessInfo->tempWorkInfo.nextHop, pOwnRR};
 		proxyInfo_t* pProxyInfo = NULL;
-		sipProxyRouteCtl_t routeCtl = {&pSessInfo->tempWorkInfo.nextHop, cscfConfig_getRR(CSCF_TYPE_SCSCF)};
 	    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
     	if(pProxyInfo)
     	{
@@ -732,7 +735,7 @@ static osStatus_e scscfSessStateLir_onMsg(scscfSessInfo_t* pSessInfo)
     sipResponse_e rspCode = SIP_RESPONSE_200;
 
 	//request ICSCF to perform LIR
-	icscf_performLir4Scscf(scscfSessStateLir_onLia, pSessInfo);
+	icscf_performLir4Scscf(&pSessInfo->tempWorkInfo.users[0], scscfSessStateLir_onLia, pSessInfo);
 
 EXIT:
     if(rspCode != SIP_RESPONSE_200)
@@ -744,10 +747,11 @@ EXIT:
 }
 
 
-static void scscfSessStateLir_onLia(scscfSessInfo_t* pSessInfo)
+static void scscfSessStateLir_onLia(void* pScscfId)
 {
     osStatus_e status = OS_STATUS_OK;
     sipResponse_e rspCode = SIP_RESPONSE_200;
+	scscfSessInfo_t* pSessInfo = pScscfId;
 
 EXIT:
     if(rspCode != SIP_RESPONSE_200)
@@ -787,9 +791,9 @@ static osStatus_e scscfSessStateToBreakout_onMsg(scscfSessInfo_t* pSessInfo)
     //if nextHop is FQDN, perform DNS query
     if(osIsIpv4(&mgcpAddr.ipPort.ip))
     {
-        proxyInfo_t* pProxyInfo = NULL;
-        sipProxyRouteCtl_t routeCtl = {&mgcpAddr, cscfConfig_getRR(CSCF_TYPE_SCSCF)};
-
+        sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
+        sipProxyRouteCtl_t routeCtl = {&mgcpAddr, pOwnRR};
+		proxyInfo_t* pProxyInfo = NULL;
         status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
         if(pProxyInfo)
         {
@@ -847,7 +851,8 @@ static osStatus_e scscfSessStateToUe_onMsg(scscfSessInfo_t* pSessInfo)
 
 	sipTuAddr_t nextHop = {};
 	scscfReg_getUeContact(pSessInfo->pRegInfo, &nextHop);
-    sipProxyRouteCtl_t routeCtl = {&nextHop, cscfConfig_getRR(CSCF_TYPE_SCSCF)};
+	sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
+    sipProxyRouteCtl_t routeCtl = {&nextHop, pOwnRR};
 
 	proxyInfo_t* pProxyInfo = NULL;
     status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
@@ -1078,9 +1083,9 @@ static void scscfSessState_dnsCallback(dnsResResponse_t* pRR, void* pData)
 
     		mdebug(LM_CSCF, "send request to %A.", &nextHop.sockAddr);
 
+			sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
+	        sipProxyRouteCtl_t routeCtl = {&nextHop, pOwnRR};
 			proxyInfo_t* pProxyInfo = NULL;
-	        sipProxyRouteCtl_t routeCtl = {&nextHop, cscfConfig_getRR(CSCF_TYPE_SCSCF)};
-
     		status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
     		if(pProxyInfo)
     		{
@@ -1241,7 +1246,7 @@ static proxyInfo_t* scscfSess_getMatchingProxy(scscfSessInfo_t* pSessInfo, sipTU
 	osListElement_t* pLE = pSessInfo->proxyList.head;
 	while(pLE)
 	{
-		if(osPL_cmp(pProxyId, &((proxyInfo_t*)pProxyInfo)->ownRR) == 0)
+		if(osPL_cmp(pProxyId, &((proxyInfo_t*)pProxyInfo)->pOwnRR->user) == 0)
 		{
 			pProxyInfo = pLE->data;
 			goto EXIT;

@@ -106,7 +106,7 @@ void cscfConfig_init(char* cxFolder, char* cxXsdFileName);
 osStatus_e scscfConfig_parseUserProfile(osPointerLen_t* pRawUserProfile, scscfUserProfile_t* pDecodedUserProfile);
 struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseListenPort);
 bool cscf_isS(struct sockaddr_in* rcvLocal);
-osPointerLen_t* cscfConfig_getRR(cscfType_e cscfType);
+sipTuAddr_t* cscfConfig_getOwnAddr(cscfType_e cscfType);
 void cscfConfig_getMgcpAddr(sipTuAddr_t* pMgcpAddr);
 
 bool icscfConfig_getScscfInfoByCap(uint32_t capValue, sipTuAddr_t* pScscfAddr, bool* isLocal);

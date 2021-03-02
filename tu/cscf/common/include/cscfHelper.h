@@ -11,6 +11,7 @@
 #include "sipMsgRequest.h"
 #include "sipMsgFirstLine.h"
 #include "sipTUIntf.h"
+#include "proxyMgr.h"
 
 
 osStatus_e cscf_sendRegResponse(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, void* pRegInfo, uint32_t regExpire, struct sockaddr_in* pPeer, struct sockaddr_in* pLocal, sipResponse_e rspCode);
@@ -18,6 +19,8 @@ osStatus_e cscf_getImpiFromSipMsg(sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPoint
 sipResponse_e cscf_cx2SipRspCodeMap(diaResultCode_t resultCode);
 //userNum: in/out, the maximum requested user as the input, the user in the sip request message as the output
 osStatus_e cscf_getRequestUser(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isMO, osPointerLen_t* pUser, int* userNum);
+osStatus_e cscf_getEnumQName(osPointerLen_t* pUser, osPointerLen_t* qName);
+sipTuRR_t* cscf_buildOwnRR(osPointerLen_t* pUser, sipTuAddr_t* pOwnAddr);
 
 
 #endif
