@@ -34,7 +34,7 @@ static void callProxy_onTimeout(uint64_t timerId, void* data);
 static void callProxyInfo_cleanup(void* pData);
 
 osStatus_e callProxyEnterState(sipCallProxyState_e newState, callProxyInfo_t* pCallInfo);
-static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo);
+static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, void* pProxyMgrInfo, proxyInfo_t** ppProxyInfo);
 static osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
 static osStatus_e callProxyStateInitError_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
 static osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
@@ -50,9 +50,9 @@ static osStatus_e callProxyStateBye_onTrError(sipTUMsg_t* pSipTUMsg, callProxyIn
 static proxyStatusNtfyCB_h fProxyStatusNtfyCB; //callback function to notify proxyMgr the proxy status change
 //to-do, proxyReg2RegistrarCB_h and proxyDelFromRegistrarCB_h can be removed to be part of proxyStatusNtfyCB_h
 static proxyReg2RegistrarCB_h fProxyRegCB;		//callback to register to registrar.  This CB maybe NULL since some application (like CSCF) already handle it by fProxyStatusNtfyCB, there is no need for this CB
+static proxyDelFromRegistrarCB_h fProxyDelCB;	//callback to delete a proxy from registrar
 
-
-void callProxy_init(proxyStatusNtfy_h proxyStatusNtfy, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar)
+void callProxy_init(proxyStatusNtfyCB_h proxyStatusNtfy, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar)
 {
 	if(!proxyStatusNtfy)
 	{
@@ -194,7 +194,7 @@ static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_
 	}
 	else
 	{
-		return callProxyStateNone_onMsg(pSipTUMsg, pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, pProxyMgrInfo, ppProxyInfo);
+		return callProxyStateNone_onMsg(pSipTUMsg, pReqDecodedRaw, pRouteCtl, pProxyMgrInfo, ppProxyInfo);
 	}
 
 	return status;
@@ -258,7 +258,7 @@ static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 	if(*ppProxyInfo)
 	{
 		logError("pProxyInfo(%p) already exists for a initial request.", *ppProxyInfo);
-		status = OS_STATUS_INVALID_VALUE;
+		status = OS_ERROR_INVALID_VALUE;
 		goto EXIT;
 	}
 
@@ -290,7 +290,7 @@ static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
     //for now, the proxy does not initiate BYE. when reg is gone, simply drop all sessions.  Otherwise, has to store from, to seq, route set etc.
 
 	//request proxyMgr to create a proxy and add pCallInfo to the proxy.  Reason to let proxyMgr to create a proxy is that there may have different criteria to create a session, like callId, ODI(in scscf), etc., only proxyMgr knows the criteria
-    *ppProxyInfo = oszalloc(sizeof(proxyInfo_t), NULL);
+    *ppProxyInfo = oszalloc(sizeof(proxyInfo_t), proxyInfo_cleanup);
 	if(!(*ppProxyInfo))
 	{
 		logError("fails to allocate a proxyInfo for request (callId=%r).", &callId);
@@ -979,7 +979,7 @@ static void callProxyInfo_cleanup(void* pData)
     //remove from hash
     if(pCallInfo->pProxyMgrInfo)
     {
-		fProxyStatusNtfy(pCallInfo->pProxyMgrInfo, pCallInfo->pProxyInfo, SIP_PROXY_STATUS_DELETE);
+		fProxyStatusNtfyCB(pCallInfo->pProxyMgrInfo, pCallInfo->pProxyInfo, SIP_PROXY_STATUS_DELETE);
         logInfo("remove proxy(%p) from proxyMgr(%p) for callId(%r)", pCallInfo->pProxyInfo, pCallInfo->pProxyMgrInfo, &pCallInfo->callId);
 //		pCallInfo->pCallHashLE = NULL;
 #if 0

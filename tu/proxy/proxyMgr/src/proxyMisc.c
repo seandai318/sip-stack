@@ -231,3 +231,17 @@ osStatus_e sipProxy_removePairTrInfo(osListPlus_t* pList, void* trId, bool isPri
 EXIT:
 	return status;
 }
+
+
+void proxyInfo_cleanup(void* pData)
+{
+	proxyInfo_t* pProxyInfo = pData;
+
+	if(!pProxyInfo)
+	{
+		return;
+	}
+
+	osfree(pProxyInfo->pOwnRR);
+}
+

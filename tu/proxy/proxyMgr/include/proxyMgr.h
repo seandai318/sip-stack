@@ -69,7 +69,7 @@ typedef osStatus_e (*proxyDelFromRegistrarCB_h) (void* pRegId, void* pTransId);
 
 osStatus_e proxy_init(proxyStatusNtfyCB_h proxyStatusNtfy);
 osStatus_e saProxy_init(uint32_t bucketSize, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar);
-osStatus_e proxyInit(proxyStatusNtfyCB_h proxyStatusNtfy, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar);
+//osStatus_e proxyInit(proxyStatusNtfyCB_h proxyStatusNtfy, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar);
 osStatus_e proxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
 osStatus_e proxy_onSipTUMsgViaApp(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxy, void* pProxyMgrInfo);
 
@@ -82,5 +82,6 @@ void sipProxy_getPairPrimaryTrId(osListPlus_t* pList, void** ppUasId, void** ppU
 osStatus_e sipProxy_removePairTrInfo(osListPlus_t* pList, void* trId, bool isPrimary);
 osHash_t* proxy_getHash();
 
+void proxyInfo_cleanup(void* pData);
 
 #endif

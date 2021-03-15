@@ -11,7 +11,7 @@
 #include "sipMsgRequest.h"
 
 
-static osStatus_e sipDecodeOneMGNPHdrValues(sipHdrMultiGenericNameParam_t* pDecodedHdr, osPointerLen_t* pUser, int* userNum, int maxUserNum);
+static osStatus_e sipDecodeOneMGNPHdrURIs(sipHdrMultiGenericNameParam_t* pDecodedHdr, osPointerLen_t* pUser, int* userNum, int maxUserNum);
 
 
 //decode top MultiGenericNameParam hdr, like Route header, etc.
@@ -31,7 +31,7 @@ sipHdrGenericNameParam_t* sipDecodeMGNPHdrTopValue(sipHdrName_e hdrCode, sipMsgD
 		goto EXIT;
 	}
 
-	pGNP = ((sipHdrMultiGenericNameParam_t*)sipHdrDecoded->decodedHdr)->pGNP;	
+	pGNP = &((sipHdrMultiGenericNameParam_t*)sipHdrDecoded->decodedHdr)->pGNP->hdrValue;	
 
 EXIT:
 	return pGNP;
@@ -72,7 +72,7 @@ osStatus_e sipDecode_getMGNPHdrURIs(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t*
         goto EXIT;
     }
 
-    status = sipDecodeOneMGNPHdrValues(sipHdrDecoded.decodedHdr, pUser, userNum, maxUserNum);
+    status = sipDecodeOneMGNPHdrURIs(sipHdrDecoded.decodedHdr, pUser, userNum, maxUserNum);
     if(*userNum >= maxUserNum)
     {
         goto EXIT;
@@ -94,8 +94,7 @@ osStatus_e sipDecode_getMGNPHdrURIs(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t*
             goto EXIT;
         }
 
-        pDecodedHdrLine = sipHdrDecoded.decodedHdr;
-        status = sipDecodeOneMGNPHdrValues(sipHdrDecoded.decodedHdr, pUser, userNum, maxUserNum);
+        status = sipDecodeOneMGNPHdrURIs(sipHdrDecoded.decodedHdr, pUser, userNum, maxUserNum);
         if(*userNum >= maxUserNum)
         {
             goto EXIT;
@@ -114,7 +113,9 @@ EXIT:
 
 //decode one MGNP hdr, note one hdr (a hdr with its own hdr name) may have multiple values
 static osStatus_e sipDecodeOneMGNPHdrURIs(sipHdrMultiGenericNameParam_t* pDecodedHdr, osPointerLen_t* pUser, int* userNum, int maxUserNum)
-{	
+{
+	osStatus_e status = OS_STATUS_OK;
+	
 	if(*userNum >= maxUserNum || !pDecodedHdr)
 	{
 		status = OS_ERROR_INVALID_VALUE;
