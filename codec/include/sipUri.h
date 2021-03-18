@@ -58,6 +58,7 @@ osPointerLen_t* sipUri_getPort(sipUri_t* pUri);
 osPointerLen_t* sipUri_getTransport(sipUri_t* pUri);
 uint32_t sipUri_getUriparamMask(sipUri_t* pUri);
 osList_t* sipUri_getOtherparam(sipUri_t* pUri);
+bool sipUri_isParamInOther(sipUri_t* pUri, osPointerLen_t* pParam);
 //reallocate the oslist memory, include the memory of osListElement->data 
 void sipUri_cleanup(void* data);
 //reallocate the oslist memory, but the memory of osListElement->data is left as is

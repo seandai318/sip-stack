@@ -1066,9 +1066,7 @@ void sipHdrVia_cleanup(void* data)
 	sipHdrVia_t* pHdr = data;
 
 	osfree(pHdr->pBranch);
-logError("to-remove, VIA-MEMORY, 5, pHdr->viaParamList.head=%p", pHdr->viaParamList.head);
 	osList_delete(&pHdr->viaParamList);
-logError("to-remove, VIA-MEMORY, 6");
 }
 
 

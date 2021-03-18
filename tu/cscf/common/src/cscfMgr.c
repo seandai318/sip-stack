@@ -13,6 +13,7 @@ void cscf_init(char* cscfConfigFolder)
 
 //	icscf_init(ICSCF_HASH_SIZE);
     scscfReg_init(SCSCF_HASH_SIZE);
+    scscfSess_init(SCSCF_HASH_SIZE);
 
     sipTU_attach(SIPTU_APP_TYPE_CSCF, cscf_onTUMsg);
 debug("sipTU_attach, SIPTU_APP_TYPE_CSCF=%d", SIPTU_APP_TYPE_CSCF);
@@ -39,8 +40,7 @@ static osStatus_e cscf_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 		}
 		else
 		{
-		//	appOnSipMsg = scscfSess_onMsg;
-			logError("to-remove, to be done.");
+			appOnSipMsg = scscfSess_onTUMsg;
 		}
 	}
 	else

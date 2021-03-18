@@ -39,9 +39,9 @@
 #include "scscfSession.h"
 #include "cscfHelper.h"
 #include "scscfIfc.h"
+#include "scscfIntf.h"
 
 
-static osStatus_e scscfSess_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
 static osStatus_e scscfSess_isInitialReq(scscfSessInfo_t* pSessInfo, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool* isInitialReq);
 static void scscfSess_onProxyStatus(void* pSessInfo, proxyInfo_t* pProxy, proxyStatus_e proxyStatus);
 static proxyInfo_t* scscfSess_getMatchingProxy(scscfSessInfo_t* pSessInfo, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw);
@@ -89,7 +89,7 @@ osStatus_e scscfSess_init(uint32_t bucketSize)
         goto EXIT;
     }
 
-	sipTU_attach(SIPTU_APP_TYPE_SCSCF_SESSION, scscfSess_onSipTUMsg);
+	sipTU_attach(SIPTU_APP_TYPE_SCSCF_SESSION, scscfSess_onTUMsg);
 
 	proxy_init(scscfSess_onProxyStatus);
 
@@ -101,7 +101,7 @@ EXIT:
 //this function handles the request only.  The response shall be directly forwarded to the proxy
 //if there is error,scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_CLOSING) is only called in the function that starts the 
 //thread based on the error status, the other function simply returns status. 
-static osStatus_e scscfSess_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
+osStatus_e scscfSess_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 {
     DEBUG_BEGIN
 
@@ -223,9 +223,9 @@ static osStatus_e scscfSess_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipT
         					logError("fails to process request for callId=%r, isMO=%d.", &callId, pSessInfo->tempWorkInfo.isMO);
         					goto EXIT;
     					}
+	
+						break;
 					}
-
-					break;
 				}
 
 				//if !pTopRoute, or pTopRoute does not have matching odi, it is a brand-new request
@@ -285,9 +285,9 @@ static osStatus_e scscfSessStateInit_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 
 	//differentiate a orig or term request
     osPointerLen_t sescaseName = {"orig", 4};
-    pSessInfo->tempWorkInfo.isMO = sipParamNV_isNameExist(&pTopRoute->genericParam, &sescaseName);
+    pSessInfo->tempWorkInfo.isMO = sipUri_isParamInOther(&pTopRoute->uri, &sescaseName);
 	pSessInfo->state = SCSCF_SESS_STATE_INIT;
-	mdebug(LM_CSCF, "pSessInfo(%p) state initiated to SCSCF_SESS_STATE_INIT", pSessInfo);
+	mdebug(LM_CSCF, "state SCSCF_SESS_STATE_INIT, pSessInfo(%p) initiated, isMO=%d", pSessInfo, pSessInfo->tempWorkInfo.isMO);
 
 	pSessInfo->tempWorkInfo.pSipTUMsg = pSipTUMsg;
 	pSessInfo->tempWorkInfo.pReqDecodedRaw = pReqDecodedRaw;

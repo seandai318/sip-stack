@@ -124,52 +124,6 @@ void* transportMainStart(void* pData)
 
     debug("ownIpcFd(%d) is added into epoll fd (%d).", tpSetting.ownIpcFd[0], tpEpFd);
 
-#if 0	//replaced with tpSetting.udpInfoNum
-    memset(&localAddr, 0, sizeof(localAddr));
-//    memset(&peerAddr, 0, sizeof(peerAddr));
-
-	if(tpConvertPLton(&tpSetting.udpLocal, true, &localAddr) != OS_STATUS_OK)
-	{
-		logError("fails to tpConvertPLton for udp, IP=%r, port=%d.", &tpSetting.udpLocal.ip, tpSetting.udpLocal.port);
-		goto EXIT;
-	}
-
-	//create UDP listening socket
-    if((sipUdpFd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0)) < 0 ) 
-	{ 
-		logError("fails to create UDP socket.");
-		goto EXIT;
-    } 
-
-	int opt = 1;
-	//has to set SO_REUSEADDR, otherwise, bind() will get EADDRINUSE(98) error when port is specified
-	if(setsockopt(sipUdpFd,SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int)) != 0)
-	{
-        logError("fails to setsockopt for SO_REUSEADDR.");
-        goto EXIT;
-    }
-
-	if(setsockopt(sipUdpFd,SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(int)) != 0) 
-	{
-        logError("fails to setsockopt for SO_REUSEPORT.");
-        goto EXIT;
-    }
-   
-    // Bind the socket with the server address 
-    if(bind(sipUdpFd, (const struct sockaddr *)&localAddr, sizeof(localAddr)) < 0) 
-    { 
-        logError("udpSocket bind fails, localIP=%r, udpSocketfd=%d, errno=%d.", &tpSetting.udpLocal.ip, sipUdpFd, errno); 
-		goto EXIT;
-    } 
-
-    event.events = EPOLLIN;
-    event.data.fd = sipUdpFd;
-    if(epoll_ctl(tpEpFd, EPOLL_CTL_ADD, sipUdpFd, &event))
-    {
-        logError("fails to add file descriptor (%d) to epoll(%d), errno=%d.\n", sipUdpFd, tpEpFd, errno);
-        goto EXIT;
-    }
-#endif
     for(int i=0; i< tpSetting.udpInfoNum; i++)
     {
         tpLocalAddrInfo_t* pAppListener = osmalloc(sizeof(tpLocalAddrInfo_t), NULL);
@@ -761,12 +715,12 @@ static void tpServerForwardMsg(transportAppType_e appType, osMBuf_t* pBuf, int t
     inet_ntop(AF_INET, &peer->sin_addr, ip, INET_ADDRSTRLEN);
 	if(appType == TRANSPORT_APP_TYPE_DIAMETER)
 	{
-		mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), tcp fd=%d, the msg=", ip, ntohs(peer->sin_port), appType, tcpFd);
+		mlogInfo(LM_TRANSPORT, "received a Msg (src=%s:%d, dst=%r) for app type(%d), tcp fd=%d, the msg=", ip, ntohs(peer->sin_port), local, appType, tcpFd);
 		hexdump(stdout, pBuf->buf, pBuf->end);
 	}
 	else
 	{ 
-    	mlogInfo(LM_TRANSPORT, "received a Msg from %s:%d for app type(%d), the msg=\n%M", ip, ntohs(peer->sin_port), appType, pBuf);
+    	mlogInfo(LM_TRANSPORT, "received a Msg (src=%s:%d, dst=%A) for app type(%d), the msg=\n%M", ip, ntohs(peer->sin_port), local, appType, pBuf);
 	}
     //to-do, need to go to hash table, to find the destination ipc id, for now, just forward to the first one.
     write(lbFd[0], (void*) &ipcMsg, sizeof(osIPCMsg_t));

@@ -27,6 +27,7 @@ osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg)
 		return OS_ERROR_NULL_POINTER;
 	}
 
+	debug("SIP_TU_PRODUCT_TYPE=%d, sipMsgType=%s, appType=%d.", SIP_TU_PRODUCT_TYPE, pMsg->sipMsgType==SIP_MSG_REQUEST?"request":"response", pMsg->appType); 
 	switch(SIP_TU_PRODUCT_TYPE)
 	{
 		case SIPTU_PRODUCT_TYPE_MAS_AND_REG:

@@ -19,6 +19,9 @@ osStatus_e scscfReg_onIcscfMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, si
 osStatus_e scscfReg_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
 void scscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData);
 bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo);
+osStatus_e scscfSess_init(uint32_t bucketSize);
+osStatus_e scscfSess_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
+
 
 #endif
 

@@ -155,7 +155,7 @@ osStatus_e sipParserHdr_genericNameParam(osMBuf_t* pSipMsg, size_t hdrEndPos, bo
     status = sipParamUri_parse(pSipMsg, hdrEndPos, &parentParsingInfo, &parsingStatus);
 	if(status != OS_STATUS_OK)
 	{
-		logError("parsing contact URI failure, status=%d.", status);
+		logError("parsing URI failure, status=%d.", status);
 		goto EXIT;
 	}
 

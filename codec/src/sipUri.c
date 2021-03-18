@@ -197,7 +197,36 @@ osList_t* sipUri_getOtherparam(sipUri_t* pUri)
     return &pUri->uriParam.other;
 }
 
+bool sipUri_isParamInOther(sipUri_t* pUri, osPointerLen_t* pParam)
+{
+	bool isExist = false;
+	if(!pUri || !pParam)
+	{	
+		logError("null pointer, pUri=%p, pParam=%p.", pUri, pParam);
+		goto EXIT;
+	}
 
+	if((pUri->uriParam.uriParamMask & 1<<SIP_URI_PARAM_OTHER) == 0)
+	{
+		goto EXIT;
+	}
+
+	osListElement_t* pLE = pUri->uriParam.other.head;
+	while(pLE)
+	{
+		osPointerLen_t* pOtherValue = pLE->data;
+		if(osPL_cmp(pParam, pOtherValue) == 0)
+		{
+			isExist = true;
+			break;
+		}
+
+		pLE = pLE->next;
+	}
+
+EXIT:
+	return isExist;
+}
 //set up the parsed parameter's data structure based on the paramName
 static osStatus_e sipParsing_setUriParsingInfo(sipParsing_param_e paramName, sipParsingInfo_t* pSippParsingInfo, void* arg)
 {

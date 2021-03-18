@@ -30,7 +30,7 @@
 
 #define SCSCF_URI						"sip:scscf01-mlplab.ims.com"
 #define SCSCF_URI_WITH_PORT				"sip:scscf01-mlplab.ims.com:5060"
-#define SCSCF_IP_ADDR					"1.2.3.4"
+#define SCSCF_IP_ADDR					"10.225.81.11"
 #define SCSCF_LISTEN_PORT				5060
 
 #define SCSCF_SIFC_XML_FILE_NAME			"dia3gppSIfc.xml"
@@ -42,13 +42,13 @@
 #define SCSCF_HASH_SIZE				1024
 
 
-#define ICSCF_IP_ADDR                   "2.3.4.5"
+#define ICSCF_IP_ADDR                   "10.225.81.12"
 #define ICSCF_LISTEN_PORT               5060
 #define ICSCF_HASH_SIZE				1024
 #define ICSCF_CONFIG_MAX_SCSCF_NUM	6
 #define ICSCF_UAR_AUTHTYPE_CAPABILITY	true
 
-#define MGCP_IP_ADDR					"6.7.8.9"
+#define MGCP_IP_ADDR					"10.247.139.166"
 #define MGCP_LISTEN_PORT				5060
 
 #define SCSCF_MAX_PAI_NUM			3

@@ -35,7 +35,6 @@ osStatus_e sipParsing_getHdrValue(osMBuf_t* pSipMsg, size_t hdrEndPos, sipParsin
 	for(int i=0; i<sbnfNum; i++)
 	{
 //		DEBUG_SIP_PRINT_TOKEN(sippInfo[i].token, sippInfo[i].tokenNum);
-
 		mdebug(LM_SIPP, "start parsing for: sbnfNum=%d, idx=%d, paramName=%d, sipABNF[i].Token='%c'(0x%x). Previous parsing: isEOH=%d, tokenMatched='%c'(0x%x), pos=%ld", sbnfNum, i, sipABNF[i].paramName, sipABNF[i].extToken, sipABNF[i].extToken, isEOH, tokenMatched, tokenMatched, pSipMsg->pos);
 		//if tokenMatched does not match the one starting the current parameter, check if the current parameter is optional
 		if(isEOH || (tokenMatched != SIP_TOKEN_INVALID && tokenMatched != sipABNF[i].extToken))
@@ -80,10 +79,10 @@ osStatus_e sipParsing_getHdrValue(osMBuf_t* pSipMsg, size_t hdrEndPos, sipParsin
 			mdebug(LM_SIPP, "after parsingFunc() for sipABNF[%d], paramName=%d, status=%d, isEOH=%d, tokenMatched='%c'(0x%x)", i, sipABNF[i].paramName, status, pParsingStatus->isEOH, pParsingStatus->tokenMatched, pParsingStatus->tokenMatched);
 			if(status != OS_STATUS_OK)
 			{
-				// if this parameter is optional
-				if(j==0 && status == OS_ERROR_INVALID_VALUE && pParsingStatus->status != SIPP_STATUS_DUPLICATE_PARAM && i < (sbnfNum-1))
+				// if this parameter is optional (sipABNF[i].a == 0 || j > sipABNF[i].a)
+                if(j==0 && status == OS_ERROR_INVALID_VALUE && pParsingStatus->status != SIPP_STATUS_DUPLICATE_PARAM && (sipABNF[i].a == 0 || j > sipABNF[i].a))
 				{
-					mdebug(LM_SIPP, "no match found for this parameter (ABNF idx=%d), but this parameter is optional, try next one.", i);
+					mdebug(LM_SIPP, "no match found for this parameter(ABNF idx=%d), but this parameter is optional(sipABNF[i].a=%d, j=%d), try next one.", i, sipABNF[i].a, j);
 
 					if(sipABNF[i].cleanup)
 					{	
@@ -93,7 +92,7 @@ osStatus_e sipParsing_getHdrValue(osMBuf_t* pSipMsg, size_t hdrEndPos, sipParsin
 					break;
 				}
 
-				logError("parsing error, i=%d, j=%d", i, j);
+				logError("parsing error(status=%d), pParsingStatus->status=%d, i=%d, sipABNF[i].a=%d, j=%d", status, pParsingStatus->status, i, sipABNF[i].a, j);
 				goto EXIT;
 			}
 
@@ -432,7 +431,6 @@ EXIT:
 				}
 			}
 
-logError("to-remove, VIA-MEMORY, AAA1, 1st char=%c", pSipMsg->buf[pNameStartPos]);
             if(sipParsing_isParamExist(pList, &pSipMsg->buf[pNameStartPos], pNameLen))
             {
                 logError("duplicate header parameter.");
@@ -504,7 +502,6 @@ osStatus_e sipParsing_listAddParam(osList_t *pList, char* nameParam, size_t name
     paramPL->value.l = valueLen;
 
     osListElement_t* pLE = osList_append(pList, paramPL);
-logError("to-remove, VIA-MEMORY, pLE=%p", pLE);
 
     if(pLE == NULL)
     {
@@ -513,16 +510,6 @@ logError("to-remove, VIA-MEMORY, pLE=%p", pLE);
         status = OS_ERROR_MEMORY_ALLOC_FAILURE;
         goto EXIT;
     }
-
-//to-remove
-if(paramPL->name.p)
-{
-logError("to-remove, nameParam=%r", &paramPL->name);
-}
-if(paramPL->value.p)
-{
-logError("to-remove, valueParam=%r", &paramPL->value);
-}
 
 EXIT:
 //  mDEBUG_END(LM_SIPP)

@@ -38,9 +38,6 @@ osStatus_e sipParser_userinfo(osMBuf_t* pSipMsg, size_t hdrEndPos, sipParsingInf
 		goto EXIT;
 	}
 
-//	sipParsingInfo_t sippParsingInfo[sipP_userinfoNum];
-	//SIP_INIT_PARSINGINFO(sippParsingInfo, sipP_userinfoNum);
-
     sipParsing_setParsingInfo(sipUserinfoABNF, sipP_userinfoNum, pParentParsingInfo, sippParsingInfo, sipParsing_setUserinfoParsingInfo);
 
     status = sipParsing_getHdrValue(pSipMsg, hdrEndPos, sipUserinfoABNF, sippParsingInfo, sipP_userinfoNum, pParsingStatus);
