@@ -138,7 +138,7 @@ osStatus_e scscfReg_onSaa(scscfRegInfo_t* pRegInfo, diaResultCode_t resultCode)
                 scscfReg_createSubHash(pRegInfo, false);
 
                 pRegInfo->regState = SCSCF_REG_STATE_REGISTERED;
-                pRegInfo->expiryTimerId = osStartTimer(pRegInfo->ueContactInfo.regExpire, scscfReg_onTimeout, pRegInfo);
+                pRegInfo->expiryTimerId = osStartTimer(pRegInfo->ueContactInfo.regExpire*1000, scscfReg_onTimeout, pRegInfo);
 
 				//update the tempWorkInfo.impu with the nobarring impu
 				osPointerLen_t* pImpu = scscfReg_getNoBarImpu(pRegInfo->ueList, pRegInfo->regInfoUENum, true); //true=tel uri is preferred

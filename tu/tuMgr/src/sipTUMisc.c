@@ -15,6 +15,7 @@
 #include "transportIntf.h"
 #include "sipHdrVia.h"
 #include "sipTU.h"
+#include "sipTUMisc.h"
 
 
 static osStatus_e sipTu_convertPL2NextHop(osPointerLen_t* pUri, transportIpPort_t* pNextHop);
@@ -210,7 +211,6 @@ static osStatus_e sipTu_convertPL2NextHop(osPointerLen_t* pUri, transportIpPort_
 {
 	osStatus_e status = OS_STATUS_OK;
 
-debug("to-remove, pUri=%r", pUri);
 	size_t startPos = 0;
 	sipTuUriSearchState_e sipTuUriSearchState = SIP_TU_URI_SERACH_STATE_NONE;
 	size_t pos = 0;
@@ -319,7 +319,6 @@ debug("to-remove, pUri=%r", pUri);
 	osPL_compact(&pNextHop->ip);
 
 EXIT:
-debug("to-remove, pNextHop.ip=%r, port=%d", &pNextHop->ip, pNextHop->port);
 	return status;
 }
 
@@ -343,3 +342,13 @@ void sipTU_mapTrTuId(void* pTrId, void* pTuId)
 {
 	sipTr_setTuId(pTrId, pTuId);
 }
+
+sipTuRR_t* sipTU_createRR()
+{
+	sipTuRR_t* pOwnRR = oszalloc(sizeof(sipTuRR_t), NULL);
+
+	pOwnRR->rawHdr.pl.p = pOwnRR->rawHdr.buf;
+	pOwnRR->rawHdr.pl.l = 0;
+
+	return pOwnRR;
+} 	

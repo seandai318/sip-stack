@@ -19,23 +19,6 @@
 #include "sipTU.h"
 
 
-
-typedef struct {
-    bool isAuto;    //if true, the function that this structure is passed in will add/remove route own its own, otherwise, purely based n passed in extraAddHdr/delHdr
-    union {
-        bool isAddRR;   //when isAuto = true;
-        struct {        //when isAuto = false
-			bool isChangeCallId;	//most a proxy would not change callid, but sometimes like when SCSCF forwards REGISTER to AS, callid is changed
-			sipPointerLen_t newCallId;	//contains new callId when isChangeCallId = true, feed back to the caller
-            sipTuHdrRawValueStr_t extraAddHdr[SIP_TU_PROXY_MAX_EXTRA_HDR_ADD_NUM];
-            int addNum;
-            sipHdrRawValueId_t extraDelHdr[SIP_TU_PROXY_MAX_EXTRA_HDR_DEL_NUM];
-            int delNum;
-        };
-	};
-} sipProxy_msgModInfo_t;
-
-
 //pAppId has type void*, instead of proxyInfo_t, so that modules other than proxy can also use this function. For proxy, the pAppId is proxyInfo_t, it maybe other type for other app. 
 osStatus_e sipProxy_forwardReq(sipTuAppType_e proxyType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw,  sipTuUri_t* pTargetUri, sipProxy_msgModInfo_t* pHdrModInfo, sipTuAddr_t* pNextHop, bool isTpDirect, void* pAppId, void** ppTransId);
 

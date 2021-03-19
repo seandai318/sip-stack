@@ -63,6 +63,7 @@ static osStatus_e scscfSessStateEstablished_onMsg(scscfSessInfo_t* pSessInfo);
 static osStatus_e scscfSessStateClosing_onMsg(scscfSessInfo_t* pSessInfo);
 
 static void scscfSessStateSar_onSaaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData);
+static osStatus_e scscfSessStateDnsAs_fwdRequest(scscfSessInfo_t* pSessInfo, dnsResResponse_t* pRR, bool isCachedDnsRsp);
 static void scscfSessStateLir_onLia(void* pSessInfo);
 static void scscfSessState_dnsCallback(dnsResResponse_t* pRR, void* pData);
 static void scscfSessStateClosing_onProxyDelete(scscfSessInfo_t* pSessInfo, proxyInfo_t* pProxy);
@@ -500,7 +501,7 @@ static osStatus_e scscfSessStateDnsAs_onMsg(scscfSessInfo_t* pSessInfo)
     if(osIsIpv4(&pSessInfo->tempWorkInfo.nextHop.ipPort.ip))
     {
 		sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
-		sipProxyRouteCtl_t routeCtl = {&pSessInfo->tempWorkInfo.nextHop, pOwnRR};
+		sipProxyRouteModCtl_t routeCtl = {&pSessInfo->tempWorkInfo.nextHop, pOwnRR};
 		proxyInfo_t* pProxyInfo = NULL;
 	    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
     	if(pProxyInfo)
@@ -545,6 +546,12 @@ static osStatus_e scscfSessStateDnsAs_onMsg(scscfSessInfo_t* pSessInfo)
 	//waiting for dns query response
 	if(pDnsResponse)
 	{
+		status = scscfSessStateDnsAs_fwdRequest(pSessInfo, pDnsResponse, true);
+		if(status != OS_STATUS_OK)
+		{
+			rspCode = SIP_RESPONSE_500;
+		}
+#if 0
         //for now, assume tcp and udp always use the same port.  improvement can be done to allow different port, in this case, sipProxy_forwardReq() pNextHop needs to pass in both tcp and udp nextHop info for it to choose, like based on message size, etc. to-do
         if(!sipTu_getBestNextHop(pDnsResponse, true, &pSessInfo->tempWorkInfo.nextHop))
         {
@@ -559,6 +566,7 @@ static osStatus_e scscfSessStateDnsAs_onMsg(scscfSessInfo_t* pSessInfo)
             }
             goto EXIT;
         }
+#endif
     }
 
 EXIT:
@@ -568,6 +576,57 @@ EXIT:
 	}
 
 	osfree(pDnsResponse);
+
+	return status;
+}
+
+
+static osStatus_e scscfSessStateDnsAs_fwdRequest(scscfSessInfo_t* pSessInfo, dnsResResponse_t* pRR, bool isCachedDnsRsp)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	sipTuAddr_t nextHop = {};
+    //for now, assume tcp and udp always use the same port.  improvement can be done to allow different port, in this case, sipProxy_forwardReq() pNextHop needs to pass in both tcp and udp nextHop info for it to choose, like based on message size, etc. to-do
+    if(!sipTu_getBestNextHop(pRR, isCachedDnsRsp, &nextHop))
+    {
+		logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
+        if(pSessInfo->tempWorkInfo.isContinuedDH)
+        {
+        	status = scscfSessStateDnsAs_onMsg(pSessInfo);
+        }
+        else
+        {
+            status = OS_ERROR_NETWORK_FAILURE;
+        }
+
+        goto EXIT;
+    }
+
+    mdebug(LM_CSCF, "send request to %A.", &nextHop.sockAddr);
+
+    sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
+    sipProxyRouteModCtl_t routeCtl = {&nextHop, pOwnRR};
+    proxyInfo_t* pProxyInfo = NULL;
+    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
+    if(pProxyInfo)
+    {
+        osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
+    }
+    else
+    {
+		if(pSessInfo->tempWorkInfo.isContinuedDH)
+       	{
+    		status = scscfSessStateDnsAs_onMsg(pSessInfo);
+        }
+        else
+        {
+			status = OS_ERROR_NETWORK_FAILURE;
+		}
+
+        goto EXIT;
+    }
+
+EXIT:
 	return status;
 }
 
@@ -792,7 +851,7 @@ static osStatus_e scscfSessStateToBreakout_onMsg(scscfSessInfo_t* pSessInfo)
     if(osIsIpv4(&mgcpAddr.ipPort.ip))
     {
         sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
-        sipProxyRouteCtl_t routeCtl = {&mgcpAddr, pOwnRR};
+        sipProxyRouteModCtl_t routeCtl = {&mgcpAddr, pOwnRR};
 		proxyInfo_t* pProxyInfo = NULL;
         status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
         if(pProxyInfo)
@@ -852,7 +911,7 @@ static osStatus_e scscfSessStateToUe_onMsg(scscfSessInfo_t* pSessInfo)
 	sipTuAddr_t nextHop = {};
 	scscfReg_getUeContact(pSessInfo->pRegInfo, &nextHop);
 	sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
-    sipProxyRouteCtl_t routeCtl = {&nextHop, pOwnRR};
+    sipProxyRouteModCtl_t routeCtl = {&nextHop, pOwnRR};
 
 	proxyInfo_t* pProxyInfo = NULL;
     status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
@@ -1064,7 +1123,16 @@ static void scscfSessState_dnsCallback(dnsResResponse_t* pRR, void* pData)
 				goto EXIT;	
     		}
 
+			status = scscfSessStateDnsAs_fwdRequest(pSessInfo, pRR, true);
+			if(status != OS_STATUS_OK)
+			{
+				rspCode = SIP_RESPONSE_500;
+			}
+
+			break;
+#if 0
     		sipTuAddr_t nextHop = {};
+			//for now, assume tcp and udp always use the same port.  improvement can be done to allow different port, in this case, sipProxy_forwardReq() pNextHop needs to pass in both tcp and udp nextHop info for it to choose, like based on message size, etc. to-do
     		if(!sipTu_getBestNextHop(pRR, false, &nextHop))
     		{
         		logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
@@ -1084,7 +1152,7 @@ static void scscfSessState_dnsCallback(dnsResResponse_t* pRR, void* pData)
     		mdebug(LM_CSCF, "send request to %A.", &nextHop.sockAddr);
 
 			sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
-	        sipProxyRouteCtl_t routeCtl = {&nextHop, pOwnRR};
+	        sipProxyRouteModCtl_t routeCtl = {&nextHop, pOwnRR};
 			proxyInfo_t* pProxyInfo = NULL;
     		status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
     		if(pProxyInfo)
@@ -1107,6 +1175,7 @@ static void scscfSessState_dnsCallback(dnsResResponse_t* pRR, void* pData)
     		}
 
 			break;
+#endif
 		}
 		default:
 			logError("unexpected state(%d), drop the dns response.", pSessInfo->state);

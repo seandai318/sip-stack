@@ -70,7 +70,7 @@ osStatus_e sipProxy_forwardReq(sipTuAppType_e proxyType, sipTUMsg_t* pSipTUMsg, 
     		int localPort;
     		sipConfig_getHost(&localIP, &localPort);
         	ipPort = oszalloc_r(SIP_HDR_MAX_SIZE, NULL);
-    		len = osPrintf_buffer(ipPort, SIP_HDR_MAX_SIZE, "Record-Route: <sip:%r:%d;lr>\r\n", &localIP, localPort);
+    		len = osPrintf_buffer(ipPort, SIP_HDR_MAX_SIZE, "<sip:%r:%d;lr>\r\n", &localIP, localPort);
     		if(len < 0)
     		{
         		logError("fails to osPrintf_buffer for ipPort(%r:%d)", &localIP, localPort);

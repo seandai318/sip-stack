@@ -206,8 +206,10 @@ sipTuAddr_t* cscfConfig_getOwnAddr(cscfType_e cscfType)
 	{
 		case CSCF_TYPE_ICSCF:
 			pAddr = &gIcscfLocalAddr;
+			break;
 		case CSCF_TYPE_SCSCF:
 			pAddr = &gScscfLocalAddr;
+			break;
 		default:
 			logError("unexpected cscfType(%d).", cscfType);
 			break;

@@ -48,7 +48,7 @@ typedef struct callProxyInfo {
 
 
 void callProxy_init(proxyStatusNtfyCB_h proxyStatusNtfy, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar);
-osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo);
+osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo);
 
 
 #endif

@@ -1104,6 +1104,7 @@ void* scscfReg_getRegInfo(osPointerLen_t* pImpu, scscfRegState_e* pRegState, sIf
 		*pSIfcIdList = pRegInfo->userProfile.sIfcIdList;
 	}
 
+	mdebug(LM_CSCF, "impu(%r) has pRegInfo(%p).", pImpu, pRegInfo);
 	return pRegInfo;
 }
 	
@@ -1259,6 +1260,7 @@ osStatus_e scscfReg_createSubHash(scscfRegInfo_t* pRegInfo, bool isAllowSameId)
         else
         {
             pHashLE = osPlHash_addUserData(gScscfRegHash, pId, true, osmemref(pRegInfo));
+scscfRegInfo_t* pTestRegInfo = osPlHash_getUserData(gScscfRegHash, pId, true);
         }
 
 		pRegInfo->ueList[i].pRegHashLE = pHashLE;

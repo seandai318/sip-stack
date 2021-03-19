@@ -16,6 +16,7 @@
 
 #include "diaMsg.h"
 
+#include "sipTUMisc.h"
 #include "sipHeader.h"
 #include "sipHdrNameValue.h"
 #include "sipHdrVia.h"
@@ -408,7 +409,7 @@ EXIT:
 
 sipTuRR_t* cscf_buildOwnRR(osPointerLen_t* pUser, sipTuAddr_t* pOwnAddr)
 {
-	sipTuRR_t* pOwnRR = oszalloc(sizeof(sipTuRR_t), NULL);
+	sipTuRR_t* pOwnRR = sipTU_createRR();
 
     strcpy((char*)pOwnRR->rawHdr.pl.p, "Record-Route: <sip:");
     pOwnRR->rawHdr.pl.l = sizeof("Record-Route: <sip:") - 1;

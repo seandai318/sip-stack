@@ -27,14 +27,14 @@
 
 
 
-static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo);
+static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo);
 
 static osStatus_e callProxy_onSipTransError(sipTUMsg_t* pSipTUMsg);
 static void callProxy_onTimeout(uint64_t timerId, void* data);
 static void callProxyInfo_cleanup(void* pData);
 
 osStatus_e callProxyEnterState(sipCallProxyState_e newState, callProxyInfo_t* pCallInfo);
-static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, void* pProxyMgrInfo, proxyInfo_t** ppProxyInfo);
+static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, void* pProxyMgrInfo, proxyInfo_t** ppProxyInfo);
 static osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
 static osStatus_e callProxyStateInitError_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
 static osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
@@ -67,7 +67,7 @@ void callProxy_init(proxyStatusNtfyCB_h proxyStatusNtfy, proxyReg2RegistrarCB_h 
 	 
 
 //pProxyMgrInfo: proxyMgr info that associated with the aprticular proxy.  for example, for scscf, it is scscfSessInfo_t, for standalone proxyMgr, it is osListElement_t* pHashLE.  That is used to pass back to the proxyMgr for function fProxyCreation and fProxyStatusNtfy.  This parameter must be no NULL in the initial request
-osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo)
+osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo)
 {
 	DEBUG_BEGIN
 
@@ -76,7 +76,7 @@ osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, s
 	switch (msgType)
 	{
 		case SIP_TU_MSG_TYPE_MESSAGE:
-			status = callProxy_onSipMsg(pSipTUMsg, pReqDecodedRaw, pRouteCtl, ppProxyInfo, pProxyMgrInfo);
+			status = callProxy_onSipMsg(pSipTUMsg, pReqDecodedRaw, pRouteModCtl, ppProxyInfo, pProxyMgrInfo);
 			break;
 		case SIP_TU_MSG_TYPE_TRANSACTION_ERROR:
 		default:
@@ -152,7 +152,7 @@ void callProxy_onTimeout(uint64_t timerId, void* data)
 
 
 //static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osListElement_t* pHashLE)
-static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo)
+static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo)
 {
 	osStatus_e status = OS_STATUS_OK;
 
@@ -194,7 +194,7 @@ static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_
 	}
 	else
 	{
-		return callProxyStateNone_onMsg(pSipTUMsg, pReqDecodedRaw, pRouteCtl, pProxyMgrInfo, ppProxyInfo);
+		return callProxyStateNone_onMsg(pSipTUMsg, pReqDecodedRaw, pRouteModCtl, pProxyMgrInfo, ppProxyInfo);
 	}
 
 	return status;
@@ -241,7 +241,7 @@ static osStatus_e callProxy_onSipTransError(sipTUMsg_t* pSipTUMsg)
 }
 
 
-static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, void* pProxyMgrInfo, proxyInfo_t** ppProxyInfo)
+static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, void* pProxyMgrInfo, proxyInfo_t** ppProxyInfo)
 {
 	DEBUG_BEGIN
 
@@ -346,82 +346,84 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
         goto EXIT;
     }
 
-	//if there is pRoteCtl and pRouteCtl->pNextHop != NULL, use it for next route.
-    //for now, we only support lr route
-    //check the number of route values,
-    //  if >= 1, check if the top route belongs to this proxy
-    //     if no, error
-    //     if yes, remove the top route.  check if there is remaining route
-    //        if yes, do nothing more
-    //        if no, check if the proxy has registrar, or has next hop configured
-    //           if yes, put the called user contact or next hop address in the req uri
-    //           if no, reject 404
-    //  if == 0, check if the proxy has registrar, or has next hop configured
-    //     if yes, put the called user contact or next hop address in the req uri
-    //     if no, use the req line host/port as the peer
-
-    //to-do, for now, we do not check if the top route is this proxy, just assume it is, and remove it (to-be-done)
-    bool isMultiRoute = sipMsg_isHdrMultiValue(SIP_HDR_ROUTE, pReqDecodedRaw, false, NULL);
-
     sipTuAddr_t nextHop={};
-	if(pRouteCtl && pRouteCtl->pNextHop)
+	if(pRouteModCtl && pRouteModCtl->pNextHop)
 	{
-		nextHop = *pRouteCtl->pNextHop;
+		nextHop = *pRouteModCtl->pNextHop;
 	}
-	else if(!isMultiRoute)
-    {
-        bool isNextHopDone = false;
+	else
+	{
+	    //if there is pRouteModCtl and pRouteModCtl->pNextHop != NULL, use it for next route.
+    	//for now, we only support lr route
+    	//check the number of route values,
+    	//  if >= 1, check if the top route belongs to this proxy
+    	//     if no, error
+    	//     if yes, remove the top route.  check if there is remaining route
+    	//        if yes, do nothing more
+    	//        if no, check if the proxy has registrar, or has next hop configured
+    	//           if yes, put the called user contact or next hop address in the req uri
+    	//           if no, reject 404
+    	//  if == 0, check if the proxy has registrar, or has next hop configured
+    	//     if yes, put the called user contact or next hop address in the req uri
+    	//     if no, use the req line host/port as the peer
 
-        //if there is no configured next hop, check if there is registrar, and find the target address from the registrar
-        //for this regard, the proxy is treated as a terminating AS
-        if(proxyConfig_hasRegistrar())
-        {
-            status = sipTU_asGetUser(pReqDecodedRaw, &calledUri, false, false);
-            if(status != OS_STATUS_OK)
-            {
-                logError("fails to sipTU_asGetCalledUser.");
-		        sipProxy_uasResponse(SIP_RESPONSE_500, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
+    	//to-do, for now, we do not check if the top route is this proxy, just assume it is, and remove it (to-be-done)
+	    bool isMultiRoute = sipMsg_isHdrMultiValue(SIP_HDR_ROUTE, pReqDecodedRaw, false, NULL);
+ 		if(!isMultiRoute)
+    	{
+        	bool isNextHopDone = false;
 
-		        callProxyEnterState(SIP_CALLPROXY_STATE_INIT_ERROR, pCallInfo);
-                status = OS_ERROR_INVALID_VALUE;
-                goto EXIT;
-            }
+        	//if there is no configured next hop, check if there is registrar, and find the target address from the registrar
+        	//for this regard, the proxy is treated as a terminating AS
+        	if(proxyConfig_hasRegistrar())
+        	{
+            	status = sipTU_asGetUser(pReqDecodedRaw, &calledUri, false, false);
+            	if(status != OS_STATUS_OK)
+            	{
+                	logError("fails to sipTU_asGetCalledUser.");
+		        	sipProxy_uasResponse(SIP_RESPONSE_500, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
 
-			tuRegState_e calledRegState;
-            pTargetUri = masReg_getUserRegInfo(&calledUri, &calledRegState);
-            if(!pTargetUri || calledRegState != MAS_REGSTATE_REGISTERED)
-            {
-                logInfo("called user (%r) is not registered or null pTargetUri, reject with 404.", &calledUri);
-		        sipProxy_uasResponse(SIP_RESPONSE_404, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
+		        	callProxyEnterState(SIP_CALLPROXY_STATE_INIT_ERROR, pCallInfo);
+                	status = OS_ERROR_INVALID_VALUE;
+                	goto EXIT;
+            	}
 
-		        callProxyEnterState(SIP_CALLPROXY_STATE_INIT_ERROR, pCallInfo);
-				status = OS_ERROR_INVALID_VALUE;
-                goto EXIT;
-            }
+				tuRegState_e calledRegState;
+            	pTargetUri = masReg_getUserRegInfo(&calledUri, &calledRegState);
+            	if(!pTargetUri || calledRegState != MAS_REGSTATE_REGISTERED)
+            	{
+                	logInfo("called user (%r) is not registered or null pTargetUri, reject with 404.", &calledUri);
+		        	sipProxy_uasResponse(SIP_RESPONSE_404, pSipTUMsg, pReqDecodedRaw, pSipTUMsg->pTransId, NULL);
 
-            nextHop.ipPort.ip = pTargetUri->hostport.host;
-            nextHop.ipPort.port = pTargetUri->hostport.portValue;
-            isNextHopDone = true;
-        }
-        //first check if there is next hop configured
-        else if(proxyConfig_getNextHop(&nextHop.ipPort))
-        {
-			tempTargetUri.sipUriType = URI_TYPE_SIP;
-			tempTargetUri.hostport.host = nextHop.ipPort.ip;
-			tempTargetUri.hostport.portValue = nextHop.ipPort.port;
-			pTargetUri = &tempTargetUri;
-            isNextHopDone = true;
-        }
+		        	callProxyEnterState(SIP_CALLPROXY_STATE_INIT_ERROR, pCallInfo);
+					status = OS_ERROR_INVALID_VALUE;
+                	goto EXIT;
+            	}
 
-        //for initial req but no next hop, use req line
-        if(!isNextHopDone)
-        {
-            sipFirstline_t firstLine;
-            status = sipParser_firstLine(pSipTUMsg->sipMsgBuf.pSipMsg, &firstLine, true);
-            nextHop.ipPort.ip = firstLine.u.sipReqLine.sipUri.hostport.host;
-            nextHop.ipPort.port = firstLine.u.sipReqLine.sipUri.hostport.portValue;
-            logInfo("there is no route left, no configured next hop and this proxy does not support registrar, route based on req URI (%r:%d).", &nextHop.ipPort.ip, nextHop.ipPort.port);
-        }
+            	nextHop.ipPort.ip = pTargetUri->hostport.host;
+            	nextHop.ipPort.port = pTargetUri->hostport.portValue;
+            	isNextHopDone = true;
+        	}
+        	//first check if there is next hop configured
+        	else if(proxyConfig_getNextHop(&nextHop.ipPort))
+        	{
+				tempTargetUri.sipUriType = URI_TYPE_SIP;
+				tempTargetUri.hostport.host = nextHop.ipPort.ip;
+				tempTargetUri.hostport.portValue = nextHop.ipPort.port;
+				pTargetUri = &tempTargetUri;
+            	isNextHopDone = true;
+        	}
+
+        	//for initial req but no next hop, use req line
+        	if(!isNextHopDone)
+        	{
+            	sipFirstline_t firstLine;
+            	status = sipParser_firstLine(pSipTUMsg->sipMsgBuf.pSipMsg, &firstLine, true);
+            	nextHop.ipPort.ip = firstLine.u.sipReqLine.sipUri.hostport.host;
+            	nextHop.ipPort.port = firstLine.u.sipReqLine.sipUri.hostport.portValue;
+            	logInfo("there is no route left, no configured next hop and this proxy does not support registrar, route based on req URI (%r:%d).", &nextHop.ipPort.ip, nextHop.ipPort.port);
+        	}
+		}
 	}
 
 	if(nextHop.isSockAddr)
@@ -456,6 +458,8 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
 
 	void* pTransId = NULL;
 	sipProxy_msgModInfo_t msgModInfo = {true, true};
+	sipProxy_msgModInfo_t* pMsgModInfo = pRouteModCtl ? &pRouteModCtl->msgModInfo : &msgModInfo;
+
 #if 1	//to be replaxced to change pTargetUri type to sipTuUri_t, to-do
 	sipTuUri_t targetUri;
 	if(pTargetUri)
@@ -464,7 +468,7 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
 		targetUri.sipUri = *pTargetUri;
 	}
 #endif
-	status = sipProxy_forwardReq(SIPTU_APP_TYPE_PROXY, pSipTUMsg, pReqDecodedRaw, pTargetUri ? &targetUri : NULL, &msgModInfo, &nextHop, false, pCallInfo->pProxyInfo, &pTransId);
+	status = sipProxy_forwardReq(SIPTU_APP_TYPE_PROXY, pSipTUMsg, pReqDecodedRaw, pTargetUri ? &targetUri : NULL, pMsgModInfo, &nextHop, false, pCallInfo->pProxyInfo, &pTransId);
 	if(status != OS_STATUS_OK || !pTransId)
 	{
 		logError("fails to forward sip request, status=%d, pTransId=%p.", status, pTransId);

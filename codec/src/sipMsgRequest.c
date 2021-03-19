@@ -682,53 +682,57 @@ static void sipMsgDecodedRawHdr_delete(void* data)
 }
 
 
-//check if a hdr has multiple values, it can be due to multiple headers with the same header name, or one header name with multiple values
-//if isCheckTopHdrOnly=true, only check the top hdr of the specified hdr name, otherwise, check hdr for the whole message
-//if isCheckTopHdrOnly=true, and the result isMulti=true, then the top hdr has to be decoded, in this case, pHdrCodeDecoded will pass out the decoded hdr, and the caller has to clear the pHdrCodeDecoded after done using it
+/* check if a hdr has multiple values, it can be due to multiple headers with the same header name, or one header name with multiple values
+ * isCheckTopHdrOnly: true, only check if there are multiple values in the top hdr entry of the specified hdr name
+ *                    false, check if there are multiple hdr values in the whole message for the specified hdr name
+ * pTopHdrDecoded: Not NULL, the caller wants the top hdr entry be decoded and passed out, the caller needs to free sipHdrDecoded when done
+ *                 NULL, the caller does not want the decoded top hdr entry 
+ */
 bool sipMsg_isHdrMultiValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool isCheckTopHdrOnly, sipHdrDecoded_t* pTopHdrDecoded)
 {
+	osStatus_e status = OS_STATUS_OK;
     bool isMulti = false;
+	
+	if(pTopHdrDecoded)
+	{
+        pTopHdrDecoded->decodedHdr = NULL;
+        pTopHdrDecoded->isRawHdrCopied = false;
+	}
 
     if(!pReqDecodedRaw)
     {
         logError("null pointer, pReqDecodedRaw.");
+		status = OS_ERROR_NULL_POINTER;
         goto EXIT;
     }
 
 	if(pReqDecodedRaw->msgHdrList[hdrCode] == NULL)
 	{
+		status = OS_ERROR_INVALID_VALUE;
 		goto EXIT;
 	}
 
-    if(sipHdr_isAllowMultiValue(hdrCode))
+	//the hdr only allows one hdr value, isMulti = false
+    if(!sipHdr_isAllowMultiValue(hdrCode))
     {
-		//if check the specified hdr in the whole message, check rawHdrNum first
-		if(!isCheckTopHdrOnly)
-		{
-			if(pReqDecodedRaw->msgHdrList[hdrCode]->rawHdrNum > 1)
-			{
-				isMulti = true;
-				goto EXIT;
-			}
-		}
+		goto EXIT;
+	}
 
-		if(isCheckTopHdrOnly && !pTopHdrDecoded)
-		{
-			logError("isCheckTopHdrOnly=true, but pHdrDecoded is null.");
-			goto EXIT;
-		}
-		pTopHdrDecoded->decodedHdr = NULL;
-		pTopHdrDecoded->isRawHdrCopied = false;
+	//if check the specified hdr in the whole message, check rawHdrNum first
+	if(!isCheckTopHdrOnly && pReqDecodedRaw->msgHdrList[hdrCode]->rawHdrNum > 1)
+	{
+		isMulti = true;
+		goto EXIT;
+	}
 
-        //check the top hdr if isCheckTopHdrOnly=false, or there is only 1 specified hdr name in the whole message
-        bool isMultiHdrValuePossible = false;
-        for(int i=0; i<pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr->value.l; i++)
+	//isCheckTopHdrOnly==true, or isCheckTopHdrOnly==false but there is only one hdr entry for  specified hdr name in the whole message
+    bool isMultiHdrValuePossible = false;
+    for(int i=0; i<pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr->value.l; i++)
+    {
+        if(pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr->value.p[i] == ',')
         {
-            if(pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr->value.p[i] == ',')
-            {
-                isMultiHdrValuePossible = true;
-                break;
-            }
+            isMultiHdrValuePossible = true;
+            break;
         }
 
         if(isMultiHdrValuePossible)
@@ -745,7 +749,6 @@ bool sipMsg_isHdrMultiValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDec
                 isMulti = true;
             }
 
-			//it will be the caller's responsibility to clear sipHdrDecoded if pHdrDecoded != NULL
 			if(pTopHdrDecoded)
 			{
 				*pTopHdrDecoded = sipHdrDecoded;
@@ -760,6 +763,15 @@ bool sipMsg_isHdrMultiValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDec
     }
 
 EXIT:
+	if(status == OS_STATUS_OK && pTopHdrDecoded && pTopHdrDecoded->decodedHdr == NULL)
+	{
+		if(sipDecodeHdr(pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr, pTopHdrDecoded, false) != OS_STATUS_OK)
+        {
+            logError("fails to sipDecodeHdr for hdr code(%d).", hdrCode);
+			pTopHdrDecoded->decodedHdr == NULL;
+        }
+	}
+
     return isMulti;
 }
 

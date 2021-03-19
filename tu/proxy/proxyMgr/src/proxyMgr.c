@@ -128,7 +128,7 @@ EXIT:
 
 
 //this function receives messages from TU via proxy app
-osStatus_e proxy_onSipTUMsgViaApp(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteCtl_t* pRouteCtl, proxyInfo_t** ppProxy, void* pProxyMgrInfo)
+osStatus_e proxy_onSipTUMsgViaApp(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteCtl, proxyInfo_t** ppProxy, void* pProxyMgrInfo)
 {
     DEBUG_BEGIN
 
