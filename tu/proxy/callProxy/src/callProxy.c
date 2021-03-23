@@ -468,6 +468,7 @@ logError("to-remvoe, just to check the creation of a address, pProxyInfo=%p, pCa
 		targetUri.sipUri = *pTargetUri;
 	}
 #endif
+debug("to-remove, before sipProxy_forwardReq");
 	status = sipProxy_forwardReq(SIPTU_APP_TYPE_PROXY, pSipTUMsg, pReqDecodedRaw, pTargetUri ? &targetUri : NULL, pMsgModInfo, &nextHop, false, pCallInfo->pProxyInfo, &pTransId);
 	if(status != OS_STATUS_OK || !pTransId)
 	{

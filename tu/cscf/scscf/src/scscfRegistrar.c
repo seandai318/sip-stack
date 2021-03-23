@@ -424,17 +424,16 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo)
     mdebug(LM_CSCF, "next hop is %r", pRegInfo->tempWorkInfo.pAs);
 
     sipTuUri_t targetUri = {{*pRegInfo->tempWorkInfo.pAs}, true};
-    sipTuAddr_t nextHop = {};
-
-    sipTu_convertUri2NextHop(&targetUri, &nextHop.ipPort);
+	sipTuNextHop_t  nextHop = {};
+    sipTu_convertUri2NextHop(&targetUri, &nextHop);
 
 	//if nextHop is FQDN, perform DNS query
-    if(!osIsIpv4(&nextHop.ipPort.ip))
+    if(!osIsIpv4(&nextHop.nextHop.ipPort.ip))
     {
-		dnsQueryStatus_e dnsQueryStatus = dnsQuery(&nextHop.ipPort.ip, nextHop.ipPort.port ? DNS_QTYPE_A : DNS_QTYPE_NAPTR, true, true, &pDnsResponse, scscfReg_dnsCallback, pRegInfo);
+		dnsQueryStatus_e dnsQueryStatus = dnsQuery(&nextHop.nextHop.ipPort.ip, nextHop.nextHop.ipPort.port ? DNS_QTYPE_A : DNS_QTYPE_NAPTR, true, true, &pDnsResponse, scscfReg_dnsCallback, pRegInfo);
 		if(dnsQueryStatus == DNS_QUERY_STATUS_FAIL)
 		{
-			logError("fails to perform dns query for %r.", &nextHop.ipPort.ip);
+			logError("fails to perform dns query for %r.", &nextHop.nextHop.ipPort.ip);
 			if(pRegInfo->tempWorkInfo.isIfcContinuedDH)
 			{
         		isDone = scscfReg_perform3rdPartyReg(pRegInfo);
@@ -453,9 +452,9 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo)
 		}
 		
 		//for now, assume tcp and udp always use the same port.  improvement can be done to allow different port, in this case, sipProxy_forwardReq() pNextHop needs to pass in both tcp and udp nextHop info for it to choose, like based on message size, etc. to-do
-		if(!sipTu_getBestNextHop(pDnsResponse, true, &nextHop, NULL))
+		if(!sipTu_getBestNextHop(pDnsResponse, true, &nextHop.nextHop, NULL))
 		{
-			logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
+			logError("could not find the next hop for %r.", &nextHop.nextHop.ipPort.ip);
             if(pRegInfo->tempWorkInfo.isIfcContinuedDH)
 	    	{	
        			isDone = scscfReg_perform3rdPartyReg(pRegInfo);
@@ -468,7 +467,7 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo)
     	}
 	}
 
-	if(scscfReg_forwardSipRegister(pRegInfo, &nextHop) != OS_STATUS_OK)
+	if(scscfReg_forwardSipRegister(pRegInfo, &nextHop.nextHop) != OS_STATUS_OK)
 	{
 		if(pRegInfo->tempWorkInfo.isIfcContinuedDH)
 		{

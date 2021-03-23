@@ -31,7 +31,7 @@ void* sipTU_sendReq2Tr(sipRequest_e nameCode, osMBuf_t* pReq, sipTransViaInfo_t*
 	sipTransInfo.transId.viaId = *pViaId;
     sipTransInfo.transId.reqCode = nameCode;
 
-    sipTransMsg_t sipTransMsg;
+    sipTransMsg_t sipTransMsg = {};
     sipTransMsg.sipMsgType = SIP_TRANS_MSG_CONTENT_REQUEST;
 	sipTransMsg.isTpDirect = isTpDirect;
 	sipTransMsg.appType = appType;
@@ -180,18 +180,20 @@ EXIT:
 }
 
 
-osStatus_e sipTu_convertUri2NextHop(sipTuUri_t* pUri, transportIpPort_t* pNextHop)
+osStatus_e sipTu_convertUri2NextHop(sipTuUri_t* pUri, sipTuNextHop_t* pNextHop)
 {
 	osStatus_e status = OS_STATUS_OK;
 
 	if(pUri->isRaw)
 	{
-		status = sipTu_convertPL2NextHop(&pUri->rawSipUri, pNextHop);
+		pNextHop->nextHopRaw = pUri->rawSipUri;
+		status = sipTu_convertPL2NextHop(&pUri->rawSipUri, &pNextHop->nextHop.ipPort);
 	}
 	else
 	{
-		status = sipTu_convertPL2NextHop(&pUri->sipUri.hostport.host, pNextHop);
-		pNextHop->port = pUri->sipUri.hostport.portValue;
+		pNextHop->nextHopRaw = pUri->sipUri.sipUser;
+		status = sipTu_convertPL2NextHop(&pUri->sipUri.hostport.host, &pNextHop->nextHop.ipPort);
+		pNextHop->nextHop.ipPort.port = pUri->sipUri.hostport.portValue;
 	}
 
 	return status;

@@ -65,23 +65,7 @@ typedef struct {
 } udpInfo_t;
 
 
-#if 0	//allow tp to resolve fqdn
-typedef struct {
-	bool isCom;		//=1, sends via com thread, otherwise, the same thread as the calling app, mainly for sip
-    transportType_e tpType;
-	union {
-    	int tcpFd;              //only for TRANSPORT_TYPE_TCP.  If fd=-1, transport shall create one. for SIP response, the fd usually not 0, shall be the one what the request was received from
-		udpInfo_t udpInfo;		//only for TRANSPORT_TYPE_UDP and TRANSPORT_TYPE_ANY
-	};
-	bool isPeerFqdn;			//if peer is in the form of ip:port or fqdn
-	union {
-		struct sockaddr_in peer;	//when isPeerFqdn = false
-		osVPointerLen_t peerFqdn;	//when isPeerFqdn = true
-	};
-	struct sockaddr_in local;
-	size_t protocolUpdatePos;		//viaProtocolPos for sip, if=0, do not update.  some protocols like SIP let the tp to determine tp protocol, and the protocol message has to be updated by tp accordingly.
-} transportInfo_t;
-#else	//tp only gets IP, fqdn must have been resolved in the application
+//tp only gets IP, fqdn must have been resolved in the application
 typedef struct {
     bool isCom;     //=1, sends via com thread, otherwise, the same thread as the calling app, mainly for sip
     transportType_e tpType;
@@ -93,7 +77,7 @@ typedef struct {
     struct sockaddr_in local;
     size_t protocolUpdatePos;       //viaProtocolPos for sip, if=0, do not update.  some protocols like SIP let the tp to determine tp protocol, and the protocol message has to be updated by tp accordingly.
 } transportInfo_t;
-#endif	
+
 
 typedef void (*tpLocalSendCallback_h)(transportStatus_e tStatus, int fd, osMBuf_t* pBuf);
 

@@ -121,6 +121,7 @@ osStatus_e sipProxy_forwardReq(sipTuAppType_e proxyType, sipTUMsg_t* pSipTUMsg, 
 		}
 	}
 
+debug("to-remove, before sipTU_sendReq2Tr");
     void* pTransId = sipTU_sendReq2Tr(pSipTUMsg->sipMsgBuf.reqCode, pReq, &viaId, pNextHop ? pNextHop : &nextHop, isTpDirect, proxyType, topViaProtocolPos, proxyInfo);
 	if(!pTransId && !isTpDirect)
 	{

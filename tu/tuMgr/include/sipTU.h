@@ -78,6 +78,12 @@ typedef struct {
 
 
 typedef struct {
+	osPointerLen_t nextHopRaw;	//hold the nextHop's raw sip URI (may include uri parameters). Note the valid scope of this variable
+	sipTuAddr_t nextHop;
+} sipTuNextHop_t;
+
+
+typedef struct {
 	uint32_t minRegTime;
 	uint32_t maxRegTime;
 	uint32_t defaultRegTime;

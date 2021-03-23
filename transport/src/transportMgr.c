@@ -85,7 +85,7 @@ sipTransportStatus_e sipTransport_send(void* pTrId, transportInfo_t* pTpInfo, os
             break;
     }
 
-logError("to-remove, isUDP=%d", isUDP);
+	logInfo("isUDP=%d", isUDP);
 
     //check which transport protocol to use
 	if(isUDP)

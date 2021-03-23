@@ -38,7 +38,7 @@ typedef struct {
 	osPointerLen_t users[SCSCF_MAX_PAI_NUM];	//all users from a sip request.  mostly only one, but sometimes more when there are more than one PAI.  If a session includes both MO and MT, user will change when MO becomes MT.  For normal use, users[0] is used as the impu for the request.  Other users are there for the checking of barring aliases
 	int userNum;					//the number of users in a request
     scscfSessOdiInfo_t lastOdiInfo; //the latest odi info
-	sipTuAddr_t nextHop;			//next hop the request is forwarded to
+	sipTuNextHop_t nextHop;			//next hop the request is forwarded to
     sipTUMsg_t* pSipTUMsg;          //the latest sip request received
     sipMsgDecodedRawHdr_t* pReqDecodedRaw;  //the latest received decoded sip message
     osListElement_t* pLastIfc;  //points to the last ifc that was used to find the AS

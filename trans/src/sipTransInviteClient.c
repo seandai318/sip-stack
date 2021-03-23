@@ -41,21 +41,36 @@ osStatus_e sipTransInviteClient_onMsg(sipTransMsgType_e msgType, void* pMsg, uin
     }
 
     sipTransaction_t* pTrans = pMsg;
-    if(msgType == SIP_TRANS_MSG_TYPE_PEER || msgType == SIP_TRANS_MSG_TYPE_TU)
-    {
-        pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
-	    if(!pTrans)
-    	{
-        	logError("null pointer, pTrans, for msgType (%d).", msgType);
-        	status = OS_ERROR_INVALID_VALUE;
-        	goto EXIT;
-    	}
+	switch(msgType)
+	{
+    	case SIP_TRANS_MSG_TYPE_PEER:
+		caseSIP_TRANS_MSG_TYPE_TU:
+        	pTrans = ((sipTransMsg_t*)pMsg)->pTransId;
+	    	if(!pTrans)
+    		{
+        		logError("null pointer, pTrans, for msgType (%d).", msgType);
+        		status = OS_ERROR_INVALID_VALUE;
+        		goto EXIT;
+    		}
 
-		if( msgType == SIP_TRANS_MSG_TYPE_TU)
-		{
-			pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
-			pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
-		}
+			if( msgType == SIP_TRANS_MSG_TYPE_TU)
+			{
+				pTrans->pTUId = ((sipTransMsg_t*)pMsg)->pSenderId;
+				pTrans->appType = ((sipTransMsg_t*)pMsg)->appType;
+			}
+			break;
+		case SIP_TRANS_MSG_TYPE_TX_FAILED:
+		case SIP_TRANS_MSG_TYPE_TX_TCP_READY:
+			pTrans = ((sipTransportStatusMsg_t*)pMsg)->pTransId;
+            if(!pTrans)
+            {
+                logError("null pointer, pTrans, for msgType (%d).", msgType);
+                status = OS_ERROR_INVALID_VALUE;
+                goto EXIT;
+            }
+			break;
+		default:
+			break;
     }
 
     switch(pTrans->state)
@@ -74,7 +89,7 @@ osStatus_e sipTransInviteClient_onMsg(sipTransMsgType_e msgType, void* pMsg, uin
             break;
         case SIP_TRANS_STATE_TERMINATED:
         default:
-            logError("received a timeout event that has invalid transaction state (%d),", (sipTransaction_t*)pTrans->state);
+            logError("received a event in invalid transaction state (%d),", (sipTransaction_t*)pTrans->state);
             status = OS_ERROR_INVALID_VALUE;
             break;
     }

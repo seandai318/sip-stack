@@ -275,10 +275,9 @@ osStatus_e sipTrans_onTUMsg(sipTransMsg_t* pSipTUMsg)
     osStatus_e status = OS_STATUS_OK;
 
 	//if TU requires to directly send to transport
+    debug("isTpDirect=%d", pSipTUMsg->isTpDirect);
 	if(pSipTUMsg->isTpDirect)
 	{
-		debug("isTpDirect=%d", pSipTUMsg->isTpDirect);
-
 		transportInfo_t* pTpInfo;
 		osMBuf_t* pSipMsg;
 		if(pSipTUMsg->sipMsgType != SIP_TRANS_MSG_CONTENT_RESPONSE )
