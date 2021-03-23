@@ -319,12 +319,20 @@ osStatus_e cscf_getRequestUser(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pRe
 	//now checke MO case, first check if there is PAI
 	if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY] != NULL)
 	{
-		 status = sipDecode_getMGNPHdrURIs(SIP_HDR_P_ASSERTED_IDENTITY, pReqDecodedRaw, pUser, userNum);
+		sipIdentity_t paiUser[SCSCF_MAX_PAI_NUM];
+		status = sipDecode_getMGNPHdrURIs(SIP_HDR_P_ASSERTED_IDENTITY, pReqDecodedRaw, paiUser, userNum);
 		if(status != OS_STATUS_OK)
 		{
-            logError("fails to sipDecode_getMGNPHdrURIs for SIP_HDR_FROM.");
+            logError("fails to sipDecode_getMGNPHdrURIs for SIP_HDR_P_ASSERTED_IDENTITY.");
 			*userNum = 0;
 			goto EXIT;
+		}
+		else
+		{
+			for(int i=0; i<*userNum; i++)
+			{
+				pUser[i] = paiUser[i].sipUser;
+			}
 		}
 	}
 	else
@@ -429,7 +437,7 @@ sipTuRR_t* cscf_buildOwnRR(osPointerLen_t* pUser, sipTuAddr_t* pOwnAddr)
 		pOwnRR->user.l += pUser->l;
 		for(int i=0; i<pOwnRR->user.l; i++)
 		{
-			if((pOwnRR->user.p[i] >='0' && pOwnRR->user.p[i] <=9) ||(pOwnRR->user.p[i] >='A' && pOwnRR->user.p[i] <= 'Z') || (pOwnRR->user.p[i] >= 'a' && pOwnRR->user.p[i] <= 'z'))
+			if((pOwnRR->user.p[i] >='0' && pOwnRR->user.p[i] <='9') ||(pOwnRR->user.p[i] >='A' && pOwnRR->user.p[i] <= 'Z') || (pOwnRR->user.p[i] >= 'a' && pOwnRR->user.p[i] <= 'z'))
 			{
 				continue;
 			}

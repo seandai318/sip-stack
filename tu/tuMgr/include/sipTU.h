@@ -24,12 +24,23 @@
 
 
 
+typedef enum {
+	SIPTU_RAW_VALUE_TYPE_INT,
+	SIPTU_RAW_VALUE_TYPE_STR_PTR,
+	SIPTU_RAW_VALUE_TYPE_STR_OSPL,
+	SIPTU_RAW_VALUE_TYPE_STR_SIPPL,
+} sipTuHdrRawValueType_e;
+
+
 //the whole value string for a hdr entry in a sip message
 typedef struct {
-    bool isIntValue;
+//    bool isIntValue;
+	sipTuHdrRawValueType_e rawValueType;
     union {
-        osPointerLen_t* strValue;
-        int intValue;
+		osPointerLen_t* strValuePtr;	//rawValueType = SIPTU_RAW_VALUE_TYPE_STR_PTR
+        osPointerLen_t strValue;		//rawValueType = SIPTU_RAW_VALUE_TYPE_STR_OSPL
+		sipPointerLen_t sipPLValue;		//rawValueType = SIPTU_RAW_VALUE_TYPE_STR_SIPPL	
+        int intValue;					//rawValueType = SIPTU_RAW_VALUE_TYPE_INT
     };
 } sipTuHdrRawValue_t;
 
@@ -74,7 +85,7 @@ typedef struct {
 
 
 
-bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_t* pNextHop);
+bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_t* pNextHop, osPointerLen_t* pQName);
 bool sipTu_getBestNextHopByName(osPointerLen_t* pQName, sipTuAddr_t* pNextHop);
 bool sipTu_setDestFailure(osPointerLen_t* dest, struct sockaddr_in* destAddr);
 bool sipTu_replaceDest(osPointerLen_t* dest, sipTuAddr_t* pNextHop);

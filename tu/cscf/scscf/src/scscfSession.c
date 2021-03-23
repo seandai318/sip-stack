@@ -21,6 +21,7 @@
 #include "osDebug.h"
 #include "osPL.h"
 #include "osLB.h"
+#include "osPrintf.h"
 
 #include "diaMsg.h"
 #include "diaCxSar.h"
@@ -34,6 +35,7 @@
 #include "sipTUMisc.h"
 #include "proxyMgr.h"
 #include "proxyHelper.h"
+#include "sipTU.h"
 
 #include "icscfCxLir.h"
 #include "scscfSession.h"
@@ -67,6 +69,8 @@ static osStatus_e scscfSessStateDnsAs_fwdRequest(scscfSessInfo_t* pSessInfo, dns
 static void scscfSessStateLir_onLia(void* pSessInfo);
 static void scscfSessState_dnsCallback(dnsResResponse_t* pRR, void* pData);
 static void scscfSessStateClosing_onProxyDelete(scscfSessInfo_t* pSessInfo, proxyInfo_t* pProxy);
+static osStatus_e scscf_buildReqModInfo(scscfSessInfo_t* pSessInfo, bool isOrig, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* pAS, sipTuAddr_t* pScscfAddr, sipTuRR_t* pRRScscf, sipProxy_msgModInfo_t* pMsgModInfo);
+static osPointerLen_t* scscfSess_createOdi(scscfSessInfo_t* pSessInfo);
 
 
 static void scscfSessInfo_cleanup(void* data);
@@ -155,6 +159,7 @@ osStatus_e scscfSess_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 					//odi is used to find the matching proxy, delete the temporary hash entry that used odi
 					osHash_deleteNode(pSessInfo->tempWorkInfo.lastOdiInfo.pOdiHashElement, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
 					pSessInfo->tempWorkInfo.lastOdiInfo.pOdiHashElement = NULL;
+					pSessInfo->tempWorkInfo.isInitial = false;	//this request has been forwarded by the SCSCF before
 
 					if(pSessInfo->state != SCSCF_SESS_STATE_DNS_AS)
 					{
@@ -206,6 +211,7 @@ osStatus_e scscfSess_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
 	                    //odi is used to find the matching proxy, delete the temporary hash entry that used odi
     	                osHash_deleteNode(pSessInfo->tempWorkInfo.lastOdiInfo.pOdiHashElement, OS_HASH_DEL_NODE_TYPE_KEEP_USER_DATA);
         	            pSessInfo->tempWorkInfo.lastOdiInfo.pOdiHashElement = NULL;
+						pSessInfo->tempWorkInfo.isInitial = false;	//this request has been forwarded by the CSCF before
 
 						//cleanup the existing workInfo, set new pSipTUMsg & pReqDecodedRaw
 						scscfSessInfo_workInfoReset(pSessInfo, pSipTUMsg, pReqDecodedRaw, &callId);
@@ -294,6 +300,7 @@ static osStatus_e scscfSessStateInit_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
 	pSessInfo->tempWorkInfo.pReqDecodedRaw = pReqDecodedRaw;
 	pSessInfo->tempWorkInfo.callId = *pCallId;
 	pSessInfo->tempWorkInfo.userNum = SCSCF_MAX_PAI_NUM;
+	pSessInfo->tempWorkInfo.isInitial = true;	//this request never be forwarded by the SCSCF before
 
 	status = cscf_getRequestUser(pSipTUMsg, pReqDecodedRaw, pSessInfo->tempWorkInfo.isMO, pSessInfo->tempWorkInfo.users, &pSessInfo->tempWorkInfo.userNum);
 	if(status != OS_STATUS_OK)
@@ -501,9 +508,11 @@ static osStatus_e scscfSessStateDnsAs_onMsg(scscfSessInfo_t* pSessInfo)
     if(osIsIpv4(&pSessInfo->tempWorkInfo.nextHop.ipPort.ip))
     {
 		sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
-		sipProxyRouteModCtl_t routeCtl = {&pSessInfo->tempWorkInfo.nextHop, pOwnRR};
+		sipProxyRouteModCtl_t routeModCtl = {&pSessInfo->tempWorkInfo.nextHop, pOwnRR};
+		scscf_buildReqModInfo(pSessInfo, pSessInfo->tempWorkInfo.isInitial, pSessInfo->tempWorkInfo.pReqDecodedRaw, pAS, cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF), pOwnRR, &routeModCtl.msgModInfo);
+
 		proxyInfo_t* pProxyInfo = NULL;
-	    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
+	    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, pSessInfo);
     	if(pProxyInfo)
     	{
     		osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
@@ -585,9 +594,10 @@ static osStatus_e scscfSessStateDnsAs_fwdRequest(scscfSessInfo_t* pSessInfo, dns
 {
 	osStatus_e status = OS_STATUS_OK;
 
+	osPointerLen_t asDest;
 	sipTuAddr_t nextHop = {};
     //for now, assume tcp and udp always use the same port.  improvement can be done to allow different port, in this case, sipProxy_forwardReq() pNextHop needs to pass in both tcp and udp nextHop info for it to choose, like based on message size, etc. to-do
-    if(!sipTu_getBestNextHop(pRR, isCachedDnsRsp, &nextHop))
+    if(!sipTu_getBestNextHop(pRR, isCachedDnsRsp, &nextHop, &asDest))
     {
 		logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
         if(pSessInfo->tempWorkInfo.isContinuedDH)
@@ -605,9 +615,11 @@ static osStatus_e scscfSessStateDnsAs_fwdRequest(scscfSessInfo_t* pSessInfo, dns
     mdebug(LM_CSCF, "send request to %A.", &nextHop.sockAddr);
 
     sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
-    sipProxyRouteModCtl_t routeCtl = {&nextHop, pOwnRR};
+    sipProxyRouteModCtl_t routeModCtl = {&nextHop, pOwnRR};
+    scscf_buildReqModInfo(pSessInfo, pSessInfo->tempWorkInfo.isInitial, pSessInfo->tempWorkInfo.pReqDecodedRaw, &asDest, cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF), pOwnRR, &routeModCtl.msgModInfo);
+
     proxyInfo_t* pProxyInfo = NULL;
-    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
+    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, pSessInfo);
     if(pProxyInfo)
     {
         osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
@@ -850,10 +862,14 @@ static osStatus_e scscfSessStateToBreakout_onMsg(scscfSessInfo_t* pSessInfo)
     //if nextHop is FQDN, perform DNS query
     if(osIsIpv4(&mgcpAddr.ipPort.ip))
     {
+		sipPointerLen_t mgcpRoute = SIPPL_INIT(mgcpRoute);
+		mgcpRoute.pl.l = osPrintf_buffer((char*)mgcpRoute.pl.p, SIP_HDR_MAX_SIZE, "<sip: %r:%d; lr>", &mgcpAddr.ipPort.ip, mgcpAddr.ipPort.port);
         sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
-        sipProxyRouteModCtl_t routeCtl = {&mgcpAddr, pOwnRR};
+        sipProxyRouteModCtl_t routeModCtl = {&mgcpAddr, pOwnRR};
+        scscf_buildReqModInfo(pSessInfo->pRegInfo, pSessInfo->tempWorkInfo.isInitial, pSessInfo->tempWorkInfo.pReqDecodedRaw, &mgcpRoute.pl, NULL, pOwnRR, &routeModCtl.msgModInfo);
+
 		proxyInfo_t* pProxyInfo = NULL;
-        status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
+        status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, pSessInfo);
         if(pProxyInfo)
         {
             osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
@@ -911,10 +927,11 @@ static osStatus_e scscfSessStateToUe_onMsg(scscfSessInfo_t* pSessInfo)
 	sipTuAddr_t nextHop = {};
 	scscfReg_getUeContact(pSessInfo->pRegInfo, &nextHop);
 	sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
-    sipProxyRouteModCtl_t routeCtl = {&nextHop, pOwnRR};
+    sipProxyRouteModCtl_t routeModCtl = {&nextHop, pOwnRR};
+    scscf_buildReqModInfo(pSessInfo->pRegInfo, pSessInfo->tempWorkInfo.isInitial, pSessInfo->tempWorkInfo.pReqDecodedRaw, NULL, NULL, pOwnRR, &routeModCtl.msgModInfo);
 
 	proxyInfo_t* pProxyInfo = NULL;
-    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
+    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, pSessInfo);
     if(pProxyInfo)
     {
     	osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
@@ -1130,52 +1147,6 @@ static void scscfSessState_dnsCallback(dnsResResponse_t* pRR, void* pData)
 			}
 
 			break;
-#if 0
-    		sipTuAddr_t nextHop = {};
-			//for now, assume tcp and udp always use the same port.  improvement can be done to allow different port, in this case, sipProxy_forwardReq() pNextHop needs to pass in both tcp and udp nextHop info for it to choose, like based on message size, etc. to-do
-    		if(!sipTu_getBestNextHop(pRR, false, &nextHop))
-    		{
-        		logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
-				if(pSessInfo->tempWorkInfo.isContinuedDH)
-                {
-                   	status = scscfSessStateDnsAs_onMsg(pSessInfo);
-    	        }
-        	    else
-            	{
-                    rspCode = SIP_RESPONSE_500;
-                    status = OS_ERROR_NETWORK_FAILURE;
-				}
-        			
-				goto EXIT;
-			}
-
-    		mdebug(LM_CSCF, "send request to %A.", &nextHop.sockAddr);
-
-			sipTuRR_t* pOwnRR = cscf_buildOwnRR(&pSessInfo->tempWorkInfo.users[0], cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF));
-	        sipProxyRouteModCtl_t routeCtl = {&nextHop, pOwnRR};
-			proxyInfo_t* pProxyInfo = NULL;
-    		status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeCtl, &pProxyInfo, pSessInfo);
-    		if(pProxyInfo)
-    		{
-	            osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
-			}
-			else
-			{
-				if(pSessInfo->tempWorkInfo.isContinuedDH)
-                {
-                    status = scscfSessStateDnsAs_onMsg(pSessInfo);
-                }
-                else
-                {
-                    rspCode = SIP_RESPONSE_500;
-                    status = OS_ERROR_NETWORK_FAILURE;
-                }
-                    
-				goto EXIT;
-    		}
-
-			break;
-#endif
 		}
 		default:
 			logError("unexpected state(%d), drop the dns response.", pSessInfo->state);
@@ -1328,7 +1299,153 @@ EXIT:
     osfree(sipHdrDecoded.decodedHdr);
 
 	return pProxyInfo;
-}	
+}
+
+
+//isOrig: true, the original request from UE or AS, i.e., not request with the original dialogue identifier (ODI).
+//        false, the initial request that has ODI (an indication that this message was forwarded by the SCSCF before)
+//        note: isOrig here does not mean the request is from UE, merely mean this message has not been forwarded by SCSCF
+static osStatus_e scscf_buildReqModInfo(scscfSessInfo_t* pSessInfo, bool isOrig, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* pAS, sipTuAddr_t* pScscfAddr, sipTuRR_t* pRRScscf, sipProxy_msgModInfo_t* pMsgModInfo)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	pMsgModInfo->isAuto = false;
+	pMsgModInfo->isChangeCallId = false;
+	pMsgModInfo->addNum = 0;
+	pMsgModInfo->delNum = 0;
+
+	osPointerLen_t* pSipPLHdr = NULL;
+	if(pAS)
+	{
+		osPointerLen_t* pSipPLHdr = sipProxyMsgModInfo_addSipPLHdr(pMsgModInfo->extraAddHdr, &pMsgModInfo->addNum, SIP_HDR_ROUTE);
+    	pSipPLHdr->l = osPrintf_buffer((char*)pSipPLHdr->p, SIP_HDR_MAX_SIZE, "<sip:%r; lr>", pAS);
+	}
+
+	if(pScscfAddr)
+	{
+		pSipPLHdr = sipProxyMsgModInfo_addSipPLHdr(pMsgModInfo->extraAddHdr, &pMsgModInfo->addNum, SIP_HDR_ROUTE);
+		pSipPLHdr->l = osPrintf_buffer((char*)pSipPLHdr->p, SIP_HDR_MAX_SIZE, "<sip:%r@%r:%d; lr>", scscfSess_createOdi(pSessInfo), &pScscfAddr->ipPort.ip, &pScscfAddr->ipPort.port);
+	}
+
+	if(isOrig)
+	{
+		sipIdentity_t paiUser[SCSCF_MAX_PAI_NUM];
+		int userNum = 0;
+		int uriType = 0;
+
+		if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_ASSERTED_IDENTITY])
+		{
+			status = sipDecode_getMGNPHdrURIs(SIP_HDR_P_ASSERTED_IDENTITY, pReqDecodedRaw, paiUser, &userNum);
+        	if(status != OS_STATUS_OK)
+        	{
+            	logError("fails to sipDecode_getMGNPHdrURIs for SIP_HDR_P_ASSERTED_IDENTITY.");
+            	goto EXIT;
+        	}
+
+			//remove any banned user
+			int validUserNum = userNum;
+			for(int i=0; i<userNum; i++)
+			{
+				if(scscfReg_isUserBarred(pSessInfo->pRegInfo, &paiUser[i].sipUser))
+				{
+					paiUser[i].sipUser.l = 0;
+					validUserNum--;
+					continue;
+				}
+
+				uriType |= 1<<paiUser[i].sipUriType;	
+			}
+
+			//always try to get both sip and tel URI if possible as PSI
+			osPointerLen_t noBarredPai[SCSCF_MAX_PAI_NUM];
+			int noBarredPaiNum = 0;
+			if(validUserNum == 0)
+			{
+				bool isFound = scscfReg_getOneNoBarUri(pSessInfo->pRegInfo, true, noBarredPai);
+				noBarredPaiNum = isFound ? 1 : 0;
+				isFound = scscfReg_getOneNoBarUri(pSessInfo->pRegInfo, false, &noBarredPai[noBarredPaiNum]);
+				noBarredPaiNum = isFound ? ++noBarredPaiNum : noBarredPaiNum;
+			}
+			else
+			{
+				for(int i=0; i<userNum; i++)
+                {
+                	if(paiUser[i].sipUser. l == 0)
+                    {
+                        continue;
+                    }
+                    noBarredPai[noBarredPaiNum++] = paiUser[i].sipUser;
+                }
+
+ 				if(noBarredPaiNum == 1)
+				{
+					bool isFoundSipUri = (uriType & URI_TYPE_TEL) ? true :false;
+					bool isFound = scscfReg_getOneNoBarUri(pSessInfo->pRegInfo, isFoundSipUri, &noBarredPai[1]);			
+					noBarredPaiNum = isFound ? 2 : 1;
+				}
+				else
+				{
+					if((uriType & URI_TYPE_SIP) && (uriType & URI_TYPE_TEL))
+					{
+						//has both sip and tel, do nothing here
+					} 
+					else
+					{
+						bool isFoundSipUri = (uriType & URI_TYPE_TEL) ? true :false;
+						bool isFound = scscfReg_getOneNoBarUri(pSessInfo->pRegInfo, isFoundSipUri, &noBarredPai[noBarredPaiNum]);
+                    	noBarredPaiNum = isFound ? ++noBarredPaiNum : noBarredPaiNum;
+					}
+				}
+			}
+
+			for(int i=0; i<noBarredPaiNum; i++)
+			{					
+				sipTuHdrRawValue_t value = {SIPTU_RAW_VALUE_TYPE_STR_OSPL, {.strValue = noBarredPai[i]}};
+				sipProxyMsgModInfo_addHdr(pMsgModInfo->extraAddHdr, &pMsgModInfo->addNum, SIP_HDR_P_ASSERTED_IDENTITY, &value);
+			}
+		}
+
+		if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_PREFERRED_IDENTITY])
+		{
+			sipProxyMsgModInfo_delHdr(pMsgModInfo->extraDelHdr, &pMsgModInfo->delNum, SIP_HDR_P_PREFERRED_IDENTITY, false);
+		}
+	}
+
+EXIT:
+	return status;
+} 
+
+
+//create a odi and store in pSessInfo->tempWorkInfo.lastOdiInfo.odi
+//return value: odi
+static osPointerLen_t* scscfSess_createOdi(scscfSessInfo_t* pSessInfo)
+{
+	static uint16_t salt = 0;
+	osPointerLen_t* pUser = &pSessInfo->tempWorkInfo.users[0];
+	osPointerLen_t* pOdi = &pSessInfo->tempWorkInfo.lastOdiInfo.odi.pl;	
+
+	struct timespec tp;
+    clock_gettime(CLOCK_REALTIME, &tp);
+    srand(tp.tv_nsec);
+    int randValue=rand();
+
+    pOdi->l = snprintf((char*)pOdi->p, SIP_HDR_MAX_SIZE, "%lx%x%d", tp.tv_nsec % tp.tv_sec, randValue, salt++);
+
+    strncpy((char*)&pOdi->p[pOdi->l], pUser->p, pUser->l);
+    pOdi->l += pUser->l;
+    for(int i=0; i<pOdi->l; i++)
+    {
+        if((pOdi->p[i] >='0' && pOdi->p[i] <='9') ||(pOdi->p[i] >='A' && pOdi->p[i] <= 'Z') || (pOdi->p[i] >= 'a' && pOdi->p[i] <= 'z'))
+        {
+            continue;
+        }
+
+        //override any other char to be '%'
+        ((char*)pOdi->p)[i] = '%';
+    }
+
+	return pOdi;
+}
 
 
 static void scscfSessInfo_workInfoCleanup(scscfSessInfo_t* pSessInfo)

@@ -56,7 +56,7 @@ static __thread osList_t gDestRecordList;				//contains sipTuDestRecord_t
  * 2.3 if A record is found in additionalAnswer section, then the SRV shall be in the same dnsMessage_t
  * all A records are pushed into the destList in the order of priority and weight, smaller value of priority and the same priority but smaller weight are in the front
  */
-bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_t* pNextHop)
+bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_t* pNextHop, osPointerLen_t* pQName)
 {
 	bool isFound = false;
 	osStatus_e status = OS_STATUS_OK;
@@ -76,6 +76,10 @@ bool sipTu_getBestNextHop(dnsResResponse_t* pRR, bool isDnsResCached, sipTuAddr_
 		goto EXIT;
 	}
 
+	if(pQName)
+	{
+		*pQName = qName;
+	}
 	mdebug(LM_SIPAPP, "pRR->rrType=%d, qName=%r, isDnsResCached=%d, isNoError=%d", pRR->rrType, &qName, isDnsResCached, isNoError);
 sipTuDest_dbgList();
 

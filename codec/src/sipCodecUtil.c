@@ -9,9 +9,10 @@
 #include "osMemory.h"
 
 #include "sipMsgRequest.h"
+#include "sipCodecUtil.h"
 
 
-static osStatus_e sipDecodeOneMGNPHdrURIs(sipHdrMultiGenericNameParam_t* pDecodedHdr, osPointerLen_t* pUser, int* userNum, int maxUserNum);
+static osStatus_e sipDecodeOneMGNPHdrURIs(sipHdrMultiGenericNameParam_t* pDecodedHdr, sipIdentity_t* pUser, int* userNum, int maxUserNum);
 
 
 //decode top MultiGenericNameParam hdr, like Route header, etc.
@@ -39,8 +40,9 @@ EXIT:
 
 
 //decocde all MGNP hdrs for a hdrCode to find all URIs, restricted by the maximum requested userNum
+//pUriType, optional.  If not NULL, the uri type will be passed out
 //userNum is IN/OUT.  When IN, the maximum number of users the caller is interested, when out, the number of users been parsed
-osStatus_e sipDecode_getMGNPHdrURIs(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* pUser, int* userNum)
+osStatus_e sipDecode_getMGNPHdrURIs(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipIdentity_t* pUser, int* userNum)
 {
 	osStatus_e status = OS_STATUS_OK;
     sipHdrDecoded_t sipHdrDecoded = {};
@@ -112,7 +114,7 @@ EXIT:
 
 
 //decode one MGNP hdr, note one hdr (a hdr with its own hdr name) may have multiple values
-static osStatus_e sipDecodeOneMGNPHdrURIs(sipHdrMultiGenericNameParam_t* pDecodedHdr, osPointerLen_t* pUser, int* userNum, int maxUserNum)
+static osStatus_e sipDecodeOneMGNPHdrURIs(sipHdrMultiGenericNameParam_t* pDecodedHdr, sipIdentity_t* pUser, int* userNum, int maxUserNum)
 {
 	osStatus_e status = OS_STATUS_OK;
 	
@@ -122,7 +124,10 @@ static osStatus_e sipDecodeOneMGNPHdrURIs(sipHdrMultiGenericNameParam_t* pDecode
 		goto EXIT;
 	}
 
-    pUser[(*userNum)++] = pDecodedHdr->pGNP->hdrValue.uri.sipUser;
+	*userNum = 0;
+    pUser[*userNum].sipUser = pDecodedHdr->pGNP->hdrValue.uri.sipUser;
+	pUser[*userNum].sipUriType = pDecodedHdr->pGNP->hdrValue.uri.sipUriType;
+	(*userNum)++;
 
     osListElement_t* pLE = pDecodedHdr->gnpList.head;
     while(pLE)
@@ -132,7 +137,9 @@ static osStatus_e sipDecodeOneMGNPHdrURIs(sipHdrMultiGenericNameParam_t* pDecode
             break;
         }
 
-        pUser[(*userNum)++] = ((sipHdrGenericNameParamDecoded_t*)pLE->data)->hdrValue.uri.sipUser;
+        pUser[*userNum].sipUser = ((sipHdrGenericNameParamDecoded_t*)pLE->data)->hdrValue.uri.sipUser;
+		pUser[*userNum].sipUriType = ((sipHdrGenericNameParamDecoded_t*)pLE->data)->hdrValue.uri.sipUriType;
+		(*userNum)++;
 
         pLE = pLE->next;
     }

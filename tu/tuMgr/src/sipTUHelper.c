@@ -1038,14 +1038,26 @@ static osStatus_e sipTU_copyHdrs(osMBuf_t* pSipBuf, sipMsgDecodedRawHdr_t* pReqD
 
 			osMBuf_writeStr(pSipBuf, sipHdr_getNameByCode(pHdrId->nameCode), true);
 			osMBuf_writeStr(pSipBuf, ": ", true);
-			if(pHdrId->value.isIntValue)
+			switch(pHdrId->value.rawValueType)
 			{
-				osMBuf_writeU32Str(pSipBuf, pHdrId->value.intValue, true);
+				case SIPTU_RAW_VALUE_TYPE_INT:
+					osMBuf_writeU32Str(pSipBuf, pHdrId->value.intValue, true);
+					break;
+				case SIPTU_RAW_VALUE_TYPE_STR_PTR:
+					osMBuf_writePL(pSipBuf, pHdrId->value.strValuePtr, true);
+					break;
+				case SIPTU_RAW_VALUE_TYPE_STR_OSPL:
+					osMBuf_writePL(pSipBuf, &pHdrId->value.strValue, true);
+					break;
+				case SIPTU_RAW_VALUE_TYPE_STR_SIPPL:
+					osMBuf_writePL(pSipBuf, &pHdrId->value.sipPLValue.pl, true);
+					break;
+				default:
+					logError("unexpected rawValueType(%d).", pHdrId->value.rawValueType);
+			        status = OS_ERROR_INVALID_VALUE;
+        			goto EXIT;
 			}
-			else
-			{
-            	osMBuf_writePL(pSipBuf, pHdrId->value.strValue, true);
-			}
+
 			osMBuf_writeStr(pSipBuf, "\r\n", true);
         }
 
@@ -1244,14 +1256,25 @@ static void sipTU_dbgListSortedModHdr(osList_t* pSortedModHdrList)
 		mdebug1(LM_SIPAPP, "    isDelete=%d, isDelTopOnly=%d, hdrStartPos=%ld, hdrSkipLen=%d", pHdrModInfo->isDelete, pHdrModInfo->isDelTopOnly, pHdrModInfo->hdrStartPos, pHdrModInfo->hdrSkipLen);
 		if(!pHdrModInfo->isDelete)
 		{
-			if(pHdrModInfo->value.isIntValue)
-			{
-				mdebug1(LM_SIPAPP, ", inserted hdr value=%d", pHdrModInfo->value.intValue);
-			}
-			else
-			{
-				mdebug1(LM_SIPAPP, ", inserted hdr value=%r\n", pHdrModInfo->value.strValue);
-			}
+            switch(pHdrModInfo->value.rawValueType)
+            {
+                case SIPTU_RAW_VALUE_TYPE_INT:
+					mdebug1(LM_SIPAPP, ", inserted hdr value=%d", pHdrModInfo->value.intValue);
+                    break;
+                case SIPTU_RAW_VALUE_TYPE_STR_PTR:
+					mdebug1(LM_SIPAPP, ", inserted hdr value=%r\n", pHdrModInfo->value.strValuePtr);
+                    break;
+                case SIPTU_RAW_VALUE_TYPE_STR_OSPL:
+					mdebug1(LM_SIPAPP, ", inserted hdr value=%r\n", &pHdrModInfo->value.strValue);
+                    break;
+                case SIPTU_RAW_VALUE_TYPE_STR_SIPPL:
+					mdebug1(LM_SIPAPP, ", inserted hdr value=%r\n", &pHdrModInfo->value.sipPLValue.pl);
+                    break;
+                default:
+                    logError("unexpected rawValueType(%d).", pHdrModInfo->value.rawValueType);
+                    return;
+					break;
+            }
 		}
 		else
 		{

@@ -83,7 +83,7 @@ osStatus_e sipProxy_forwardReq(sipTuAppType_e proxyType, sipTUMsg_t* pSipTUMsg, 
 			addNum = 1;
 		}
 			
-		sipTuHdrRawValueStr_t addList = {SIP_HDR_RECORD_ROUTE, {false, {&rr}}};
+		sipTuHdrRawValueStr_t addList = {SIP_HDR_RECORD_ROUTE, {SIPTU_RAW_VALUE_TYPE_STR_PTR, {&rr}}};
 
     	//forward the SIP INVITE, add top via, remove top Route, reduce the max-forarded by 1.  The viaId shall be filled with the real peer IP/port
 	   	pReq = sipTU_b2bBuildRequest(pReqDecodedRaw, true, &delList, delNum, &addList, addNum, &viaId, pTargetUri, &topViaProtocolPos, NULL);

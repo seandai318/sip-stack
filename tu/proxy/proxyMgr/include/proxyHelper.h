@@ -41,6 +41,24 @@ static inline void sipProxyMsgModInfo_addHdr(sipTuHdrRawValueStr_t* extraAddHdr,
 }
 
 
+static inline osPointerLen_t* sipProxyMsgModInfo_addSipPLHdr(sipTuHdrRawValueStr_t* extraAddHdr, int* addNum, sipHdrName_e hdrCode)
+{
+	if(!extraAddHdr || !addNum || *addNum >= SIP_TU_PROXY_MAX_EXTRA_HDR_ADD_NUM)
+    {
+        return NULL;
+    }
+
+	osPointerLen_t* pl = NULL;
+	extraAddHdr[*addNum].nameCode = hdrCode;
+	extraAddHdr[*addNum].value.rawValueType = SIPTU_RAW_VALUE_TYPE_STR_SIPPL;
+	sipPL_init(&extraAddHdr[*addNum].value.sipPLValue);
+	pl = &extraAddHdr[*addNum].value.sipPLValue.pl;
+	(*addNum)++;
+
+	return pl;
+}
+
+
 static inline void sipProxyMsgModInfo_delHdr(sipHdrRawValueId_t* extraDelHdr, int* delNum, sipHdrName_e hdrCode, bool isTopOnly)
 {
 	if(!extraDelHdr || !delNum || *delNum >= SIP_TU_PROXY_MAX_EXTRA_HDR_DEL_NUM)

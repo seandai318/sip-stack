@@ -119,6 +119,8 @@ osStatus_e scscfReg_createSubHash(scscfRegInfo_t* pRegInfo, bool isAllowSameId);
 void* scscfReg_getRegInfo(osPointerLen_t* pImpu, scscfRegState_e* pRegState, sIfcIdList_t* pSIfcIdList);
 osPointerLen_t* scscfReg_getNoBarImpu(scscfRegIdentity_t ueList[], uint8_t ueNum, bool isTelPreferred);
 osPointerLen_t* scscfReg_getAnyBarredUser(void* pRegInfo, osPointerLen_t user[], int userNum);
+bool scscfReg_getOneNoBarUri(scscfRegInfo_t* pRegInfo, bool isSipUri, osPointerLen_t* noBarredUser);
+bool scscfReg_isUserBarred(void* pRegId, osPointerLen_t* pUser);
 osStatus_e scscfReg_getUeContact(void* pRegInfo, sipTuAddr_t* pNextHop);
 void scscfReg_deleteSubHash(scscfRegInfo_t* pRegInfo);
 void scscfRegTempWorkInfo_cleanup(scscfRegTempWorkInfo_t* pTempWorkInfo);

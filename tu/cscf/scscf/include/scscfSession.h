@@ -32,6 +32,7 @@ typedef struct {
 //the information for each individual request and related ifc
 typedef struct {
     bool isMO;
+	bool isInitial;					//this request has been forwarded by the SCSCF before
     bool isContinuedDH;				//the latest ifc AS default handling
 	osPointerLen_t callId;			//a session's callId may change in the middle if one of the AS is B2BUA
 	osPointerLen_t users[SCSCF_MAX_PAI_NUM];	//all users from a sip request.  mostly only one, but sometimes more when there are more than one PAI.  If a session includes both MO and MT, user will change when MO becomes MT.  For normal use, users[0] is used as the impu for the request.  Other users are there for the checking of barring aliases

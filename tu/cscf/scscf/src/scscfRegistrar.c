@@ -453,7 +453,7 @@ bool scscfReg_perform3rdPartyReg(scscfRegInfo_t* pRegInfo)
 		}
 		
 		//for now, assume tcp and udp always use the same port.  improvement can be done to allow different port, in this case, sipProxy_forwardReq() pNextHop needs to pass in both tcp and udp nextHop info for it to choose, like based on message size, etc. to-do
-		if(!sipTu_getBestNextHop(pDnsResponse, true, &nextHop))
+		if(!sipTu_getBestNextHop(pDnsResponse, true, &nextHop, NULL))
 		{
 			logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
             if(pRegInfo->tempWorkInfo.isIfcContinuedDH)
@@ -507,7 +507,7 @@ static void scscfReg_dnsCallback(dnsResResponse_t* pRR, void* pData)
     }
 
     sipTuAddr_t nextHop = {};
-	if(!sipTu_getBestNextHop(pRR, false, &nextHop))
+	if(!sipTu_getBestNextHop(pRR, false, &nextHop, NULL))
 	{
 		logError("could not find the next hop for %r.", &nextHop.ipPort.ip);
 
@@ -704,21 +704,20 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 	osStatus_e status = OS_STATUS_OK;
 
     //build a sip register message towards an AS and forward.  May also to use sipTU_uacBuildRequest() and sipMsgAppendHdrStr(), instead, sipProxy_forwardReq() is chosen.
-	int len = 0;
     sipProxy_msgModInfo_t msgModInfo = {false, 0};
 	msgModInfo.isChangeCallId = true;
 
 	//add to header
-	sipTuHdrRawValue_t hdrToRawValue = {false, {&pRegInfo->tempWorkInfo.impu}};
+	sipTuHdrRawValue_t hdrToRawValue = {SIPTU_RAW_VALUE_TYPE_STR_PTR, {&pRegInfo->tempWorkInfo.impu}};
 	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_TO, &hdrToRawValue);
 
 	//add from header
 	sipPointerLen_t fromHdr = SIPPL_INIT(fromHdr);
 	sipPointerLen_t tagId = SIPPL_INIT(tagId);
 	sipHdrFromto_generateSipPLTagId(&tagId, true);
-	sipTuHdrRawValue_t hdrFromRawValue = {false, {&fromHdr.pl}};
-	len = osPrintf_buffer((char*)fromHdr.pl.p, SIP_HDR_MAX_SIZE, "%s;%r", SCSCF_URI_WITH_PORT, &tagId.pl);
-	if(len < 0)
+	sipTuHdrRawValue_t hdrFromRawValue = {SIPTU_RAW_VALUE_TYPE_STR_PTR, {&fromHdr.pl}};
+	fromHdr.pl.l = osPrintf_buffer((char*)fromHdr.pl.p, SIP_HDR_MAX_SIZE, "%s;%r", SCSCF_URI_WITH_PORT, &tagId.pl);
+	if(fromHdr.pl.l < 0)
 	{
         logError("fails to osPrintf_buffer for From header.");
 		status = OS_ERROR_INVALID_VALUE;
@@ -726,21 +725,20 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 	}
 	else
 	{
-		fromHdr.pl.l = len;
 		sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_FROM, &hdrFromRawValue);
 	}
 
 	//add route
-	sipTuHdrRawValue_t hdrRouteRawValue = {false, {pRegInfo->tempWorkInfo.pAs}};
+	sipTuHdrRawValue_t hdrRouteRawValue = {SIPTU_RAW_VALUE_TYPE_STR_PTR, {pRegInfo->tempWorkInfo.pAs}};
 	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_ROUTE, &hdrRouteRawValue);
 
 	//add contact
 	osPointerLen_t scscfContact = {SCSCF_URI_WITH_PORT, strlen(SCSCF_URI_WITH_PORT)};
-	sipTuHdrRawValue_t hdrContactRawValue = {false, {&scscfContact}};
+	sipTuHdrRawValue_t hdrContactRawValue = {SIPTU_RAW_VALUE_TYPE_STR_PTR, {&scscfContact}};
 	sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_CONTACT, &hdrContactRawValue);
 
 	//add expires if the register from UE does not have Expires header
-	sipTuHdrRawValue_t hdrExpiresRawValue = {true, {.intValue=pRegInfo->ueContactInfo.regExpire}};
+	sipTuHdrRawValue_t hdrExpiresRawValue = {SIPTU_RAW_VALUE_TYPE_INT, {.intValue=pRegInfo->ueContactInfo.regExpire}};
 	if(!pRegInfo->tempWorkInfo.pReqDecodedRaw->msgHdrList[SIP_HDR_EXPIRES])
 	{
 		sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_EXPIRES, &hdrExpiresRawValue);
@@ -748,17 +746,16 @@ static osStatus_e scscfReg_forwardSipRegister(scscfRegInfo_t* pRegInfo, sipTuAdd
 
 	//add P-Charging-Function-Addresses
 	sipPointerLen_t chgInfo = SIPPL_INIT(chgInfo);
-	sipTuHdrRawValue_t hdrChgRawValue = {false, {&chgInfo.pl}};
+	sipTuHdrRawValue_t hdrChgRawValue = {SIPTU_RAW_VALUE_TYPE_STR_PTR, {&chgInfo.pl}};
 	if(pRegInfo->hssChgInfo.chgAddrType != CHG_ADDR_TYPE_INVALID)
 	{
-		len = osPrintf_buffer((char*)chgInfo.pl.p, SIP_HDR_MAX_SIZE, "%s=\"%r\"", pRegInfo->hssChgInfo.chgAddrType == CHG_ADDR_TYPE_CCF ? "ccf" : "ecf", &pRegInfo->hssChgInfo.chgAddr.pl);
-		if(len <0)
+		chgInfo.pl.l = osPrintf_buffer((char*)chgInfo.pl.p, SIP_HDR_MAX_SIZE, "%s=\"%r\"", pRegInfo->hssChgInfo.chgAddrType == CHG_ADDR_TYPE_CCF ? "ccf" : "ecf", &pRegInfo->hssChgInfo.chgAddr.pl);
+		if(chgInfo.pl.l <0)
 		{
 			logError("fails to osPrintf_buffer for P-Charging-Function-Addresses, ignore this header.");
         }
 		else
 		{
-        	chgInfo.pl.l = len;
 			sipProxyMsgModInfo_addHdr(msgModInfo.extraAddHdr, &msgModInfo.addNum, SIP_HDR_P_CHARGING_FUNCTION_ADDRESSES, &hdrChgRawValue);		
 		}
 	}
@@ -1108,7 +1105,7 @@ void* scscfReg_getRegInfo(osPointerLen_t* pImpu, scscfRegState_e* pRegState, sIf
 	return pRegInfo;
 }
 	
-
+#if 0
 osPointerLen_t* scscfReg_getNoBarImpu(scscfRegIdentity_t ueList[], uint8_t ueNum, bool isTelPreferred)
 {
 	osPointerLen_t* pImpu = NULL;
@@ -1146,7 +1143,7 @@ EXIT:
 }
 				
 
-//fir the first barred user
+//find the first barred user
 osPointerLen_t* scscfReg_getAnyBarredUser(void* pRegId, osPointerLen_t user[], int userNum)
 {
 	if(!pRegId || !user)
@@ -1180,6 +1177,42 @@ osPointerLen_t* scscfReg_getAnyBarredUser(void* pRegId, osPointerLen_t user[], i
 	return NULL;
 }
 
+
+bool scscfReg_isUserBarred(void* pRegId, osPointerLen_t* pUser)
+{
+	bool isBarred = false;
+
+    if(!pRegId || !pUser)
+    {
+        isBarred = true;
+		goto EXIT;
+    }
+
+	scscfRegInfo_t* pRegInfo = pRegId;
+    uint8_t regInfoUENum;
+    scscfRegIdentity_t ueList[SCSCF_MAX_ALLOWED_IMPU_NUM+1];
+	for(int j=0; j<pRegInfo->regInfoUENum; j++)
+    {
+		if(pRegInfo->ueList[j].isImpi)
+        {
+            continue;
+        }
+
+        if(osPL_cmp(pUser, &pRegInfo->ueList[j].impuInfo.impu) == 0)
+        {
+        	if(pRegInfo->ueList[j].impuInfo.isBarred)
+            {
+				isBarred = true;
+			}
+
+			break;
+		}
+	}
+
+EXIT:
+	return isBarred;
+}
+#endif
 
 osStatus_e scscfReg_getUeContact(void* pRegId, sipTuAddr_t* pNextHop)
 {
