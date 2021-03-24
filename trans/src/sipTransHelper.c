@@ -38,7 +38,7 @@ osStatus_e sipTransHelper_reqlineReplaceAndCopy(osMBuf_t* pDestMsg, osMBuf_t* pS
 
 		isPre = false;
 
-		if(startPos == 0 && (pSipSrcReq->buf[pos] = ' ' || pSipSrcReq->buf[pos] == '\t'))
+		if(startPos == 0 && (pSipSrcReq->buf[pos] == ' ' || pSipSrcReq->buf[pos] == '\t'))
 		{
 			startPos = pos;
 		}

@@ -705,10 +705,10 @@ static osMBuf_t* sipTransICBuildErrorACK(sipTransaction_t* pTrans, osMBuf_t* pSi
 	{
 		osMBuf_modifyStr(pAckMsg, "TCP", 3, viaProtocolPos);
 	}
+	pTrans->tpInfo.protocolUpdatePos = viaProtocolPos;
 
     sipRawHdr_t sipHdr;
 	osMBuf_t* pErrorRspMsg = pErrorRspBuf->pSipMsg;
-	size_t origPos = pErrorRspMsg->pos;
 	pErrorRspMsg->pos = pErrorRspBuf->hdrStartPos;
 	osPointerLen_t hdrPL;
 	uint32_t match = 0b1111;
@@ -734,7 +734,7 @@ static osMBuf_t* sipTransICBuildErrorACK(sipTransaction_t* pTrans, osMBuf_t* pSi
 				isMatch = true;
 				break;
 			case SIP_HDR_CALL_ID:
-				match ^= 1<2;
+				match ^= 1<<2;
 				isMatch = true;
 				break;
 			case SIP_HDR_CSEQ:
@@ -746,13 +746,11 @@ static osMBuf_t* sipTransICBuildErrorACK(sipTransaction_t* pTrans, osMBuf_t* pSi
 				break;
 		}
 
- 		pErrorRspMsg->pos = origPos;
-		
 		if(isMatch)
 		{	
         	//+2 to account the hdr ending \r\n
             osPL_set(&hdrPL, &pErrorRspMsg->buf[sipHdr.namePos], sipHdr.valuePos+sipHdr.value.l+2-sipHdr.namePos);
-            osMBuf_writePL(pAckMsg, &sipHdr.name, true);
+			osMBuf_writePL(pAckMsg, &hdrPL, true);
 			isMatch = false;
 		}
 
