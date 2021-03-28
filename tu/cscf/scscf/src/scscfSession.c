@@ -204,7 +204,7 @@ osStatus_e scscfSess_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
     			sipHdrGenericNameParam_t* pTopRoute = sipDecodeTopRouteValue(pReqDecodedRaw, &sipHdrDecoded, false);
     			if(pTopRoute)
 				{
-					pSessInfo = osPlHash_getUserData(gSessHash, &pTopRoute->uri.sipUser, true);
+					pSessInfo = osPlHash_getUserData(gSessHash, &pTopRoute->uri.userInfo.sipUser.user, true);
 					if(pSessInfo)
 					{
 						osListElement_t* pCallIdHashElem = osPlHash_addUserData(gSessHash, &callId, true, pSessInfo);
@@ -517,6 +517,7 @@ static osStatus_e scscfSessStateDnsAs_onMsg(scscfSessInfo_t* pSessInfo)
     	if(pProxyInfo)
     	{
     		osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
+			pSessInfo->tempWorkInfo.lastOdiInfo.pOdiHashElement = osPlHash_addUserData(gSessHash, &pSessInfo->tempWorkInfo.lastOdiInfo.odi.pl, true, pSessInfo);
 		}
 		else
 		{	
@@ -623,6 +624,7 @@ static osStatus_e scscfSessStateDnsAs_fwdRequest(scscfSessInfo_t* pSessInfo, dns
     if(pProxyInfo)
     {
         osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
+        pSessInfo->tempWorkInfo.lastOdiInfo.pOdiHashElement = osPlHash_addUserData(gSessHash, &pSessInfo->tempWorkInfo.lastOdiInfo.odi.pl, true, pSessInfo);
     }
     else
     {
@@ -714,6 +716,7 @@ static osStatus_e scscfSessStateMO2MTInit_onMsg(scscfSessInfo_t* pSessInfo)
         rspCode = SIP_RESPONSE_400;
         goto EXIT;
     }
+	mdebug(LM_CSCF, "the MT user is%r", &pSessInfo->tempWorkInfo.users[0]);
 
     /* need to check the MT is in-net or out of net.
      * first try to get regInfo from the same SCSCF's registrar, if found, must be in-net, otherwise, may be out of net
@@ -779,7 +782,6 @@ static osStatus_e scscfSessStateDnsEnum_onMsg(scscfSessInfo_t* pSessInfo)
     //dns query ongoing
     if(!pDnsResponse)
     {
-        scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_DNS_ENUM);
         //waiting for dns response, we still do not know if the MT user is in or outof net, if in-net, if the user is not register or in geo SCSCF
         //these need  be checked after the dns response returns back
         goto EXIT;
@@ -873,6 +875,7 @@ static osStatus_e scscfSessStateToBreakout_onMsg(scscfSessInfo_t* pSessInfo)
         if(pProxyInfo)
         {
             osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
+        	pSessInfo->tempWorkInfo.lastOdiInfo.pOdiHashElement = osPlHash_addUserData(gSessHash, &pSessInfo->tempWorkInfo.lastOdiInfo.odi.pl, true, pSessInfo);
         }
         else
         {
@@ -884,7 +887,7 @@ static osStatus_e scscfSessStateToBreakout_onMsg(scscfSessInfo_t* pSessInfo)
     }
 	else
 	{
-		logError("mgcpAddr is a FQDN.");
+		logError("mgcpAddr is a FQDN(%r).", &mgcpAddr.ipPort.ip);
 		rspCode = SIP_RESPONSE_500;
 		status = OS_ERROR_INVALID_VALUE;
 	}
@@ -935,6 +938,7 @@ static osStatus_e scscfSessStateToUe_onMsg(scscfSessInfo_t* pSessInfo)
     if(pProxyInfo)
     {
     	osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
+        pSessInfo->tempWorkInfo.lastOdiInfo.pOdiHashElement = osPlHash_addUserData(gSessHash, &pSessInfo->tempWorkInfo.lastOdiInfo.odi.pl, true, pSessInfo);
     }
     else
 	{
@@ -1032,6 +1036,9 @@ static osStatus_e scscfSess_enterState(scscfSessInfo_t* pSessInfo, scscfSessStat
 	{
 		case SCSCF_SESS_STATE_MO_INIT:
 			status = scscfSessStateMoInit_onMsg(pSessInfo);
+			break;
+		case SCSCF_SESS_STATE_MT_INIT:
+			status = scscfSessStateMTInit_onMsg(pSessInfo);
 			break;
 		case SCSCF_SESS_STATE_SAR:
 			if(oldState != SCSCF_SESS_STATE_MO_INIT && oldState != SCSCF_SESS_STATE_MT_INIT && oldState != SCSCF_SESS_STATE_LIR)
@@ -1325,7 +1332,6 @@ static osStatus_e scscf_buildReqModInfo(scscfSessInfo_t* pSessInfo, bool isOrig,
     {
         osPointerLen_t* pSipPLHdr = sipProxyMsgModInfo_addSipPLHdr(pMsgModInfo->extraAddHdr, &pMsgModInfo->addNum, SIP_HDR_ROUTE);
         pSipPLHdr->l = osPrintf_buffer((char*)pSipPLHdr->p, SIP_HDR_MAX_SIZE, "<%r>", pAS);
-debug("to-remove, pAS=%r", pAS);
     }
 
 	if(isOrig)
@@ -1406,7 +1412,6 @@ debug("to-remove, pAS=%r", pAS);
             isFound = scscfReg_getOneNoBarUri(pSessInfo->pRegInfo, false, &noBarredPai[noBarredPaiNum]);
             noBarredPaiNum = isFound ? ++noBarredPaiNum : noBarredPaiNum;
 		}	
-debug("to-remove, noBarredPaiNum=%d", noBarredPaiNum);
 		for(int i=0; i<noBarredPaiNum; i++)
 		{					
 			sipTuHdrRawValue_t value = {SIPTU_RAW_VALUE_TYPE_STR_OSPL, {.strValue = noBarredPai[i]}};
@@ -1421,6 +1426,16 @@ debug("to-remove, noBarredPaiNum=%d", noBarredPaiNum);
 		if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_PREFERRED_IDENTITY])
 		{
 			sipProxyMsgModInfo_delHdr(pMsgModInfo->extraDelHdr, &pMsgModInfo->delNum, SIP_HDR_P_PREFERRED_IDENTITY, false);
+		}
+
+		if(!pReqDecodedRaw->msgHdrList[SIP_HDR_P_CHARGING_VECTOR])
+		{
+			//to-do, to change
+			sipPointerLen_t chargeTemp = SIPPL_INIT(chargeTemp);
+			chargeTemp.pl.l = sizeof("icid-value=ECE-CLF-ece01-pl01-clf-1550683191255-712;icid-generated-at=ECE-CLF-ece01-pl01-clf-ece01-pl01-clf;orig-ioi=ims.globalstar.com") - 1;
+			strncpy(chargeTemp.buf, "icid-value=ECE-CLF-ece01-pl01-clf-1550683191255-712;icid-generated-at=ECE-CLF-ece01-pl01-clf-ece01-pl01-clf;orig-ioi=ims.globalstar.com", chargeTemp.pl.l);
+            sipTuHdrRawValue_t value = {SIPTU_RAW_VALUE_TYPE_STR_SIPPL, {.sipPLValue = chargeTemp}};
+            sipProxyMsgModInfo_addHdr(pMsgModInfo->extraAddHdr, &pMsgModInfo->addNum, SIP_HDR_P_CHARGING_VECTOR, &value);
 		}
 	}
 
@@ -1455,7 +1470,7 @@ static osPointerLen_t* scscfSess_createOdi(scscfSessInfo_t* pSessInfo)
         }
 
         //override any other char to be '%'
-        ((char*)pOdi->p)[i] = '%';
+        ((char*)pOdi->p)[i] = 'a';
     }
 
 	return pOdi;

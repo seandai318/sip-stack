@@ -92,7 +92,7 @@ osStatus_e sipParsing_getHdrValue(osMBuf_t* pSipMsg, size_t hdrEndPos, sipParsin
 					break;
 				}
 
-				logError("parsing error(status=%d), pParsingStatus->status=%d, i=%d, sipABNF[i].a=%d, j=%d", status, pParsingStatus->status, i, sipABNF[i].a, j);
+				logInfo("parsing error(status=%d), pParsingStatus->status=%d, i=%d, sipABNF[i].a=%d, j=%d.  If this set of parameter is optional in the parent, this error will be ignored.", status, pParsingStatus->status, i, sipABNF[i].a, j);
 				goto EXIT;
 			}
 

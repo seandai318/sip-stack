@@ -37,7 +37,17 @@ static inline void sipProxyMsgModInfo_addHdr(sipTuHdrRawValueStr_t* extraAddHdr,
 	}
 
 	extraAddHdr[*addNum].nameCode = hdrCode;
-	extraAddHdr[(*addNum)++].value = *pValue;
+	if(pValue->rawValueType == SIPTU_RAW_VALUE_TYPE_STR_SIPPL)
+	{
+		extraAddHdr[*addNum].value.rawValueType = pValue->rawValueType;
+		sipPL_copy(&extraAddHdr[*addNum].value.sipPLValue, &pValue->sipPLValue);
+	}
+	else
+	{
+		extraAddHdr[*addNum].value = *pValue;
+	}
+
+	(*addNum)++;
 }
 
 

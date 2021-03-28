@@ -60,4 +60,18 @@ static inline void sipPL_init(sipPointerLen_t* pSipPL)
     pSipPL->pl.l = 0;
 }
 
+
+static inline void sipPL_copy(sipPointerLen_t* pDst, sipPointerLen_t* pSrc)
+{
+	if(!pDst || !pSrc)
+	{
+		return;
+	}
+
+	sipPL_init(pDst);
+	pDst->pl.l = pSrc->pl.l;
+	osPL_plcpy(&pDst->pl, &pSrc->pl);	
+}
+
+
 #endif
