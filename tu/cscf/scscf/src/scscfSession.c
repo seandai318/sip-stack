@@ -716,7 +716,7 @@ static osStatus_e scscfSessStateMO2MTInit_onMsg(scscfSessInfo_t* pSessInfo)
         rspCode = SIP_RESPONSE_400;
         goto EXIT;
     }
-	mdebug(LM_CSCF, "the MT user is%r", &pSessInfo->tempWorkInfo.users[0]);
+	mdebug(LM_CSCF, "the MT user is:%r", &pSessInfo->tempWorkInfo.users[0]);
 
     /* need to check the MT is in-net or out of net.
      * first try to get regInfo from the same SCSCF's registrar, if found, must be in-net, otherwise, may be out of net

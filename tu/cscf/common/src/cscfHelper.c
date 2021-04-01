@@ -361,9 +361,9 @@ osStatus_e cscf_getEnumQName(osPointerLen_t* pUser, osPointerLen_t* qName)
 	osStatus_e status = OS_STATUS_OK;
 
 	//qName shall already allocated space for qName->p
-	if(!pUser || !qName || !qName->p)
+	if(!pUser || !pUser->l || !qName || !qName->p)
 	{
-		logError("null pointer, pUser=%p, qName=%p, qName->p=%p.", pUser, qName, qName->p);
+		logError("null pointer, pUser=%p, pUser->l=%d, qName=%p, qName->p=%p.", pUser, pUser->l, qName, qName->p);
 		status = OS_ERROR_NULL_POINTER;
 		goto EXIT;
 	}
@@ -371,7 +371,7 @@ osStatus_e cscf_getEnumQName(osPointerLen_t* pUser, osPointerLen_t* qName)
 	//the pUser may take the form like: sip:+19723247326@ims.com, tel:19723247326, etc.
 	//this function would not check the format, simply starts from the first digit, until the last digit to convert to qName
 	int digitStart=0;
-	int digitStop = 0;
+	int digitStop = pUser->l - 1;
 	for(int i=0; i<pUser->l; i++)
 	{
 		if(!digitStart)
@@ -393,6 +393,7 @@ osStatus_e cscf_getEnumQName(osPointerLen_t* pUser, osPointerLen_t* qName)
 		}
 	} 
 
+	
 	if(!digitStart)
 	{
 		logError("the user(%r) is not proper to convert to enum, no digit.", pUser);
@@ -401,7 +402,7 @@ osStatus_e cscf_getEnumQName(osPointerLen_t* pUser, osPointerLen_t* qName)
 	}
 
 	int j=0;
-	for (int i=digitStop; i>digitStart; i--)
+	for (int i=digitStop; i>=digitStart; i--)
 	{
 		((char*)qName->p)[j++] = pUser->p[i];
 		((char*)qName->p)[j++] = '.';
