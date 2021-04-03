@@ -227,13 +227,13 @@ sipResponse_e cscf_cx2SipRspCodeMap(diaResultCode_t diaResultCode)
 	int resultCode = diaResultCode.isResultCode ? diaResultCode.resultCode : diaResultCode.expCode;
 
 	if(resultCode >= 2000 && resultCode < 3000)
-		{
-			sipRspCode = SIP_RESPONSE_200;
-		}
-		else
-		{
-			sipRspCode = SIP_RESPONSE_500;
-		}
+	{
+		sipRspCode = SIP_RESPONSE_200;
+	}
+	else
+	{
+		sipRspCode = SIP_RESPONSE_500;
+	}
 	
 	return sipRspCode;
 }

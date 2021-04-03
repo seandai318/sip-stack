@@ -25,6 +25,7 @@
 
 #include "diaMsg.h"
 #include "diaCxSar.h"
+#include "diaCxLir.h"
 #include "diaCxAvp.h"
 
 #include "sipMsgFirstLine.h"
@@ -67,7 +68,7 @@ static osStatus_e scscfSessStateClosing_onMsg(scscfSessInfo_t* pSessInfo);
 
 static void scscfSessStateSar_onSaaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData);
 static osStatus_e scscfSessStateDnsAs_fwdRequest(scscfSessInfo_t* pSessInfo, dnsResResponse_t* pRR, bool isCachedDnsRsp);
-static void scscfSessStateLir_onLia(void* pSessInfo);
+static void scscfSessStateLir_onLia(diaMsgDecoded_t* pDiaDecoded, void* pAppData);
 static void scscfSessState_dnsCallback(dnsResResponse_t* pRR, void* pData);
 static void scscfSessStateClosing_onProxyDelete(scscfSessInfo_t* pSessInfo, proxyInfo_t* pProxy);
 static osStatus_e scscf_buildReqModInfo(scscfSessInfo_t* pSessInfo, bool isOrig, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* pAS, sipTuAddr_t* pScscfAddr, sipTuRR_t* pRRScscf, sipProxy_msgModInfo_t* pMsgModInfo);
@@ -461,8 +462,7 @@ static void scscfSessStateSar_onSaaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppD
 	status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_DNS_AS);
 
 EXIT:
-    osfree(pDiaDecoded);
-
+	//no need to osfree pDiaDecoded since app did not ref it
     if(rspCode != SIP_RESPONSE_200)
     {
         sipProxy_uasResponse(rspCode, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, pSessInfo->tempWorkInfo.pSipTUMsg->pTransId, NULL);
@@ -658,6 +658,7 @@ static osStatus_e scscfSessStateMTInit_onMsg(scscfSessInfo_t* pSessInfo)
         if(pAnchorInfo)
         {
             //update the request(like remove the top route, etc.) and send to LB via queue, to-do
+	        scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_TO_LOCAL_CSCF);
         }
 		else
 		{
@@ -706,6 +707,8 @@ static osStatus_e scscfSessStateMO2MTInit_onMsg(scscfSessInfo_t* pSessInfo)
     sipResponse_e rspCode = SIP_RESPONSE_200;
 
     pSessInfo->tempWorkInfo.isMO = false;
+	pSessInfo->tempWorkInfo.pLastIfc = NULL;
+	pSessInfo->userRegState = SCSCF_REG_STATE_UN_REGISTERED;	//default setting. if the user is in other state, later scscfReg_getRegInfo() will set it.
 
     //get the MT user
     pSessInfo->tempWorkInfo.userNum = 1;
@@ -807,7 +810,7 @@ static osStatus_e scscfSessStateLir_onMsg(scscfSessInfo_t* pSessInfo)
     osStatus_e status = OS_STATUS_OK;
     sipResponse_e rspCode = SIP_RESPONSE_200;
 
-	//request ICSCF to perform LIR
+	//request ICSCF to perform LIR. since the call is initiated by scscf, do not expect to return SCSCF capabilities 
 	icscf_performLir4Scscf(&pSessInfo->tempWorkInfo.users[0], scscfSessStateLir_onLia, pSessInfo);
 
 EXIT:
@@ -820,11 +823,121 @@ EXIT:
 }
 
 
-static void scscfSessStateLir_onLia(void* pScscfId)
+static void scscfSessStateLir_onLia(diaMsgDecoded_t* pDiaDecoded, void* pAppData)
 {
     osStatus_e status = OS_STATUS_OK;
     sipResponse_e rspCode = SIP_RESPONSE_200;
-	scscfSessInfo_t* pSessInfo = pScscfId;
+	scscfSessInfo_t* pSessInfo = pAppData;
+
+	if(!pAppData)
+	{
+        logError("null pointer, pAppData.");
+        goto EXIT;
+    }
+
+	osPointerLen_t scscfName = {};
+	diaResultCode_t resultCode = {};
+	status = icscf_decodeLia(pDiaDecoded, &scscfName, NULL, &resultCode);
+	if(status != OS_STATUS_OK)
+	{
+		logError("fails to decode LIR.");
+		rspCode = SIP_RESPONSE_500;
+		status = OS_ERROR_INVALID_VALUE;
+		goto EXIT;
+	}
+
+	//if resultCode.isResultCode
+	if(resultCode.isResultCode)
+	{
+		if(resultCode.resultCode != 2000)
+		{
+			logInfo("resultCode=%d.", resultCode.resultCode);
+			rspCode = cscf_cx2SipRspCodeMap(resultCode);
+			status = OS_ERROR_INVALID_VALUE;
+    	}
+		else
+		{
+			if(cscfConfig_isOwnScscf(&scscfName))
+			{
+		        lbAnchorInfo_t* pAnchorInfo = lb_getAnchorInfo(&pSessInfo->tempWorkInfo.users[0]);
+        		//lb finds the anchor info for the MT user, must be another SCSCF, forward to the SCSCF via lb
+        		if(pAnchorInfo)
+        		{
+            		//update the request(like remove the top route, etc.) and send to LB via queue, to-do
+					status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_TO_LOCAL_CSCF);
+        		}
+        		else
+        		{
+            		// for this SCSCF and NOT_REGISTERED case, perform SAR to download user profile.
+            		status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_SAR);
+				}
+			}
+			else
+			{
+				status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_TO_GEO_SCSCF);
+			}
+		}
+
+		goto EXIT;
+	}
+
+	//if resultCode is a experimental code
+	if(resultCode.expCode < 3000 && resultCode.expCode >= 2000)
+	{
+		if(!scscfName.l)
+		{
+			if(resultCode.expCode == DIA_CX_EXP_RESULT_UNREGISTERED_SERVICE || resultCode.expCode == DIA_CX_EXP_RESULT_SUCCESS_SERVER_NAME_NOT_STORED)
+			{
+                lbAnchorInfo_t* pAnchorInfo = lb_getAnchorInfo(&pSessInfo->tempWorkInfo.users[0]);
+                //lb finds the anchor info for the MT user, must be another SCSCF, forward to the SCSCF via lb
+                if(pAnchorInfo)
+                {
+                    //update the request(like remove the top route, etc.) and send to LB via queue, to-do
+                    status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_TO_LOCAL_CSCF);
+                }
+                else
+                {
+                    // for this SCSCF and NOT_REGISTERED case, perform SAR to download user profile.
+                    status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_SAR);
+                }
+			}
+			else
+			{
+				logError("expCode=%d, but LIA does not contain server name.", resultCode.expCode);
+				status = OS_ERROR_SYSTEM_FAILURE;
+			}
+		}
+		else
+		{
+            if(cscfConfig_isOwnScscf(&scscfName))
+            {
+                lbAnchorInfo_t* pAnchorInfo = lb_getAnchorInfo(&pSessInfo->tempWorkInfo.users[0]);
+                //lb finds the anchor info for the MT user, must be another SCSCF, forward to the SCSCF via lb
+                if(pAnchorInfo)
+                {
+                    //update the request(like remove the top route, etc.) and send to LB via queue, to-do
+                    status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_TO_LOCAL_CSCF);
+                }
+                else
+                {
+                    // for this SCSCF and NOT_REGISTERED case, perform SAR to download user profile.
+                    status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_SAR);
+                }
+            }
+            else
+            {
+                status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_TO_GEO_SCSCF);
+            }
+        }
+	}
+	else
+	{
+		logInfo("resultCode=%d.", resultCode.resultCode);
+        rspCode = cscf_cx2SipRspCodeMap(resultCode);
+        status = OS_ERROR_INVALID_VALUE;
+    }
+		
+	goto EXIT;
 
 EXIT:
     if(rspCode != SIP_RESPONSE_200)
@@ -832,6 +945,13 @@ EXIT:
         sipProxy_uasResponse(rspCode, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, pSessInfo->tempWorkInfo.pSipTUMsg->pTransId, NULL);
     }
 
+	if(status != OS_STATUS_OK)
+	{
+        //to-do, check other state, if status != OS_STATUS_OK, and is the start of a thread, enter the closing state
+        scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_CLOSING);
+	}
+
+	
 	return;
 }
 
@@ -840,6 +960,8 @@ static osStatus_e scscfSessStateToLocalSCSCF_onMsg(scscfSessInfo_t* pSessInfo)
 {
     osStatus_e status = OS_STATUS_OK;
     sipResponse_e rspCode = SIP_RESPONSE_200;
+
+	//to send the message to the other SCSCF working thread via lb. to-do	
 
 EXIT:
     if(rspCode != SIP_RESPONSE_200)
@@ -925,6 +1047,7 @@ static osStatus_e scscfSessStateToUe_onMsg(scscfSessInfo_t* pSessInfo)
     if(pSessInfo->userRegState == SCSCF_REG_STATE_UN_REGISTERED)
 	{
 		rspCode = SIP_RESPONSE_400;
+		goto EXIT;
 	}
 
 	sipTuAddr_t nextHop = {};

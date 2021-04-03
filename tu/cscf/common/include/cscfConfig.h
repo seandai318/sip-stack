@@ -31,6 +31,7 @@
 #define SCSCF_URI						"sip:scscf01-mlplab.ims.com"
 #define SCSCF_URI_WITH_PORT				"sip:scscf01-mlplab.ims.com:5060"
 #define SCSCF_IP_ADDR					"10.225.81.11"
+#define SCSCF_IP_WITH_PORT              "10.225.81.11:5060"
 #define SCSCF_LISTEN_PORT				5060
 
 #define SCSCF_SIFC_XML_FILE_NAME			"dia3gppSIfc.xml"
@@ -108,6 +109,7 @@ struct sockaddr_in cscfConfig_getLocalSockAddr(cscfType_e cscfType, bool isUseLi
 bool cscf_isS(struct sockaddr_in* rcvLocal);
 sipTuAddr_t* cscfConfig_getOwnAddr(cscfType_e cscfType);
 void cscfConfig_getMgcpAddr(sipTuAddr_t* pMgcpAddr);
+bool cscfConfig_isOwnScscf(osPointerLen_t* pScscfName);
 
 bool icscfConfig_getScscfInfoByCap(uint32_t capValue, sipTuAddr_t* pScscfAddr, bool* isLocal);
 bool icscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pScscfAddr, bool* isLocal);

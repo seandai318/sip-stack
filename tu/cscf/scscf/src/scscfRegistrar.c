@@ -989,7 +989,7 @@ void scscfReg_onDiaMsg(diaMsgDecoded_t* pDiaDecoded, void* pAppData)
 	}
 			
 EXIT:
-	osfree(pDiaDecoded);
+	//no need to osfree pDiaDecoded since app did not ref it
 	return;	
 }
 

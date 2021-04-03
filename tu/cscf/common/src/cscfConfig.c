@@ -279,6 +279,89 @@ bool icscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pSc
 }
 
 
+/* simply compare with the various configured own scscf in order.  topCheck is introduced so that if a scscf match was found, 
+ * the enxt check will check the same scscf pattern first, with the hope that the configured own scscf would not change often
+ * 
+ * there shall be no WSP between uri and port, sip: and uri.
+ */
+bool cscfConfig_isOwnScscf(osPointerLen_t* pScscfName)
+{
+	static int topCheck = 1;
+
+	if(!pScscfName)
+	{
+		logError("null pointer, pScscfName.");
+		return false;
+	}
+
+	int topChecked = 0;
+	switch(topCheck)
+	{
+		case 1:
+		    if(pScscfName->l == strlen(SCSCF_URI_WITH_PORT) || osPL_strcasecmp(pScscfName, SCSCF_URI_WITH_PORT) == 0)
+    		{
+				return true;
+			}
+        		
+			topChecked = 1;
+			break;	
+		case 2:
+		    if(pScscfName->l == strlen(SCSCF_URI) && osPL_strcasecmp(pScscfName, SCSCF_URI) == 0)
+    		{
+        		return true;
+    		}
+
+			topChecked = 2;
+			break;
+		case 3:
+		    if(pScscfName->l == strlen(SCSCF_IP_WITH_PORT) && osPL_strcasecmp(pScscfName, SCSCF_IP_WITH_PORT) == 0)
+    		{
+        		return true;
+    		}
+
+			topChecked = 3;
+			break;
+		case 4:
+    		if(pScscfName->l == strlen(SCSCF_IP_ADDR) && osPL_strcasecmp(pScscfName, SCSCF_IP_ADDR) == 0)
+    		{
+        		return true;
+    		}
+
+			topChecked = 4;
+			break;
+		default:
+			logError("unexpected topCheck(%d).", topCheck);
+			break;
+	}
+
+	if(topChecked != 1 && pScscfName->l == strlen(SCSCF_URI_WITH_PORT) && osPL_strcasecmp(pScscfName, SCSCF_URI_WITH_PORT) == 0)
+	{
+		topCheck = 1;
+		return true;
+	}
+
+	if(topChecked != 2 && pScscfName->l == strlen(SCSCF_URI) && osPL_strcasecmp(pScscfName, SCSCF_URI) == 0)
+	{
+		topCheck = 2;
+		return true;
+	}
+
+	if(topChecked != 3 && pScscfName->l == strlen(SCSCF_IP_WITH_PORT) && osPL_strcasecmp(pScscfName, SCSCF_IP_WITH_PORT) == 0)
+	{
+		topCheck = 3;
+		return true;
+	}
+
+	if(topChecked != 4 && pScscfName->l == strlen(SCSCF_IP_ADDR) && osPL_strcasecmp(pScscfName, SCSCF_IP_ADDR) == 0)
+    {
+		topCheck = 4;
+        return true;
+    }
+
+	return false;
+}
+		
+
 void scscf_dbgListUsrProfile(scscfUserProfile_t* pUsrProfile)
 {
 	if(!pUsrProfile)
