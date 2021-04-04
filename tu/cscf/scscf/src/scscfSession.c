@@ -1563,11 +1563,6 @@ static osStatus_e scscf_buildReqModInfo(scscfSessInfo_t* pSessInfo, bool isOrig,
 			sipProxyMsgModInfo_addHdr(pMsgModInfo->extraAddHdr, &pMsgModInfo->addNum, SIP_HDR_P_ASSERTED_IDENTITY, &value);
 		}
 
-		if(pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE])
-		{
-			sipProxyMsgModInfo_delHdr(pMsgModInfo->extraDelHdr, &pMsgModInfo->delNum, SIP_HDR_ROUTE, true);
-		}
-
 		if(pReqDecodedRaw->msgHdrList[SIP_HDR_P_PREFERRED_IDENTITY])
 		{
 			sipProxyMsgModInfo_delHdr(pMsgModInfo->extraDelHdr, &pMsgModInfo->delNum, SIP_HDR_P_PREFERRED_IDENTITY, false);
@@ -1583,6 +1578,11 @@ static osStatus_e scscf_buildReqModInfo(scscfSessInfo_t* pSessInfo, bool isOrig,
             sipProxyMsgModInfo_addHdr(pMsgModInfo->extraAddHdr, &pMsgModInfo->addNum, SIP_HDR_P_CHARGING_VECTOR, &value);
 		}
 	}
+
+    if(pReqDecodedRaw->msgHdrList[SIP_HDR_ROUTE])
+    {
+        sipProxyMsgModInfo_delHdr(pMsgModInfo->extraDelHdr, &pMsgModInfo->delNum, SIP_HDR_ROUTE, true);
+    }
 
 EXIT:
 	return status;
