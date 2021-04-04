@@ -27,14 +27,14 @@
 
 
 
-static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo);
+static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, proxyInfo_t** ppProxyInfo, sipProxyAppInfo_t* pAppInfo);
 
 static osStatus_e callProxy_onSipTransError(sipTUMsg_t* pSipTUMsg);
 static void callProxy_onTimeout(uint64_t timerId, void* data);
 static void callProxyInfo_cleanup(void* pData);
 
 osStatus_e callProxyEnterState(sipCallProxyState_e newState, callProxyInfo_t* pCallInfo);
-static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, void* pProxyMgrInfo, proxyInfo_t** ppProxyInfo);
+static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, sipProxyAppInfo_t* pAppInfo, proxyInfo_t** ppProxyInfo);
 static osStatus_e callProxyStateInitInvite_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
 static osStatus_e callProxyStateInitError_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
 static osStatus_e callProxyStateInit200Rcvd_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, callProxyInfo_t* pCallInfo);
@@ -66,8 +66,8 @@ void callProxy_init(proxyStatusNtfyCB_h proxyStatusNtfy, proxyReg2RegistrarCB_h 
 }
 	 
 
-//pProxyMgrInfo: proxyMgr info that associated with the aprticular proxy.  for example, for scscf, it is scscfSessInfo_t, for standalone proxyMgr, it is osListElement_t* pHashLE.  That is used to pass back to the proxyMgr for function fProxyCreation and fProxyStatusNtfy.  This parameter must be no NULL in the initial request
-osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo)
+//appInfo contains proxyMgr's (or proxyApp's) sip rsp message callback and object: proxyMgr info that associated with the aprticular proxy.  for example, for scscf, it is scscfSessInfo_t, for standalone proxyMgr, it is osListElement_t* pHashLE.  That is used to pass back to the proxyMgr for function fProxyCreation and fProxyStatusNtfy.  This parameter must be no NULL in the initial request
+osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, proxyInfo_t** ppProxyInfo, sipProxyAppInfo_t* pAppInfo)
 {
 	DEBUG_BEGIN
 
@@ -76,7 +76,7 @@ osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, s
 	switch (msgType)
 	{
 		case SIP_TU_MSG_TYPE_MESSAGE:
-			status = callProxy_onSipMsg(pSipTUMsg, pReqDecodedRaw, pRouteModCtl, ppProxyInfo, pProxyMgrInfo);
+			status = callProxy_onSipMsg(pSipTUMsg, pReqDecodedRaw, pRouteModCtl, ppProxyInfo, pAppInfo);
 			break;
 		case SIP_TU_MSG_TYPE_TRANSACTION_ERROR:
 		default:
@@ -152,7 +152,8 @@ void callProxy_onTimeout(uint64_t timerId, void* data)
 
 
 //static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osListElement_t* pHashLE)
-static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo)
+//appInfo only used when the request is a initial request.
+static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, proxyInfo_t** ppProxyInfo, sipProxyAppInfo_t* pAppInfo)
 {
 	osStatus_e status = OS_STATUS_OK;
 
@@ -162,14 +163,34 @@ static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_
 		return OS_ERROR_NULL_POINTER;
 	}
 
-	callProxyInfo_t* pCallInfo = pSipTUMsg->pTUId ? ((proxyInfo_t*)pSipTUMsg->pTUId)->pCallInfo : NULL;
-	if(!pCallInfo && *ppProxyInfo)
+	callProxyInfo_t* pCallInfo = NULL;
+	/* for saProxy, all sipTUMsg directly from sipTU
+	   for initial request, ppProxyInfo == NULL, pSipTUMsg->pTUId == NULL
+	   for subsequent request, ppProxyInfo == NULL, pSipTUMsg->pTUId == NULL
+	   for response, ppProxyInfo == NULL, pSipTUMsg->pTUId contains proxyInfo.
+	   for app proxy, all sipTUMsg requests come from proxy app, responses directly from sipTU
+	   for initial request, ppProxyInfo != NULL, but *ppProxyInfo == NULL, pSipTUMsg->pTUId == NULL 
+	   for subsequent request, ppProxyInfo != NULL, *ppProxyInfo != NULL, and contains proxyInfo.
+	   for response, ppProxyInfo == NULL, pSipTUMsg->pTUId contains proxyInfo.
+	 */
+	if(ppProxyInfo && *ppProxyInfo)
 	{
 		pCallInfo = (*ppProxyInfo)->pCallInfo;
+	}
+	else
+	{
+		pCallInfo = pSipTUMsg->pTUId ? ((proxyInfo_t*)pSipTUMsg->pTUId)->pCallInfo : NULL;
 	}
 
 	if(pCallInfo)
 	{
+		//pass message to app so that app may perform whatever action it wants towards the pSipTUMsg
+		sipProxy_msgModInfo_t modInfo={};
+		if(pSipTUMsg->sipMsgType == SIP_MSG_RESPONSE && pCallInfo->appInfo.rspCallback)
+		{
+			status = pCallInfo->appInfo.rspCallback(pSipTUMsg, pReqDecodedRaw, pCallInfo, &modInfo);
+		}
+
 		switch (pCallInfo->state)
 		{
 			case SIP_CALLPROXY_STATE_INIT_ERROR:
@@ -194,7 +215,7 @@ static osStatus_e callProxy_onSipMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_
 	}
 	else
 	{
-		return callProxyStateNone_onMsg(pSipTUMsg, pReqDecodedRaw, pRouteModCtl, pProxyMgrInfo, ppProxyInfo);
+		return callProxyStateNone_onMsg(pSipTUMsg, pReqDecodedRaw, pRouteModCtl, pAppInfo, ppProxyInfo);
 	}
 
 	return status;
@@ -241,7 +262,7 @@ static osStatus_e callProxy_onSipTransError(sipTUMsg_t* pSipTUMsg)
 }
 
 
-static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, void* pProxyMgrInfo, proxyInfo_t** ppProxyInfo)
+static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteModCtl, sipProxyAppInfo_t* pAppInfo, proxyInfo_t** ppProxyInfo)
 {
 	DEBUG_BEGIN
 
@@ -300,11 +321,14 @@ static osStatus_e callProxyStateNone_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedR
         goto EXIT;
     }
 
-	pCallInfo->pProxyMgrInfo = pProxyMgrInfo;
+	if(pAppInfo)
+	{
+		pCallInfo->appInfo = *pAppInfo;
+	}
     pCallInfo->pProxyInfo = *ppProxyInfo;
     (*ppProxyInfo)->pCallInfo = pCallInfo;
     (*ppProxyInfo)->proxyOnMsg = callProxy_onSipTUMsg;
-    logInfo("proxy for callId(%r) is created(%p), pProxyMgrInfo=%p, pCallInfo=%p.", &callId, *ppProxyInfo, pProxyMgrInfo, pCallInfo);
+    logInfo("proxy for callId(%r) is created(%p), pProxyMgrInfo=%p, pCallInfo=%p.", &callId, *ppProxyInfo, pAppInfo ? pAppInfo->pProxyMgrInfo:NULL, pCallInfo);
 
 #if 0
     osHashData_t* pHashData = oszalloc(sizeof(osHashData_t), NULL);
@@ -982,10 +1006,10 @@ static void callProxyInfo_cleanup(void* pData)
     }
 
     //remove from hash
-    if(pCallInfo->pProxyMgrInfo)
+    if(pCallInfo->appInfo.pProxyMgrInfo)
     {
-		fProxyStatusNtfyCB(pCallInfo->pProxyMgrInfo, pCallInfo->pProxyInfo, SIP_PROXY_STATUS_DELETE);
-        logInfo("remove proxy(%p) from proxyMgr(%p) for callId(%r)", pCallInfo->pProxyInfo, pCallInfo->pProxyMgrInfo, &pCallInfo->callId);
+		fProxyStatusNtfyCB(pCallInfo->appInfo.pProxyMgrInfo, pCallInfo->pProxyInfo, SIP_PROXY_STATUS_DELETE);
+        logInfo("remove proxy(%p) from proxyMgr(%p) for callId(%r)", pCallInfo->pProxyInfo, pCallInfo->appInfo.pProxyMgrInfo, &pCallInfo->callId);
 //		pCallInfo->pCallHashLE = NULL;
 #if 0
 		//remove memory allocated for proxyInfo_t

@@ -46,6 +46,7 @@
 
 
 
+static osStatus_e scscfSess_onSipRsp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, void* pProxyInfo, sipProxy_msgModInfo_t* pModInfo);
 static osStatus_e scscfSess_isInitialReq(scscfSessInfo_t* pSessInfo, sipMsgDecodedRawHdr_t* pReqDecodedRaw, bool* isInitialReq);
 static void scscfSess_onProxyStatus(void* pSessInfo, proxyInfo_t* pProxy, proxyStatus_e proxyStatus);
 static proxyInfo_t* scscfSess_getMatchingProxy(scscfSessInfo_t* pSessInfo, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw);
@@ -190,7 +191,8 @@ osStatus_e scscfSess_onTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg)
                         goto EXIT;
                     }
 
-					status = proxy_onSipTUMsgViaApp(msgType, pSipTUMsg, pReqDecodedRaw, NULL, &pProxyInfo, pSessInfo); 
+					sipProxyAppInfo_t appInfo = {scscfSess_onSipRsp, pSessInfo};
+					status = proxy_onSipTUMsgViaApp(msgType, pSipTUMsg, pReqDecodedRaw, NULL, &pProxyInfo, &appInfo); 
 					if(status != OS_STATUS_OK)
 					{
                         logError("fail to send message via proxy for the new request(callId=%r).", &callId);
@@ -266,6 +268,22 @@ EXIT:
 	return status;
 }
 
+
+//this is the scscfSess_onTUMsg() for sip response.  instead receiving from sipTU directly, the sip rsp message is received via proxy.  scsxf may add/remove headers in this function by passing out pModInfo
+static osStatus_e scscfSess_onSipRsp(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, void* pProxyInfo, sipProxy_msgModInfo_t* pModInfo)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	if(!pSipTUMsg || !pReqDecodedRaw || !pProxyInfo || !pModInfo)
+	{
+		logError("null pointer, pSipTUMsg=%p, pReqDecodedRaw=%p, pProxyInfo=%p, pModInfo=%p.", pSipTUMsg, pReqDecodedRaw, pProxyInfo, pModInfo);
+		return OS_ERROR_NULL_POINTER;
+	}
+
+EXIT:
+	return status;
+}
+	
 
 static osStatus_e scscfSessStateInit_onMsg(sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, osPointerLen_t* pCallId, sipHdrGenericNameParam_t* pTopRoute)
 {
@@ -513,7 +531,8 @@ static osStatus_e scscfSessStateDnsAs_onMsg(scscfSessInfo_t* pSessInfo)
 		scscf_buildReqModInfo(pSessInfo, pSessInfo->tempWorkInfo.isInitial, pSessInfo->tempWorkInfo.pReqDecodedRaw, &pSessInfo->tempWorkInfo.nextHop.nextHopRaw, cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF), pOwnRR, &routeModCtl.msgModInfo);
 
 		proxyInfo_t* pProxyInfo = NULL;
-	    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, pSessInfo);
+		sipProxyAppInfo_t appInfo = {scscfSess_onSipRsp, pSessInfo};
+	    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, &appInfo);
     	if(pProxyInfo)
     	{
     		osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
@@ -620,7 +639,8 @@ static osStatus_e scscfSessStateDnsAs_fwdRequest(scscfSessInfo_t* pSessInfo, dns
     scscf_buildReqModInfo(pSessInfo, pSessInfo->tempWorkInfo.isInitial, pSessInfo->tempWorkInfo.pReqDecodedRaw, &pSessInfo->tempWorkInfo.nextHop.nextHopRaw, cscfConfig_getOwnAddr(CSCF_TYPE_SCSCF), pOwnRR, &routeModCtl.msgModInfo);
 
     proxyInfo_t* pProxyInfo = NULL;
-    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, pSessInfo);
+	sipProxyAppInfo_t appInfo = {scscfSess_onSipRsp, pSessInfo};
+    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, &appInfo);
     if(pProxyInfo)
     {
         osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
@@ -993,7 +1013,8 @@ static osStatus_e scscfSessStateToBreakout_onMsg(scscfSessInfo_t* pSessInfo)
         scscf_buildReqModInfo(pSessInfo->pRegInfo, pSessInfo->tempWorkInfo.isInitial, pSessInfo->tempWorkInfo.pReqDecodedRaw, &mgcpRoute.pl, NULL, pOwnRR, &routeModCtl.msgModInfo);
 
 		proxyInfo_t* pProxyInfo = NULL;
-        status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, pSessInfo);
+	    sipProxyAppInfo_t appInfo = {scscfSess_onSipRsp, pSessInfo};
+        status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, &appInfo);
         if(pProxyInfo)
         {
             osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));
@@ -1057,7 +1078,8 @@ static osStatus_e scscfSessStateToUe_onMsg(scscfSessInfo_t* pSessInfo)
     scscf_buildReqModInfo(pSessInfo->pRegInfo, pSessInfo->tempWorkInfo.isInitial, pSessInfo->tempWorkInfo.pReqDecodedRaw, NULL, NULL, pOwnRR, &routeModCtl.msgModInfo);
 
 	proxyInfo_t* pProxyInfo = NULL;
-    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, pSessInfo);
+    sipProxyAppInfo_t appInfo = {scscfSess_onSipRsp, pSessInfo};
+    status = proxy_onSipTUMsgViaApp(SIP_TU_MSG_TYPE_MESSAGE, pSessInfo->tempWorkInfo.pSipTUMsg, pSessInfo->tempWorkInfo.pReqDecodedRaw, &routeModCtl, &pProxyInfo, &appInfo);
     if(pProxyInfo)
     {
     	osList_append(&pSessInfo->proxyList, osmemref(pProxyInfo));

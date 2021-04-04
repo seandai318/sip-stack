@@ -34,9 +34,10 @@ typedef enum {
 
 typedef struct callProxyInfo {
 	sipCallProxyState_e state;
+	sipTuAppType_e tuAppType;	//identify app that uses this proxy.  For saProxy, this value shall be set to SIPTU_APP_TYPE_NONE
 	void* regId;
 	proxyInfo_t* pProxyInfo;	//the object of proxy
-	void* pProxyMgrInfo;		//the object of proxyMgr, like CSCF
+	sipProxyAppInfo_t appInfo;	//contains the object of proxyMgr, like CSCF, and rspCallback
 //	osListElement_t* pCallHashLE;
 	uint32_t seqNum;
 	osDPointerLen_t callId;
@@ -48,7 +49,7 @@ typedef struct callProxyInfo {
 
 
 void callProxy_init(proxyStatusNtfyCB_h proxyStatusNtfy, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar);
-osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, void* pProxyMgrInfo);
+osStatus_e callProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteCtl, proxyInfo_t** ppProxyInfo, sipProxyAppInfo_t* pAppInfo);
 
 
 #endif

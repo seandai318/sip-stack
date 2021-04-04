@@ -39,9 +39,14 @@ typedef struct proxyTranInfo {
 
 struct proxyInfo;
 struct sipProxyRouteModCtl;
+struct sipProxy_msgModInfo;
+struct sipProxyAppInfo;
+
+typedef osStatus_e (*proxy_onMsgCallback) (sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, struct sipProxyRouteModCtl* pRouteCtl, struct proxyInfo** ppProxyInfo, struct sipProxyAppInfo* pAppInfo);
 
 
-typedef osStatus_e (*proxy_onMsgCallback) (sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, struct sipProxyRouteModCtl* pRouteCtl, struct proxyInfo** ppProxyInfo, void* pProxyMgrInfo);
+//callback to proxy app (like scscfSession) to manipulate sip message as wanted
+typedef osStatus_e (*app_onRspCallback) (sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, void* pProxyInfo, struct sipProxy_msgModInfo* pModInfo);
 
 
 typedef struct proxyInfo {
@@ -51,7 +56,7 @@ typedef struct proxyInfo {
 } proxyInfo_t;
 
 
-typedef struct {
+typedef struct sipProxy_msgModInfo {
     bool isAuto;    //if true, the function that this structure is passed in will add/remove route own its own, otherwise, purely based n passed in extraAddHdr/delHdr
     union {
         bool isAddRR;   //when isAuto = true;
@@ -75,6 +80,13 @@ typedef struct sipProxyRouteModCtl {
 }sipProxyRouteModCtl_t;
 
 
+//info used for proxy (like callProxy) to call proxy app (like scscfSession)
+typedef struct sipProxyAppInfo {
+	app_onRspCallback rspCallback;
+	void* pProxyMgrInfo;
+} sipProxyAppInfo_t;
+
+
 //typedef proxyInfo_t* (*proxyCreationCB_h) (void* pProxyMgrInfo);
 typedef void (*proxyStatusNtfyCB_h) (void* pProxyMgrInfo, proxyInfo_t* pProxy, proxyStatus_e proxyStatus);
 typedef void* (*proxyReg2RegistrarCB_h) (osPointerLen_t* pSipUri, void* pMasInfo);
@@ -84,7 +96,7 @@ osStatus_e proxy_init(proxyStatusNtfyCB_h proxyStatusNtfy);
 osStatus_e saProxy_init(uint32_t bucketSize, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar);
 //osStatus_e proxyInit(proxyStatusNtfyCB_h proxyStatusNtfy, proxyReg2RegistrarCB_h proxyReg2Registrar, proxyDelFromRegistrarCB_h proxyDelFromRegistrar);
 osStatus_e proxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg);
-osStatus_e proxy_onSipTUMsgViaApp(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteCtl, proxyInfo_t** ppProxy, void* pProxyMgrInfo);
+osStatus_e proxy_onSipTUMsgViaApp(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteCtl, proxyInfo_t** ppProxy, sipProxyAppInfo_t* pAppInfo);
 
 osStatus_e sipProxy_addTrPair(osListPlus_t* pList, proxyTranInfo_t* pProxyTrInfo, bool isPrimary);
 //if isPrimary=true, find the pairUasTrId from the pList->first parameter

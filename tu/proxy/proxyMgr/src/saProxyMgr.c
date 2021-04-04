@@ -84,7 +84,8 @@ static osStatus_e saProxy_onSipTUMsg(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUM
 				osListElement_t* pProxyHashLE = osPlHash_addEmptyUserData(proxyHash, &callId, true);
 				if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_INVITE)
 				{
-					status = callProxy_onSipTUMsg(SIP_TU_MSG_TYPE_MESSAGE, pSipTUMsg, pReqDecodedRaw, NULL, &pProxyInfo, pProxyHashLE);
+					sipProxyAppInfo_t appInfo = {NULL, pProxyHashLE};
+					status = callProxy_onSipTUMsg(SIP_TU_MSG_TYPE_MESSAGE, pSipTUMsg, pReqDecodedRaw, NULL, &pProxyInfo, &appInfo);
 					if(pProxyInfo)
 					{
 						osPlHash_setEmptyUserData(pProxyHashLE, pProxyInfo);

@@ -128,15 +128,15 @@ EXIT:
 
 
 //this function receives messages from TU via proxy app
-osStatus_e proxy_onSipTUMsgViaApp(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteCtl, proxyInfo_t** ppProxy, void* pProxyMgrInfo)
+osStatus_e proxy_onSipTUMsgViaApp(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg, sipMsgDecodedRawHdr_t* pReqDecodedRaw, sipProxyRouteModCtl_t* pRouteCtl, proxyInfo_t** ppProxy, sipProxyAppInfo_t* pAppInfo)
 {
     DEBUG_BEGIN
 
     osStatus_e status = OS_STATUS_OK;
 
-    if(!pSipTUMsg || !ppProxy || !pProxyMgrInfo)
+    if(!pSipTUMsg || !ppProxy)
     {
-        logError("null pointer, pSipTUMsg=%p, ppProxy=%p, pProxyMgrInfo=%p", pSipTUMsg, ppProxy, pProxyMgrInfo);
+        logError("null pointer, pSipTUMsg=%p, ppProxy=%p", pSipTUMsg, ppProxy);
         status = OS_ERROR_NULL_POINTER;
         goto EXIT;
     }
@@ -155,7 +155,7 @@ osStatus_e proxy_onSipTUMsgViaApp(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg,
             if(*ppProxy)
             {
                 proxy_onMsgCallback proxyOnMsg = (*ppProxy)->proxyOnMsg;
-                status = proxyOnMsg(SIP_TU_MSG_TYPE_MESSAGE, pSipTUMsg, pReqDecodedRaw, pRouteCtl, ppProxy, pProxyMgrInfo);
+                status = proxyOnMsg(SIP_TU_MSG_TYPE_MESSAGE, pSipTUMsg, pReqDecodedRaw, pRouteCtl, ppProxy, pAppInfo);
             }
             else
             {
@@ -164,7 +164,7 @@ osStatus_e proxy_onSipTUMsgViaApp(sipTUMsgType_e msgType, sipTUMsg_t* pSipTUMsg,
 				//have response detour via it, proxyMgr is also OK
                 if(pSipTUMsg->sipMsgBuf.reqCode == SIP_METHOD_INVITE)
                 {
-                    status = callProxy_onSipTUMsg(SIP_TU_MSG_TYPE_MESSAGE, pSipTUMsg, pReqDecodedRaw, pRouteCtl, ppProxy, pProxyMgrInfo);
+                    status = callProxy_onSipTUMsg(SIP_TU_MSG_TYPE_MESSAGE, pSipTUMsg, pReqDecodedRaw, pRouteCtl, ppProxy, pAppInfo);
                 }
                 else
                 {
