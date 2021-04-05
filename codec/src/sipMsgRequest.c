@@ -725,7 +725,8 @@ bool sipMsg_isHdrMultiValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDec
 		goto EXIT;
 	}
 
-	//isCheckTopHdrOnly==true, or isCheckTopHdrOnly==false but there is only one hdr entry for  specified hdr name in the whole message
+	//isCheckTopHdrOnly==true, or isCheckTopHdrOnly==false but there is only one hdr entry for specified hdr name in the whole message
+	//either way, only the top hdr needs to be checked
     bool isMultiHdrValuePossible = false;
     for(int i=0; i<pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr->value.l; i++)
     {
@@ -734,32 +735,32 @@ bool sipMsg_isHdrMultiValue(sipHdrName_e hdrCode, sipMsgDecodedRawHdr_t* pReqDec
             isMultiHdrValuePossible = true;
             break;
         }
+	}
 
-        if(isMultiHdrValuePossible)
+    if(isMultiHdrValuePossible)
+    {
+        sipHdrDecoded_t sipHdrDecoded = {};
+        if(sipDecodeHdr(pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr, &sipHdrDecoded, false) != OS_STATUS_OK)
         {
-            sipHdrDecoded_t sipHdrDecoded = {};
-            if(sipDecodeHdr(pReqDecodedRaw->msgHdrList[hdrCode]->pRawHdr, &sipHdrDecoded, false) != OS_STATUS_OK)
-            {
-                logError("fails to sipDecodeHdr for hdr code(%d).", hdrCode);
-                goto EXIT;
-            }
-
-            if(sipHdr_getHdrValueNum(&sipHdrDecoded) > 1)
-            {
-                isMulti = true;
-            }
-
-			if(pTopHdrDecoded)
-			{
-				*pTopHdrDecoded = sipHdrDecoded;
-			}
-			else
-			{
-            	osfree(sipHdrDecoded.decodedHdr);
-			}
-
-			goto EXIT;
+            logError("fails to sipDecodeHdr for hdr code(%d).", hdrCode);
+            goto EXIT;
         }
+
+        if(sipHdr_getHdrValueNum(&sipHdrDecoded) > 1)
+        {
+            isMulti = true;
+        }
+
+		if(pTopHdrDecoded)
+		{	
+			*pTopHdrDecoded = sipHdrDecoded;
+		}
+		else
+		{
+           	osfree(sipHdrDecoded.decodedHdr);
+		}
+
+		goto EXIT;
     }
 
 EXIT:

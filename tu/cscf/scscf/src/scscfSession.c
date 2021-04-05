@@ -63,7 +63,7 @@ static osStatus_e scscfSessStateLir_onMsg(scscfSessInfo_t* pSessInfo);
 static osStatus_e scscfSessStateToLocalSCSCF_onMsg(scscfSessInfo_t* pSessInfo);
 static osStatus_e scscfSessStateToBreakout_onMsg(scscfSessInfo_t* pSessInfo);
 static osStatus_e scscfSessStateToGeoSCSCF_onMsg(scscfSessInfo_t* pSessInfo);
-static osStatus_e scscfSessStateToUe_onMsg(scscfSessInfo_t* pSessInfo);
+static osStatus_e scscfSessStateToUe_start(scscfSessInfo_t* pSessInfo);
 static osStatus_e scscfSessStateEstablished_onMsg(scscfSessInfo_t* pSessInfo);
 static osStatus_e scscfSessStateClosing_onMsg(scscfSessInfo_t* pSessInfo);
 
@@ -1060,14 +1060,14 @@ EXIT:
 }
 
 
-static osStatus_e scscfSessStateToUe_onMsg(scscfSessInfo_t* pSessInfo)
+static osStatus_e scscfSessStateToUe_start(scscfSessInfo_t* pSessInfo)
 {
     osStatus_e status = OS_STATUS_OK;
     sipResponse_e rspCode = SIP_RESPONSE_200;
 
-    if(pSessInfo->userRegState == SCSCF_REG_STATE_UN_REGISTERED)
+    if(pSessInfo->userRegState != SCSCF_REG_STATE_REGISTERED)
 	{
-		rspCode = SIP_RESPONSE_400;
+		rspCode = SIP_RESPONSE_480;
 		goto EXIT;
 	}
 
@@ -1214,7 +1214,7 @@ static osStatus_e scscfSess_enterState(scscfSessInfo_t* pSessInfo, scscfSessStat
 			status = scscfSessStateToGeoSCSCF_onMsg(pSessInfo);
 			break;
 		case SCSCF_SESS_STATE_TO_UE:
-			status = scscfSessStateToUe_onMsg(pSessInfo);
+			status = scscfSessStateToUe_start(pSessInfo);
 			break;
 		case SCSCF_SESS_STATE_TO_BREAKOUT:
 			status = scscfSessStateToBreakout_onMsg(pSessInfo);

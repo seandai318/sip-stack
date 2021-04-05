@@ -83,6 +83,9 @@ osStatus_e sipTU_onMsg(sipTUMsgType_e msgType, sipTUMsg_t* pMsg)
 					case SIPTU_APP_TYPE_SCSCF_SESSION:
 						return gSipTU_appOnMsg[SIPTU_APP_TYPE_SCSCF_SESSION](msgType, pMsg);
                         break;
+					case SIPTU_APP_TYPE_PROXY:
+                    	return gSipTU_appOnMsg[SIPTU_APP_TYPE_PROXY](msgType, pMsg);
+						break;
 					default:
 						logError("appType(%d) is not supported for SIPTU_PRODUCT_TYPE_CSCF.", pMsg->appType);
 						break;
