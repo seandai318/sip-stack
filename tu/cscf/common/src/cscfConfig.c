@@ -26,7 +26,7 @@ static void cscfConfig_setGlobalSockAddr();
 
 static osPointerLen_t gCxXsdName;
 static struct sockaddr_in gScscfSockAddr, gIcscfSockAddr;
-static scscfAddrInfo_t gScscfAddrInfo[ICSCF_CONFIG_MAX_SCSCF_NUM];
+static scscfAddrInfo_t gScscfAddrInfo[CSCF_CONFIG_MAX_SCSCF_NUM];
 static uint8_t gScscfAddrNum;
 static sipTuAddr_t gScscfLocalAddr;	//the local SCSCF addr
 static sipTuAddr_t gIcscfLocalAddr; //the local ICSCF addr
@@ -70,6 +70,15 @@ debug("to-remove, gCxXsdName=%r.", &gCxXsdName);
     gIcscfLocalAddr.ipPort.ip.p = SCSCF_IP_ADDR;
     gIcscfLocalAddr.ipPort.ip.l = strlen(ICSCF_IP_ADDR);
     gIcscfLocalAddr.ipPort.port = ICSCF_LISTEN_PORT;
+
+	gScscfAddrNum = 1;
+	gScscfAddrInfo[0].capValue = 1;
+	gScscfAddrInfo[0].tpType = TRANSPORT_TYPE_ANY;
+	gScscfAddrInfo[0].isLocal = true;
+	gScscfAddrInfo[0].scscfName.p = SCSCF_URI;
+	gScscfAddrInfo[0].scscfName.l = sizeof(SCSCF_URI) -1;
+	osConvertPLton1(gScscfLocalAddr.ipPort.ip, SCSCF_LISTEN_PORT, &gScscfAddrInfo[0].sockAddr);
+	gScscfAddrInfo[0].ipPort = gIcscfLocalAddr.ipPort;
 }
 
 
@@ -261,21 +270,49 @@ scscfAddrInfo_t* icscfConfig_getScscfInfo(uint8_t* pScscfNum)
 
 bool cscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pScscfAddr, bool* isLocal)
 {
+	bool isScscfFound = false;
+	sipUri_t scscfUri;
+
+	if(sipUri_saParse(pScscfName, &scscfUri) != OS_STATUS_OK)
+	{
+		logError("scscfName(%r) is not a proper SIP URI.", pScscfName)
+		goto EXIT;
+	}
+
 	for(int i=0; i<gScscfAddrNum; i++)
     {
-		if(osPL_casecmp(pScscfName, &gScscfAddrInfo[i].scscfName) == 0)
+		//scscfName starts from index 4 to get rid of "sip:" part
+		osPointerLen_t scscfName= {&gScscfAddrInfo[i].scscfName.p[4], gScscfAddrInfo[i].scscfName.l-4};
+		if(osPL_casecmp(&scscfUri.hostport.host, &scscfName) == 0 || osPL_casecmp(&scscfUri.hostport.host, &gScscfAddrInfo[i].ipPort.ip) == 0)
         {
             pScscfAddr->isSockAddr = true;
-            pScscfAddr->sockAddr = gScscfAddrInfo[i].sockAddr;
-            pScscfAddr->tpType = gScscfAddrInfo[i].tpType;
+			if(gScscfAddrInfo[i].ipPort.port != scscfUri.hostport.portValue && scscfUri.hostport.portValue != 0)
+			{
+				osConvertPLton1(gScscfAddrInfo[i].ipPort.ip, scscfUri.hostport.portValue, &pScscfAddr->sockAddr);
+			}
+			else
+			{
+            	pScscfAddr->sockAddr = gScscfAddrInfo[i].sockAddr;
+			}
+
             *isLocal = gScscfAddrInfo[i].isLocal;
 
-            return true;
-            break;
+			if(scscfUri.uriParam.uriParamMask && 1<<SIP_URI_PARAM_TRANSPORT)
+            {
+                pScscfAddr->tpType = sipUriParam_mapTransportType(&scscfUri.uriParam.transport);
+            }
+			else
+			{
+            	pScscfAddr->tpType = gScscfAddrInfo[i].tpType;
+			}
+
+            isScscfFound = true;
+            goto EXIT;
         }
     }
 
-    return false;
+EXIT:
+    return isScscfFound;
 }
 
 

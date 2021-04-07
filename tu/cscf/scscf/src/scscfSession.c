@@ -857,7 +857,6 @@ static void scscfSessStateLir_onLia(diaMsgDecoded_t* pDiaDecoded, void* pAppData
     }
 
 	osPointerLen_t scscfName = {};
-	sipUri_t scscfUri;
 	diaResultCode_t resultCode = {};
 	status = icscf_decodeLia(pDiaDecoded, &scscfName, NULL, &resultCode);
 	if(status != OS_STATUS_OK)
@@ -880,17 +879,7 @@ static void scscfSessStateLir_onLia(diaMsgDecoded_t* pDiaDecoded, void* pAppData
 		else
 		{
 			bool isLocal = true;
-			sipUri_t scscfUri;
-			status = sipUri_saParse(&scscfName, &scscfUri);
-			if(status != OS_STATUS_OK)
-            {
-                logError("fails to parse the scscfName(%r).", &scscfName);
-                rspCode = SIP_RESPONSE_500;
-                status = OS_ERROR_INVALID_VALUE;
-                goto EXIT;
-            }
-
-			bool isScscfFound = cscfConfig_getScscfInfoByName(&scscfUri.hostport.host, &pSessInfo->tempWorkInfo.nextHop.nextHop, &isLocal);
+			bool isScscfFound = cscfConfig_getScscfInfoByName(&scscfName, &pSessInfo->tempWorkInfo.nextHop.nextHop, &isLocal);
 			if(!isScscfFound)
 			{
 				logError("the scscfName(%r) is not configured.", &scscfName);
@@ -916,11 +905,6 @@ static void scscfSessStateLir_onLia(diaMsgDecoded_t* pDiaDecoded, void* pAppData
 			}
 			else
 			{
-				//override what's gotten from cscfConfig_getScscfInfoByName()
-				if(scscfUri.uriParam.uriParamMask && 1<<SIP_URI_PARAM_TRANSPORT)
-				{
-					pSessInfo->tempWorkInfo.nextHop.nextHop.tpType = sipUriParam_mapTransportType(&scscfUri.uriParam.transport);
-				}				
 				status = scscfSess_enterState(pSessInfo, SCSCF_SESS_STATE_TO_GEO_SCSCF);
 			}
 		}

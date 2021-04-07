@@ -1,7 +1,7 @@
 /********************************************************
  * Copyright (C) 2019,2020, Sean Dai
  *
- * @file sipConfig.h
+ * @file cscfConfig.h
  ********************************************************/
 
 #ifndef _CSCF_CONFIG_H
@@ -39,6 +39,7 @@
 
 #define CSCF_CONFIG_FOLDER              "/project/app/mas/config"
 #define CSCF_HSS_URI				"hss.ims.com"
+#define CSCF_CONFIG_MAX_SCSCF_NUM   6
 
 #define SCSCF_HASH_SIZE				1024
 
@@ -46,7 +47,6 @@
 #define ICSCF_IP_ADDR                   "10.225.81.12"
 #define ICSCF_LISTEN_PORT               5060
 #define ICSCF_HASH_SIZE				1024
-#define ICSCF_CONFIG_MAX_SCSCF_NUM	6
 #define ICSCF_UAR_AUTHTYPE_CAPABILITY	true
 
 #define MGCP_IP_ADDR					"10.247.139.166"
@@ -99,6 +99,7 @@ typedef struct {
     transportType_e tpType;
     bool isLocal;
     struct sockaddr_in sockAddr;
+	transportIpPort_t ipPort;
     osPointerLen_t scscfName;
 } scscfAddrInfo_t;
 
