@@ -259,7 +259,7 @@ scscfAddrInfo_t* icscfConfig_getScscfInfo(uint8_t* pScscfNum)
 }
 
 
-bool icscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pScscfAddr, bool* isLocal)
+bool cscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pScscfAddr, bool* isLocal)
 {
 	for(int i=0; i<gScscfAddrNum; i++)
     {
@@ -282,7 +282,7 @@ bool icscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pSc
 /* simply compare with the various configured own scscf in order.  topCheck is introduced so that if a scscf match was found, 
  * the enxt check will check the same scscf pattern first, with the hope that the configured own scscf would not change often
  * 
- * there shall be no WSP between uri and port, sip: and uri.
+ * there shall be no WSP between uri and port, between sip: and uri.
  */
 bool cscfConfig_isOwnScscf(osPointerLen_t* pScscfName)
 {

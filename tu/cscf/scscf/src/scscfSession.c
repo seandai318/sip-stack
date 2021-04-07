@@ -877,7 +877,17 @@ static void scscfSessStateLir_onLia(diaMsgDecoded_t* pDiaDecoded, void* pAppData
     	}
 		else
 		{
-			if(cscfConfig_isOwnScscf(&scscfName))
+			bool isLocal = true;
+			bool isScscfFound = cscfConfig_getScscfInfoByName(&scscfName, &pSessInfo->tempWorkInfo.nextHop.nextHop, &isLocal);
+			if(!isScscfFound)
+			{
+				logError("the scscfName(%r) is not configured.", &scscfName);
+				rspCode = SIP_RESPONSE_500;
+		        status = OS_ERROR_INVALID_VALUE;
+        		goto EXIT;
+    		}
+
+			if(isLocal)
 			{
 		        lbAnchorInfo_t* pAnchorInfo = lb_getAnchorInfo(&pSessInfo->tempWorkInfo.users[0]);
         		//lb finds the anchor info for the MT user, must be another SCSCF, forward to the SCSCF via lb

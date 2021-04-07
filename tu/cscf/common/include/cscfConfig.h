@@ -112,7 +112,7 @@ void cscfConfig_getMgcpAddr(sipTuAddr_t* pMgcpAddr);
 bool cscfConfig_isOwnScscf(osPointerLen_t* pScscfName);
 
 bool icscfConfig_getScscfInfoByCap(uint32_t capValue, sipTuAddr_t* pScscfAddr, bool* isLocal);
-bool icscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pScscfAddr, bool* isLocal);
+bool cscfConfig_getScscfInfoByName(osPointerLen_t* pScscfName, sipTuAddr_t* pScscfAddr, bool* isLocal);
 scscfAddrInfo_t* icscfConfig_getScscfInfo(uint8_t* pScscfNum);
 void scscf_dbgListUsrProfile(scscfUserProfile_t* pUsrProfile);
 

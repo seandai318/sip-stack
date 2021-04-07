@@ -317,7 +317,7 @@ static void icscfReg_onUaa(icscfRegInfo_t* pRegInfo)
 	}
 	else
 	{
-		if(!icscfConfig_getScscfInfoByName(&pRegInfo->uaaInfo.serverName, &nextScscf, &isServerLocal))
+		if(!cscfConfig_getScscfInfoByName(&pRegInfo->uaaInfo.serverName, &nextScscf, &isServerLocal))
         {
             logInfo("no SCSCF available scscf name(%r).", &pRegInfo->uaaInfo.serverName);
             rspCode = SIP_RESPONSE_500;

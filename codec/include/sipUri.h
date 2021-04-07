@@ -41,6 +41,7 @@ typedef struct sipUriExt {
 } sipUriExt_t;
 
 
+osStatus_e sipUri_saParse(osPointerLen_t* pRawUri, sipUri_t* pUri);
 osStatus_e sipParamUri_parse(osMBuf_t* pSipMsg, size_t hdrEndPos, sipParsingInfo_t* pParentParsingInfo, sipParsingStatus_t* pParsingStatus);
 osStatus_e sipParamUri_encode(osMBuf_t* pSipBuf, sipUri_t* pUri);
 osStatus_e sipParamUri_create(sipUri_t* pUri);

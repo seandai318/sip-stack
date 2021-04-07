@@ -703,6 +703,39 @@ EXIT:
 }	
 
 
+osStatus_e sipUri_saParse(osPointerLen_t* pRawUri, sipUri_t* pUri)
+{
+	osStatus_e status = OS_STATUS_OK;
+
+	if(!pRawUri || !pUri)
+	{
+		logError("null pointer, pRawUri=%p, pUri=%p.", pRawUri, pUri);
+		status = OS_ERROR_NULL_POINTER;
+		goto EXIT;
+	}
+
+	osMBuf_t uriBuf = {(char*)pRawUri->p, pRawUri->l, 0, pRawUri->l}; 
+
+    //start parsing the header URI
+    osList_init(&pUri->headers);
+    sipParsingStatus_t parsingStatus;
+    sipParsingInfo_t parentParsingInfo;
+    parentParsingInfo.arg = pUri;
+    parentParsingInfo.token[0]='>';
+    parentParsingInfo.extTokenNum=0;
+    parentParsingInfo.tokenNum = 1;
+    status = sipParamUri_parse(&uriBuf, pRawUri->l, &parentParsingInfo, &parsingStatus);
+    if(status != OS_STATUS_OK)
+    {
+        logError("parsing URI failure, status=%d.", status);
+        goto EXIT;
+    }
+
+EXIT:
+	return status;
+}
+
+
 void sipUri_cleanup(void* data)
 {
 	if(!data)
