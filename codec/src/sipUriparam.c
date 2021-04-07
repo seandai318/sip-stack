@@ -490,6 +490,50 @@ EXIT:
 }
 
 
+sipTransport_e sipUriParam_mapTransportType(osPointerLen_t* ptp)
+{
+	sipTransport_e tpType = SIP_TRANSPORT_TYPE_ANY;
+
+	if(!ptp || ptp->l < 3 || !ptp->p)
+	{
+		return tpType;
+	}
+
+	switch(ptp->p[0])
+	{
+		case 'U':
+		case 'u':
+			if(osPL_strcasecmp(ptp, "udp") == 0)
+			{
+				tpType = SIP_TRANSPORT_TYPE_UDP;
+			}
+			break;
+		case 'T':
+		case 't':
+			if(osPL_strcasecmp(ptp, "tcp") == 0)
+            {
+                tpType = SIP_TRANSPORT_TYPE_TCP;
+            }
+			else if(osPL_strcasecmp(ptp, "tls") == 0)
+            {
+                tpType = SIP_TRANSPORT_TYPE_TLS;
+            }
+			break;
+		case 'S':
+		case 's':
+            if(osPL_strcasecmp(ptp, "sctp") == 0)
+            {
+                tpType = SIP_TRANSPORT_TYPE_SCTP;
+            }
+			break;
+		default:
+			break;
+	}
+
+	return tpType;
+}
+
+
 void sipUriparam_cleanup(void* data)
 {
 	if(!data)

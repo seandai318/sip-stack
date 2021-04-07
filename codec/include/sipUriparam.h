@@ -70,6 +70,7 @@ note: the above data structure is replaced by sipParamNameValue_t
 
 
 osStatus_e sipParser_uriparam(osMBuf_t* pSipMsg, size_t hdrEndPos, sipParsingInfo_t* pParsingInfo, sipParsingStatus_t* pParsingStatus);
+sipTransport_e sipUriParam_mapTransportType(osPointerLen_t* ptp);
 void sipUriparam_cleanup(void* data);
 
 #endif
