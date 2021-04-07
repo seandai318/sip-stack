@@ -94,7 +94,7 @@ typedef void (*sipParsing_cleanup_h)(void* arg);
 typedef struct sipParsingABNF {
 	uint8_t a;		//minimum occurance of a matched pattern
 	uint8_t b;		//maximum occurane of a matched pattern
-	uint8_t extToken;	//external token for the starting of next parameter
+	uint8_t extToken;	//external token for the ending of the previous parameter, and starting of the current parameter
 	bool isInternalMatchContinue;	//if a token matchs a local token (not the one from the parent token), shall break and go to next ABNF? or continue the current ABNF?
 	sipParsing_param_e paramName;
 	sipParsing_h parsingFunc;

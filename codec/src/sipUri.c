@@ -703,6 +703,9 @@ EXIT:
 }	
 
 
+//parse a sip uri input using osPointerLen_t form.  All the data pointed inside pUri uses pRawUri.  The caller needs to call sipParamUri_clear() to free memory other than uri data
+//pRawUri: IN,  raw sip URI using osPointerLen_t form
+//pUri:    OUT, parsed sip URI
 osStatus_e sipUri_saParse(osPointerLen_t* pRawUri, sipUri_t* pUri)
 {
 	osStatus_e status = OS_STATUS_OK;

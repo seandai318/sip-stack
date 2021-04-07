@@ -35,7 +35,7 @@ osStatus_e sipParsing_getHdrValue(osMBuf_t* pSipMsg, size_t hdrEndPos, sipParsin
 	for(int i=0; i<sbnfNum; i++)
 	{
 //		DEBUG_SIP_PRINT_TOKEN(sippInfo[i].token, sippInfo[i].tokenNum);
-		mdebug(LM_SIPP, "start parsing for: sbnfNum=%d, idx=%d, paramName=%d, sipABNF[i].Token='%c'(0x%x). Previous parsing: isEOH=%d, tokenMatched='%c'(0x%x), pos=%ld", sbnfNum, i, sipABNF[i].paramName, sipABNF[i].extToken, sipABNF[i].extToken, isEOH, tokenMatched, tokenMatched, pSipMsg->pos);
+		mdebug(LM_SIPP, "start parsing for: sbnfNum=%d, i=%d, paramName=%d, sipABNF[i].extToken='%c'(0x%x, start token for the current param). Previous parsing: isEOH=%d, tokenMatched='%c'(0x%x), pos=%ld", sbnfNum, i, sipABNF[i].paramName, sipABNF[i].extToken, sipABNF[i].extToken, isEOH, tokenMatched, tokenMatched, pSipMsg->pos);
 		//if tokenMatched does not match the one starting the current parameter, check if the current parameter is optional
 		if(isEOH || (tokenMatched != SIP_TOKEN_INVALID && tokenMatched != sipABNF[i].extToken))
 		{
