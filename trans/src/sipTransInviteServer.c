@@ -716,6 +716,9 @@ static osStatus_e sipTransIS_build100Trying(sipMsgBuf_t* pSipBufReq, sipMsgBuf_t
         goto EXIT;
     }
 
+    //add the emptyline at the end of the sip message
+    osMBuf_writeBuf(pSipMsgBuf->pSipMsg, "\r\n", 2, true);
+
 	logInfo("rspMsg=\n%M", pSipMsgBuf->pSipMsg);
 	
 EXIT:
